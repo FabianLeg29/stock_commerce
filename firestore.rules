@@ -5,7 +5,7 @@ rules_version = '2';
 // Rôles (stockés dans users/{uid}.role) :
 //   admin      : tout, y compris gestion des comptes et des produits
 //   commerce   : achats / ventes / prix d'achat (collection "commerce"),
-//                + actif/prixAchatDefaut d'un produit existant (pas la création/suppression)
+//                + actif/prixAchatDefaut/reservations d'un produit existant (pas la création/suppression)
 //   production : stock du soir (collection "saisieStock")
 //   viewer     : lecture seule partout
 //   aucun      : rôle par défaut au 1er login — aucun accès à l'application
@@ -49,16 +49,17 @@ service cloud.firestore {
 
     // ---- Produits (un document par produit) ----
     // admin : tout (créer, tout modifier, supprimer).
-    // commerce : peut modifier UNIQUEMENT les champs actif et prixAchatDefaut
-    // d'un produit existant (gestion commerciale au quotidien) — la création, la
-    // suppression et les champs famille/variete/conditionnement/suremballage/nom
-    // restent réservés à l'admin, y compris en cas de manipulation technique.
+    // commerce : peut modifier UNIQUEMENT les champs actif, prixAchatDefaut et
+    // reservations d'un produit existant (gestion commerciale au quotidien) — la
+    // création, la suppression et les champs famille/variete/conditionnement/
+    // suremballage/nom restent réservés à l'admin, y compris en cas de
+    // manipulation technique.
     match /produits/{produitId} {
       allow read: if connecte();
       allow create: if estAdmin();
       allow delete: if estAdmin();
       allow update: if estAdmin() ||
-        (estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif', 'prixAchatDefaut']));
+        (estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif', 'prixAchatDefaut', 'reservations']));
     }
 
     // ---- Cache "dernier stock connu" par produit (mis à jour par la Production) ----

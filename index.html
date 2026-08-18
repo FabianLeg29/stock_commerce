@@ -292,7 +292,9 @@
               <th class="centre">Achats</th>
               <th class="centre">Ventes</th>
               <th class="centre">Prix d'achat</th>
+              <th class="centre">Réservations</th>
               <th class="centre">Stock réel</th>
+              <th class="centre">Stock disponible</th>
             </tr>
           </thead>
           <tbody id="corpsCommerce"></tbody>
@@ -697,6 +699,7 @@
       const ventes = (typeof dejaSaisi.ventes === 'number') ? dejaSaisi.ventes : 0;
       const prixAchat = (typeof dejaSaisi.prixAchat !== 'undefined' && dejaSaisi.prixAchat !== null)
         ? dejaSaisi.prixAchat : p.prixAchatDefaut;
+      let reservationsActuelles = (typeof p.reservations === 'number') ? p.reservations : 0;
       const stockReel = stockVeille + achats - ventes;
 
       const tr = document.createElement('tr');
@@ -711,6 +714,14 @@
       const tdReel = document.createElement('td');
       tdReel.className = 'centre pastille-stock ' + (stockReel < 0 ? 'negatif' : 'positif');
       tdReel.textContent = stockReel;
+
+      const tdDisponible = document.createElement('td');
+      function majDisponible(reel) {
+        const disponible = reel - reservationsActuelles;
+        tdDisponible.textContent = disponible;
+        tdDisponible.className = 'centre mono pastille-stock ' + (disponible < 0 ? 'negatif' : 'positif');
+      }
+      majDisponible(stockReel);
 
       function champ(valeur, nomChamp) {
         const td = document.createElement('td');
@@ -733,8 +744,10 @@
             enregistrerTransaction(nomChamp, p.nom, v);
             const a = nomChamp === 'achats' ? v || 0 : achats;
             const ve = nomChamp === 'ventes' ? v || 0 : ventes;
-            tdReel.textContent = stockVeille + a - ve;
-            tdReel.className = 'centre pastille-stock ' + ((stockVeille + a - ve) < 0 ? 'negatif' : 'positif');
+            const reel = stockVeille + a - ve;
+            tdReel.textContent = reel;
+            tdReel.className = 'centre pastille-stock ' + (reel < 0 ? 'negatif' : 'positif');
+            majDisponible(reel);
             afficherToast(p.nom + ' mis à jour');
           }).catch(function (err) { afficherToast('Erreur : ' + err.message); });
         });
@@ -742,12 +755,33 @@
         return td;
       }
 
+      const tdReservations = document.createElement('td');
+      tdReservations.className = 'centre';
+      const inputReservations = document.createElement('input');
+      inputReservations.type = 'number';
+      inputReservations.step = 'any';
+      inputReservations.min = '0';
+      inputReservations.className = 'champ-valeur' + (reservationsActuelles ? ' enregistre' : '');
+      inputReservations.value = reservationsActuelles || '';
+      inputReservations.disabled = !peutGererCommerce();
+      inputReservations.addEventListener('change', function () {
+        const v = inputReservations.value === '' ? 0 : Number(inputReservations.value);
+        modifierProduit(p.id, { reservations: v });
+        enregistrerTransaction('reservations', p.nom, v);
+        inputReservations.classList.toggle('enregistre', !!v);
+        reservationsActuelles = v;
+        majDisponible(stockReel);
+      });
+      tdReservations.appendChild(inputReservations);
+
       tr.appendChild(tdNom);
       tr.appendChild(tdVeille);
       tr.appendChild(champ(achats, 'achats'));
       tr.appendChild(champ(ventes, 'ventes'));
       tr.appendChild(champ(prixAchat, 'prixAchat'));
+      tr.appendChild(tdReservations);
       tr.appendChild(tdReel);
+      tr.appendChild(tdDisponible);
       corps.appendChild(tr);
     });
 
@@ -860,7 +894,7 @@
   function libelleTypeTransaction(t) {
     return {
       stock_soir: 'Stock du soir', achats: 'Achats', ventes: 'Ventes', prixAchat: "Prix d'achat",
-      produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé'
+      reservations: 'Réservations', produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé'
     }[t] || t;
   }
 
