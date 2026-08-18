@@ -49,11 +49,11 @@ Ces règles définissent les 4 rôles (admin / commerce / production / viewer) e
 
 ## 6. Donner un rôle au premier administrateur
 
-Au premier login, l'application crée automatiquement un document dans `users/{uid}` avec le rôle `viewer` (lecture seule) par défaut. Il faut passer votre propre compte en `admin` manuellement une seule fois :
+Au premier login, l'application crée automatiquement un document dans `users/{uid}` avec le rôle `aucun` par défaut — ce rôle ne donne accès à rien : la personne voit un écran « Accès non autorisé » à la place de l'application, tant qu'un administrateur ne lui a pas attribué un rôle. Il faut passer votre propre compte en `admin` manuellement une seule fois :
 
-1. Ouvrez l'application (voir `README-DEPLOIEMENT.md` pour la mettre en ligne) et connectez-vous une première fois avec le compte administrateur créé à l'étape 2 — cela crée le document `users/{votre-uid}`.
-2. Dans la console Firebase > **Firestore Database** > **Data**, ouvrez la collection `users`, trouvez le document correspondant à votre email, et changez le champ `role` de `viewer` à `admin`.
-3. Rechargez l'application : l'onglet **Paramètres** apparaît, et vous pouvez désormais changer le rôle des autres comptes directement depuis l'application (plus besoin de repasser par la console Firebase par la suite).
+1. Ouvrez l'application (voir `README-DEPLOIEMENT.md` pour la mettre en ligne) et connectez-vous une première fois avec le compte administrateur créé à l'étape 2 — cela crée le document `users/{votre-uid}` avec le rôle `aucun`, et affiche l'écran « Accès non autorisé ».
+2. Dans la console Firebase > **Firestore Database** > **Data**, ouvrez la collection `users`, trouvez le document correspondant à votre email, et changez le champ `role` de `aucun` à `admin`.
+3. Rechargez l'application : l'onglet **Paramètres** apparaît, et vous pouvez désormais changer le rôle des autres comptes (y compris passer de `aucun` à `production`, `commerce`, `viewer` ou `admin`) directement depuis l'application (plus besoin de repasser par la console Firebase par la suite).
 
 ## 7. Importer la liste de produits initiale
 

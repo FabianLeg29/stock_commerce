@@ -6,7 +6,9 @@ rules_version = '2';
 //   admin      : tout, y compris gestion des comptes et des produits
 //   commerce   : achats / ventes / prix d'achat (collection "commerce")
 //   production : stock du soir (collection "saisieStock")
-//   viewer     : lecture seule partout (rôle par défaut)
+//   viewer     : lecture seule partout
+//   aucun      : rôle par défaut au 1er login — aucun accès à l'application
+//                tant qu'un administrateur n'a pas attribué un rôle
 // ============================================================
 
 service cloud.firestore {
@@ -36,9 +38,10 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if connecte();
       // Un compte ne peut pas modifier son propre rôle (sécurité anti-blocage).
-      // Auto-création à la 1ère connexion, uniquement pour soi-même et uniquement en rôle 'viewer'
-      // (empêche qu'un utilisateur se crée directement en 'admin' en contournant l'application).
-      allow create: if connecte() && request.auth.uid == uid && request.resource.data.role == 'viewer';
+      // Auto-création à la 1ère connexion, uniquement pour soi-même et uniquement en rôle 'aucun'
+      // (empêche qu'un utilisateur se crée directement en 'admin' en contournant l'application ;
+      // tant que l'administrateur n'a pas changé ce rôle, le compte n'a accès à rien).
+      allow create: if connecte() && request.auth.uid == uid && request.resource.data.role == 'aucun';
       allow update: if estAdmin() && request.auth.uid != uid;
       allow delete: if estAdmin() && request.auth.uid != uid;
     }

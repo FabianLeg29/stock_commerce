@@ -29,14 +29,15 @@ Points importants :
 - **`saisieStock` / `commerce`** : une collection à écriture continue, un document par produit et par jour (id = `${date}__${slug(produit)}`), interrogées avec un simple filtre `where('date','==', aujourdhui)` (pas d'index composé nécessaire). C'est l'historique complet ; il n'est jamais rechargé en entier par l'app (seul `transactions` sert de journal consultable, limité aux 300 dernières entrées).
 - **`transactions`** : journal des actions (comme l'Historique de paloxs), avec export CSV (point-virgule, BOM UTF-8 — même convention que le CSV de paloxs), suppression réservée à l'admin.
 
-## Rôles et droits (4 niveaux)
+## Rôles et droits (5 niveaux)
 
 Stockés dans Firestore, collection `users`, un document par compte (`id` = UID Firebase Auth), champs `email` + `role`.
 
 - **`admin`** : tout, y compris l'onglet **Paramètres** (produits actifs, prix par défaut, gestion des comptes/rôles).
 - **`production`** : saisie du stock du soir (onglet Production) uniquement.
 - **`commerce`** : achats/ventes/prix d'achat (onglet Commerce) uniquement.
-- **`viewer`** : lecture seule partout. Rôle par défaut si aucun document `users/{uid}` n'existe (auto-créé à la première connexion).
+- **`viewer`** : lecture seule partout (rôle à assigner explicitement si une personne doit consulter sans saisir).
+- **`aucun`** : rôle par défaut si aucun document `users/{uid}` n'existe (auto-créé à la première connexion). Ne donne accès à rien : l'écran « Accès non autorisé » s'affiche à la place de l'application tant que l'administrateur n'a pas changé ce rôle. Seules les personnes avec un rôle explicitement attribué voient l'application.
 
 Un compte ne peut pas changer son propre rôle (sécurité anti-blocage, même règle que paloxs). Création de compte = toujours via la console Firebase (pas de self-signup) ; l'admin assigne ensuite le rôle depuis l'onglet **Paramètres > Comptes** de l'application.
 
