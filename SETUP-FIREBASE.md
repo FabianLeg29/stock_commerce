@@ -55,16 +55,16 @@ Au premier login, l'application crée automatiquement un document dans `users/{u
 2. Dans la console Firebase > **Firestore Database** > **Data**, ouvrez la collection `users`, trouvez le document correspondant à votre email, et changez le champ `role` de `aucun` à `admin`.
 3. Rechargez l'application : l'onglet **Paramètres** apparaît, et vous pouvez désormais changer le rôle des autres comptes (y compris passer de `aucun` à `production`, `commerce`, `viewer` ou `admin`) directement depuis l'application (plus besoin de repasser par la console Firebase par la suite).
 
-## 7. Importer la liste de produits initiale
+## 7. Créer la liste de produits
 
-Le premier chargement de l'application crée automatiquement les collections nécessaires, mais la liste de produits est vide au départ. Deux options :
+Le premier chargement de l'application crée automatiquement les collections nécessaires, mais la liste de produits est vide au départ — c'est volontaire, aucun catalogue n'est pré-chargé. Deux options :
 
-- **Rapide** : dans l'onglet **Paramètres > Produits** de l'application (une fois connecté en admin), ajoutez les produits un par un avec le bouton "Ajouter".
-- **En une fois** : dans la console Firebase > Firestore > collection `produits` > créez un document avec l'ID `main` et un champ `liste` (tableau) contenant un objet par produit, au format :
+- **Recommandé** : dans l'onglet **Paramètres > Produits** de l'application (une fois connecté en admin), ajoutez chaque produit avec le formulaire (Désignation, Famille, Variété, Conditionnement, Suremballage) et le bouton "Ajouter".
+- **Import en masse** : toujours dans **Paramètres > Produits**, collez un tableau JSON dans le champ "Import en masse" (remplace toute la liste), au format :
   ```json
-  { "nom": "Oignon de Roscoff AOP cal.50/70 Tr. fourreau 1kg x10 Carton France", "famille": "Oignon", "variete": "Oignon de Roscoff", "conditionnement": "Tresse fourreau 1kg", "suremballage": "Carton", "actif": true, "prixAchatDefaut": null, "ordre": 1 }
+  [{ "nom": "Mini carotte botte 12x250g", "famille": "Mini légumes", "variete": "Mini carotte", "conditionnement": "Botte 250g", "suremballage": "Carton", "actif": true, "prixAchatDefaut": null, "ordre": 1 }]
   ```
-  Le fichier `Produits_initial.json` fourni contient déjà le catalogue prêt à coller (Firestore console permet de coller un tableau JSON complet dans l'éditeur de champ).
+  `Produits_initial.json` documente ce format (tableau vide par défaut).
 
 ## Sécurité et coût
 

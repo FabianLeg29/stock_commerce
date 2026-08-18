@@ -54,18 +54,18 @@ Même identité que l'app paloxs (cohérence entre les deux outils) : palette `-
 
 ## Origine des données produits
 
-La liste initiale vient d'un export du catalogue produits de l'entreprise (fiche article : Code, EAN13, Désignation, Famille, Variété, Origine, Conditionnement, Calibre, Catégorie, PCB Vte, Suremballage, Label, Actif...). L'app ne conserve volontairement qu'un sous-ensemble de ces champs, jugés pertinents pour l'usage quotidien et pour un ajout manuel ultérieur (onglet Paramètres) :
+Le schéma produit garde en tête un export possible du catalogue de l'entreprise (fiche article : Code, EAN13, Désignation, Famille, Variété, Origine, Conditionnement, Calibre, Catégorie, PCB Vte, Suremballage, Label, Actif...), mais l'app ne conserve volontairement qu'un sous-ensemble de ces champs, jugés pertinents pour l'usage quotidien et pour la création manuelle depuis l'onglet **Paramètres** (pas de catalogue pré-rempli — chaque produit est créé par l'admin) :
 
 - `nom` (= Désignation complète de l'article)
-- `famille` (ex : Oignon)
-- `variete` (ex : Oignon de Roscoff)
-- `conditionnement` (ex : Sac 5kg, Tresse fourreau 1kg, Vrac 5kg)
-- `suremballage` — **simplifié** en une catégorie générique déduite du texte de la désignation (`Palox`, `Carton`, `Caisse`, `Meuble`, `Coffret`, `Sans suremballage`), plutôt que la valeur détaillée du fichier source (ex : « Caisse Ifco noire 6413 » → `Caisse`)
-- `actif`, `prixAchatDefaut`, `ordre` (déjà présents dans le modèle d'origine)
+- `famille` (ex : Oignon, Mini légumes)
+- `variete` (ex : Oignon de Roscoff, Mini carotte)
+- `conditionnement` (texte libre, ex : Sac 5kg, Barquette 250g, Tresse fourreau 1kg)
+- `suremballage` — catégorie générique choisie dans une liste fermée (`Palox`, `Carton`, `Caisse`, `Meuble`, `Coffret`, `Sans suremballage`) plutôt qu'une valeur détaillée (ex : « Caisse Ifco noire 6413 » → `Caisse`) — liste à étendre si un type de suremballage manque (ex : Barquette, Sachet pour les mini légumes)
+- `actif`, `prixAchatDefaut`, `ordre`
 
-Champs volontairement **non conservés** : Code article, EAN13, Origine, Calibre, Catégorie, PCB Vte, Label, Préparation, Complément, Controle légumière, Marque, Poids U. Vte. Le champ `nom` (désignation) sert de clé d'unicité fonctionnelle (comme avant) : si le fichier source contient un même produit sous deux codes différents (ex : ancien code numérique vs nouveau code alphanumérique), dédoublonner sur la désignation en gardant la ligne `Actif = OUI` en priorité.
+Champs volontairement **non conservés** : Code article, EAN13, Origine, Calibre, Catégorie, PCB Vte, Label, Préparation, Complément, Controle légumière, Marque, Poids U. Vte. Le champ `nom` (désignation) sert de clé d'unicité fonctionnelle : si un futur import contient un même produit sous deux codes différents (ex : ancien code numérique vs nouveau code alphanumérique), dédoublonner sur la désignation en gardant la ligne `Actif = OUI` en priorité.
 
-Premier import réalisé (2026-08) : catalogue *Oignon de Roscoff AOP*, 61 produits après dédoublonnage. Fichier prêt à importer : `Produits_initial.json`. Extension prévue à d'autres familles de produits et, à terme, aux autres commerciaux (Nadine, Julien, Flo, Mickael, Stéphanie).
+`Produits_initial.json` est un tableau vide par défaut (aucun catalogue pré-chargé) ; il documente le format attendu si un import en masse est refait plus tard (voir le champ **Import en masse (JSON)** de l'onglet Paramètres). Premières familles gérées : Oignon (Roscoff AOP), puis Mini légumes. Extension prévue à d'autres familles et, à terme, aux autres commerciaux (Nadine, Julien, Flo, Mickael, Stéphanie).
 
 ## Fichiers du dépôt
 
