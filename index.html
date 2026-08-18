@@ -324,11 +324,18 @@
       <div class="carte-tableau" style="padding:16px; margin-bottom:14px;">
         <div style="font-size:13px; color:#746a5e; margin-bottom:8px;">Import en masse : collez un tableau JSON de produits (remplace toute la liste actuelle).</div>
         <textarea id="jsonImportProduits" rows="4" style="width:100%; padding:10px; border-radius:10px; border:1.5px solid var(--line); font-family:'IBM Plex Mono',monospace; font-size:12px;" placeholder='[{"nom":"...","famille":"...","variete":"...","conditionnement":"...","suremballage":"...","actif":true,"prixAchatDefaut":null,"ordre":1}]'></textarea>
-        <button class="bouton-secondaire" style="margin-top:8px;" onclick="importerProduitsJSON()">Importer (remplace la liste)</button>
+        <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+          <button class="bouton-secondaire" onclick="importerProduitsJSON()">Importer (remplace la liste)</button>
+          <button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerTousLesProduits()">Supprimer tous les produits</button>
+        </div>
       </div>
       <div class="ligne-ajout">
         <input type="text" id="nouveauProduit" placeholder="Désignation du produit...">
-        <input type="text" id="nouvelleFamille" placeholder="Famille (ex : Mini légumes)">
+        <select id="nouvelleFamille" onchange="basculerNouvelleFamilleAutre()">
+          <option value="">Famille...</option>
+          <option value="__autre__">+ Nouvelle famille...</option>
+        </select>
+        <input type="text" id="nouvelleFamilleAutre" placeholder="Nom de la nouvelle famille..." style="display:none;">
         <input type="text" id="nouvelleVariete" placeholder="Variété (ex : Mini carotte)">
         <input type="text" id="nouveauConditionnement" placeholder="Conditionnement (ex : Barquette 250g)">
         <select id="nouveauSuremballage">
@@ -816,6 +823,7 @@
   // ============================================================
   function rendreParametres() {
     if (!estAdmin()) return;
+    rendreSelectFamilles();
     const corpsProduits = document.getElementById('corpsProduits');
     corpsProduits.innerHTML = '';
     produits.forEach(function (p) {
@@ -920,9 +928,46 @@
     });
   }
 
+  function rendreSelectFamilles() {
+    const select = document.getElementById('nouvelleFamille');
+    if (!select) return;
+    const valeurActuelle = select.value;
+    const familles = Array.from(new Set(produits.map(function (p) { return p.famille; }).filter(Boolean))).sort();
+    select.innerHTML = '';
+    const optVide = document.createElement('option');
+    optVide.value = '';
+    optVide.textContent = 'Famille...';
+    select.appendChild(optVide);
+    familles.forEach(function (f) {
+      const opt = document.createElement('option');
+      opt.value = f;
+      opt.textContent = f;
+      select.appendChild(opt);
+    });
+    const optAutre = document.createElement('option');
+    optAutre.value = '__autre__';
+    optAutre.textContent = '+ Nouvelle famille...';
+    select.appendChild(optAutre);
+    if (Array.from(select.options).some(function (o) { return o.value === valeurActuelle; })) {
+      select.value = valeurActuelle;
+    }
+    basculerNouvelleFamilleAutre();
+  }
+
+  function basculerNouvelleFamilleAutre() {
+    const select = document.getElementById('nouvelleFamille');
+    const champAutre = document.getElementById('nouvelleFamilleAutre');
+    if (!select || !champAutre) return;
+    const estAutre = select.value === '__autre__';
+    champAutre.style.display = estAutre ? '' : 'none';
+    if (!estAutre) champAutre.value = '';
+  }
+  window.basculerNouvelleFamilleAutre = basculerNouvelleFamilleAutre;
+
   function ajouterProduit() {
     const input = document.getElementById('nouveauProduit');
     const champFamille = document.getElementById('nouvelleFamille');
+    const champFamilleAutre = document.getElementById('nouvelleFamilleAutre');
     const champVariete = document.getElementById('nouvelleVariete');
     const champConditionnement = document.getElementById('nouveauConditionnement');
     const champSuremballage = document.getElementById('nouveauSuremballage');
@@ -932,10 +977,11 @@
       afficherToast('Ce produit existe déjà');
       return;
     }
+    const famille = champFamille.value === '__autre__' ? champFamilleAutre.value.trim() : champFamille.value;
     const ordreMax = produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0);
     const nouvelleListe = produits.concat([{
       nom: nom,
-      famille: champFamille.value.trim(),
+      famille: famille,
       variete: champVariete.value.trim(),
       conditionnement: champConditionnement.value.trim(),
       suremballage: champSuremballage.value,
@@ -946,6 +992,8 @@
     db.collection('produits').doc('main').set({ liste: nouvelleListe }).then(function () {
       input.value = '';
       champFamille.value = '';
+      champFamilleAutre.value = '';
+      champFamilleAutre.style.display = 'none';
       champVariete.value = '';
       champConditionnement.value = '';
       champSuremballage.value = '';
@@ -954,6 +1002,18 @@
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.ajouterProduit = ajouterProduit;
+
+  function supprimerTousLesProduits() {
+    if (!produits.length) {
+      afficherToast('La liste est déjà vide');
+      return;
+    }
+    if (!confirm('Supprimer définitivement les ' + produits.length + ' produits de la liste ? Cette action est irréversible.')) return;
+    db.collection('produits').doc('main').set({ liste: [] }).then(function () {
+      afficherToast('Liste de produits vidée');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.supprimerTousLesProduits = supprimerTousLesProduits;
 
   function importerProduitsJSON() {
     const zone = document.getElementById('jsonImportProduits');
