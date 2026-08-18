@@ -299,6 +299,25 @@
         </table>
         <div class="vide" id="videCommerce" style="display:none;">Aucun produit actif pour le moment.</div>
       </div>
+
+      <h3 class="section-titre">Gestion des produits</h3>
+      <div class="carte-tableau">
+        <table>
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th>Famille</th>
+              <th>Variété</th>
+              <th>Conditionnement</th>
+              <th>Suremballage</th>
+              <th class="centre">Prix d'achat par défaut</th>
+              <th class="centre">Actif</th>
+            </tr>
+          </thead>
+          <tbody id="corpsGestionProduits"></tbody>
+        </table>
+        <div class="vide" id="videGestionProduits" style="display:none;">Aucun produit pour le moment (créez-en depuis Paramètres).</div>
+      </div>
     </div>
 
     <!-- ---------------- HISTORIQUE ---------------- -->
@@ -490,9 +509,10 @@
     detacherListeners();
 
     desabonnements.push(
-      db.collection('produits').doc('main').onSnapshot(function (snap) {
-        const data = snap.exists ? snap.data() : { liste: [] };
-        produits = (data.liste || []).slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); });
+      db.collection('produits').onSnapshot(function (qs) {
+        const out = [];
+        qs.forEach(function (doc) { out.push(Object.assign({ id: doc.id }, doc.data())); });
+        produits = out.sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); });
         rendreVueActive();
       })
     );
@@ -730,8 +750,67 @@
       tr.appendChild(tdReel);
       corps.appendChild(tr);
     });
+
+    rendreGestionProduitsCommerce();
   }
   window.rendreCommerce = rendreCommerce;
+
+  function rendreGestionProduitsCommerce() {
+    const corps = document.getElementById('corpsGestionProduits');
+    corps.innerHTML = '';
+    document.getElementById('videGestionProduits').style.display = produits.length ? 'none' : 'block';
+
+    produits.forEach(function (p) {
+      const tr = document.createElement('tr');
+      const tdNom = document.createElement('td');
+      tdNom.className = 'produit';
+      tdNom.textContent = p.nom;
+
+      const tdFamille = document.createElement('td');
+      tdFamille.textContent = p.famille || '';
+
+      const tdVariete = document.createElement('td');
+      tdVariete.textContent = p.variete || '';
+
+      const tdConditionnement = document.createElement('td');
+      tdConditionnement.textContent = p.conditionnement || '';
+
+      const tdSuremballage = document.createElement('td');
+      tdSuremballage.textContent = p.suremballage || '';
+
+      const tdPrix = document.createElement('td');
+      tdPrix.className = 'centre';
+      const inputPrix = document.createElement('input');
+      inputPrix.type = 'number';
+      inputPrix.step = 'any';
+      inputPrix.className = 'champ-valeur';
+      inputPrix.value = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '' : p.prixAchatDefaut;
+      inputPrix.disabled = !peutGererCommerce();
+      inputPrix.addEventListener('change', function () {
+        modifierProduit(p.id, { prixAchatDefaut: inputPrix.value === '' ? null : Number(inputPrix.value) });
+      });
+      tdPrix.appendChild(inputPrix);
+
+      const tdActif = document.createElement('td');
+      tdActif.className = 'centre';
+      const span = document.createElement('span');
+      const lectureSeule = !peutGererCommerce();
+      span.className = 'toggle ' + (p.actif ? 'oui' : 'non') + (lectureSeule ? ' lecture-seule' : '');
+      span.textContent = p.actif ? 'Actif' : 'Inactif';
+      if (!lectureSeule) {
+        span.onclick = function () {
+          modifierProduit(p.id, { actif: !p.actif });
+          enregistrerTransaction('produit_actif', p.nom, !p.actif ? 'Oui' : 'Non');
+        };
+      }
+      tdActif.appendChild(span);
+
+      tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete);
+      tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
+      tr.appendChild(tdPrix); tr.appendChild(tdActif);
+      corps.appendChild(tr);
+    });
+  }
 
   // ============================================================
   // HISTORIQUE
@@ -837,7 +916,7 @@
       inputPrix.className = 'champ-valeur';
       inputPrix.value = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '' : p.prixAchatDefaut;
       inputPrix.addEventListener('change', function () {
-        modifierProduit(p.nom, { prixAchatDefaut: inputPrix.value === '' ? null : Number(inputPrix.value) });
+        modifierProduit(p.id, { prixAchatDefaut: inputPrix.value === '' ? null : Number(inputPrix.value) });
       });
       tdPrix.appendChild(inputPrix);
 
@@ -847,7 +926,7 @@
       span.className = 'toggle ' + (p.actif ? 'oui' : 'non');
       span.textContent = p.actif ? 'Actif' : 'Inactif';
       span.onclick = function () {
-        modifierProduit(p.nom, { actif: !p.actif });
+        modifierProduit(p.id, { actif: !p.actif });
         enregistrerTransaction('produit_actif', p.nom, !p.actif ? 'Oui' : 'Non');
       };
       tdActif.appendChild(span);
@@ -859,8 +938,7 @@
       btnSuppr.textContent = 'Suppr.';
       btnSuppr.onclick = function () {
         if (!confirm('Supprimer définitivement « ' + p.nom + ' » de la liste des produits ?')) return;
-        const nouvelleListe = produits.filter(function (x) { return x.nom !== p.nom; });
-        db.collection('produits').doc('main').set({ liste: nouvelleListe }).then(function () {
+        db.collection('produits').doc(p.id).delete().then(function () {
           enregistrerTransaction('produit_supprime', p.nom, null);
           afficherToast(p.nom + ' supprimé');
         }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
@@ -904,11 +982,8 @@
   }
   window.rendreParametres = rendreParametres;
 
-  function modifierProduit(nom, champs) {
-    const nouvelleListe = produits.map(function (p) {
-      return p.nom === nom ? Object.assign({}, p, champs) : p;
-    });
-    db.collection('produits').doc('main').set({ liste: nouvelleListe }).catch(function (e) {
+  function modifierProduit(id, champs) {
+    db.collection('produits').doc(id).update(champs).catch(function (e) {
       afficherToast('Erreur : ' + e.message);
     });
   }
@@ -968,12 +1043,13 @@
     const input = document.getElementById('nouveauProduit');
     const nom = input.value.trim();
     if (!nom) return;
-    if (produits.some(function (p) { return p.nom.toLowerCase() === nom.toLowerCase(); })) {
+    const id = slugify(nom);
+    if (produits.some(function (p) { return p.id === id; })) {
       afficherToast('Ce produit existe déjà');
       return;
     }
     const ordreMax = produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0);
-    const nouvelleListe = produits.concat([{
+    db.collection('produits').doc(id).set({
       nom: nom,
       famille: valeurChampListe('nouvelleFamille'),
       variete: valeurChampListe('nouvelleVariete'),
@@ -982,8 +1058,7 @@
       actif: true,
       prixAchatDefaut: null,
       ordre: ordreMax + 1
-    }]);
-    db.collection('produits').doc('main').set({ liste: nouvelleListe }).then(function () {
+    }).then(function () {
       input.value = '';
       CHAMPS_LISTES_PRODUIT.forEach(function (c) {
         document.getElementById(c.idSelect).value = '';
@@ -1003,7 +1078,9 @@
       return;
     }
     if (!confirm('Supprimer définitivement les ' + produits.length + ' produits de la liste ? Cette action est irréversible.')) return;
-    db.collection('produits').doc('main').set({ liste: [] }).then(function () {
+    const lot = db.batch();
+    produits.forEach(function (p) { lot.delete(db.collection('produits').doc(p.id)); });
+    lot.commit().then(function () {
       afficherToast('Liste de produits vidée');
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }

@@ -15,7 +15,7 @@ L'app paloxs stocke tout dans **un seul document Firestore** (`planStockage/main
 
 ```
 Firestore
-├── produits/main            { liste: [ { nom, famille, variete, conditionnement, suremballage, actif, prixAchatDefaut, ordre } ] }
+├── produits/{produitId}     { nom, famille, variete, conditionnement, suremballage, actif, prixAchatDefaut, ordre }
 ├── dernierStock/main        { [nomProduit]: { valeur, date } }   ← cache du dernier stock connu
 ├── saisieStock/{date__slug} { date, produit, stockSoir, horodatage, responsable }
 ├── commerce/{date__slug}    { date, produit, achats, ventes, prixAchat, horodatage, responsable }
@@ -24,7 +24,7 @@ Firestore
 ```
 
 Points importants :
-- **`produits/main`** : petit document de configuration, modifié uniquement par l'admin (onglet Paramètres) — même esprit que `cellules`/`produits`/`calibres` dans paloxs.
+- **`produits/{produitId}`** : un document par produit (`produitId` = `slugify(nom)`), pour permettre des règles de sécurité par champ (voir Rôles). Créé/supprimé uniquement par l'admin (onglet Paramètres) ; le champ `actif`/`prixAchatDefaut` peut aussi être modifié par le rôle `commerce` (onglet Commerce > Gestion des produits). Chargé en entier au démarrage (`onSnapshot` sur la collection, triée côté client par `ordre`) — volume faible, pas de pagination nécessaire.
 - **`dernierStock/main`** : cache dénormalisé, mis à jour à chaque saisie de stock du soir (écriture batch en même temps que `saisieStock`), pour que l'onglet Commerce affiche le "dernier stock connu" sans avoir à faire une requête historique par produit (évite un index composé Firestore et des lectures inutiles).
 - **`saisieStock` / `commerce`** : une collection à écriture continue, un document par produit et par jour (id = `${date}__${slug(produit)}`), interrogées avec un simple filtre `where('date','==', aujourdhui)` (pas d'index composé nécessaire). C'est l'historique complet ; il n'est jamais rechargé en entier par l'app (seul `transactions` sert de journal consultable, limité aux 300 dernières entrées).
 - **`transactions`** : journal des actions (comme l'Historique de paloxs), avec export CSV (point-virgule, BOM UTF-8 — même convention que le CSV de paloxs), suppression réservée à l'admin.
@@ -33,9 +33,9 @@ Points importants :
 
 Stockés dans Firestore, collection `users`, un document par compte (`id` = UID Firebase Auth), champs `email` + `role`.
 
-- **`admin`** : tout, y compris l'onglet **Paramètres** (produits actifs, prix par défaut, gestion des comptes/rôles).
+- **`admin`** : tout, y compris l'onglet **Paramètres** (création/suppression de produits, familles/variétés/conditionnements/suremballages, gestion des comptes/rôles).
 - **`production`** : saisie du stock du soir (onglet Production) uniquement.
-- **`commerce`** : achats/ventes/prix d'achat (onglet Commerce) uniquement.
+- **`commerce`** : achats/ventes/prix d'achat (onglet Commerce), + gestion du prix d'achat par défaut et de l'actif/inactif d'un produit existant (section « Gestion des produits » du même onglet) — pas la création, la suppression, ni les familles/variétés/conditionnements/suremballages, réservés à l'admin. Cette restriction est appliquée par les règles Firestore elles-mêmes (`produits/{produitId}`, champ par champ), pas seulement par l'interface.
 - **`viewer`** : lecture seule partout (rôle à assigner explicitement si une personne doit consulter sans saisir).
 - **`aucun`** : rôle par défaut si aucun document `users/{uid}` n'existe (auto-créé à la première connexion). Ne donne accès à rien : l'écran « Accès non autorisé » s'affiche à la place de l'application tant que l'administrateur n'a pas changé ce rôle. Seules les personnes avec un rôle explicitement attribué voient l'application.
 
@@ -44,9 +44,9 @@ Un compte ne peut pas changer son propre rôle (sécurité anti-blocage, même r
 ## Onglets de l'application
 
 - **Production** : liste des produits actifs, un champ "stock du soir" par produit, enregistrement automatique au blocage du champ (`change`), pas de bouton "Enregistrer" global. Recherche/filtre en haut.
-- **Commerce** : pour chaque produit actif — dernier stock connu (valeur + date), achats du jour, ventes du jour, prix d'achat, et **stock réel** recalculé en direct = dernier stock connu + achats − ventes.
+- **Commerce** : pour chaque produit actif — dernier stock connu (valeur + date), achats du jour, ventes du jour, prix d'achat, et **stock réel** recalculé en direct = dernier stock connu + achats − ventes. En dessous, section **Gestion des produits** (tous les produits, actifs ou non) où le rôle commerce ajuste le prix d'achat par défaut et l'actif/inactif (saisonnalité) — les autres colonnes (famille, variété, conditionnement, suremballage) y sont affichées en lecture seule.
 - **Historique** : journal de toutes les actions (stock du soir, achats, ventes, prix, activation/désactivation produit), recherche libre, export CSV, suppression réservée à l'admin.
-- **Paramètres** (admin uniquement) : ajout de produit, prix d'achat par défaut, activer/désactiver un produit (saisonnalité), gestion des rôles par compte.
+- **Paramètres** (admin uniquement) : création/suppression de produits (désignation, famille, variété, conditionnement, suremballage), gestion des rôles par compte.
 
 ## Style / thème
 
