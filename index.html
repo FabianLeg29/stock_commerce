@@ -321,34 +321,19 @@
     <!-- ---------------- PARAMETRES (admin) ---------------- -->
     <div class="vue" id="vueParametres">
       <h3 class="section-titre" style="margin-top:0;">Produits</h3>
-      <div class="carte-tableau" style="padding:16px; margin-bottom:14px;">
-        <div style="font-size:13px; color:#746a5e; margin-bottom:8px;">Import en masse : collez un tableau JSON de produits (remplace toute la liste actuelle).</div>
-        <textarea id="jsonImportProduits" rows="4" style="width:100%; padding:10px; border-radius:10px; border:1.5px solid var(--line); font-family:'IBM Plex Mono',monospace; font-size:12px;" placeholder='[{"nom":"...","famille":"...","variete":"...","conditionnement":"...","suremballage":"...","actif":true,"prixAchatDefaut":null,"ordre":1}]'></textarea>
-        <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
-          <button class="bouton-secondaire" onclick="importerProduitsJSON()">Importer (remplace la liste)</button>
-          <button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerTousLesProduits()">Supprimer tous les produits</button>
-        </div>
+      <div style="margin-bottom:14px;">
+        <button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerTousLesProduits()">Supprimer tous les produits</button>
       </div>
       <div class="ligne-ajout">
         <input type="text" id="nouveauProduit" placeholder="Désignation du produit...">
-        <select id="nouvelleFamille" onchange="basculerNouvelleFamilleAutre()">
-          <option value="">Famille...</option>
-          <option value="__autre__">+ Nouvelle famille...</option>
-        </select>
+        <select id="nouvelleFamille" onchange="basculerChampAutre('nouvelleFamille')"></select>
         <input type="text" id="nouvelleFamilleAutre" placeholder="Nom de la nouvelle famille..." style="display:none;">
-        <input type="text" id="nouvelleVariete" placeholder="Variété (ex : Mini carotte)">
-        <input type="text" id="nouveauConditionnement" placeholder="Conditionnement (ex : Barquette 250g)">
-        <select id="nouveauSuremballage">
-          <option value="">Suremballage...</option>
-          <option value="Palox">Palox</option>
-          <option value="Carton">Carton</option>
-          <option value="Caisse">Caisse</option>
-          <option value="Meuble">Meuble</option>
-          <option value="Coffret">Coffret</option>
-          <option value="Barquette">Barquette</option>
-          <option value="Sachet">Sachet</option>
-          <option value="Sans suremballage">Sans suremballage</option>
-        </select>
+        <select id="nouvelleVariete" onchange="basculerChampAutre('nouvelleVariete')"></select>
+        <input type="text" id="nouvelleVarieteAutre" placeholder="Nom de la nouvelle variété..." style="display:none;">
+        <select id="nouveauConditionnement" onchange="basculerChampAutre('nouveauConditionnement')"></select>
+        <input type="text" id="nouveauConditionnementAutre" placeholder="Nouveau conditionnement..." style="display:none;">
+        <select id="nouveauSuremballage" onchange="basculerChampAutre('nouveauSuremballage')"></select>
+        <input type="text" id="nouveauSuremballageAutre" placeholder="Nouveau suremballage..." style="display:none;">
         <button onclick="ajouterProduit()">Ajouter</button>
       </div>
       <div class="carte-tableau">
@@ -823,7 +808,7 @@
   // ============================================================
   function rendreParametres() {
     if (!estAdmin()) return;
-    rendreSelectFamilles();
+    rendreSelectsProduitsAdmin();
     const corpsProduits = document.getElementById('corpsProduits');
     corpsProduits.innerHTML = '';
     produits.forEach(function (p) {
@@ -928,75 +913,84 @@
     });
   }
 
-  function rendreSelectFamilles() {
-    const select = document.getElementById('nouvelleFamille');
-    if (!select) return;
-    const valeurActuelle = select.value;
-    const familles = Array.from(new Set(produits.map(function (p) { return p.famille; }).filter(Boolean))).sort();
-    select.innerHTML = '';
-    const optVide = document.createElement('option');
-    optVide.value = '';
-    optVide.textContent = 'Famille...';
-    select.appendChild(optVide);
-    familles.forEach(function (f) {
-      const opt = document.createElement('option');
-      opt.value = f;
-      opt.textContent = f;
-      select.appendChild(opt);
+  const CHAMPS_LISTES_PRODUIT = [
+    { idSelect: 'nouvelleFamille', champ: 'famille', texteVide: 'Famille...', texteNouveau: '+ Nouvelle famille...' },
+    { idSelect: 'nouvelleVariete', champ: 'variete', texteVide: 'Variété...', texteNouveau: '+ Nouvelle variété...' },
+    { idSelect: 'nouveauConditionnement', champ: 'conditionnement', texteVide: 'Conditionnement...', texteNouveau: '+ Nouveau conditionnement...' },
+    { idSelect: 'nouveauSuremballage', champ: 'suremballage', texteVide: 'Suremballage...', texteNouveau: '+ Nouveau suremballage...' }
+  ];
+
+  function rendreSelectsProduitsAdmin() {
+    CHAMPS_LISTES_PRODUIT.forEach(function (c) {
+      const select = document.getElementById(c.idSelect);
+      if (!select) return;
+      const valeurActuelle = select.value;
+      const valeurs = Array.from(new Set(produits.map(function (p) { return p[c.champ]; }).filter(Boolean))).sort();
+      select.innerHTML = '';
+      const optVide = document.createElement('option');
+      optVide.value = '';
+      optVide.textContent = c.texteVide;
+      select.appendChild(optVide);
+      valeurs.forEach(function (v) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        select.appendChild(opt);
+      });
+      const optAutre = document.createElement('option');
+      optAutre.value = '__autre__';
+      optAutre.textContent = c.texteNouveau;
+      select.appendChild(optAutre);
+      if (Array.from(select.options).some(function (o) { return o.value === valeurActuelle; })) {
+        select.value = valeurActuelle;
+      }
+      basculerChampAutre(c.idSelect);
     });
-    const optAutre = document.createElement('option');
-    optAutre.value = '__autre__';
-    optAutre.textContent = '+ Nouvelle famille...';
-    select.appendChild(optAutre);
-    if (Array.from(select.options).some(function (o) { return o.value === valeurActuelle; })) {
-      select.value = valeurActuelle;
-    }
-    basculerNouvelleFamilleAutre();
   }
 
-  function basculerNouvelleFamilleAutre() {
-    const select = document.getElementById('nouvelleFamille');
-    const champAutre = document.getElementById('nouvelleFamilleAutre');
+  function basculerChampAutre(idSelect) {
+    const select = document.getElementById(idSelect);
+    const champAutre = document.getElementById(idSelect + 'Autre');
     if (!select || !champAutre) return;
     const estAutre = select.value === '__autre__';
     champAutre.style.display = estAutre ? '' : 'none';
     if (!estAutre) champAutre.value = '';
   }
-  window.basculerNouvelleFamilleAutre = basculerNouvelleFamilleAutre;
+  window.basculerChampAutre = basculerChampAutre;
+
+  function valeurChampListe(idSelect) {
+    const select = document.getElementById(idSelect);
+    const champAutre = document.getElementById(idSelect + 'Autre');
+    return select.value === '__autre__' ? champAutre.value.trim() : select.value;
+  }
 
   function ajouterProduit() {
     const input = document.getElementById('nouveauProduit');
-    const champFamille = document.getElementById('nouvelleFamille');
-    const champFamilleAutre = document.getElementById('nouvelleFamilleAutre');
-    const champVariete = document.getElementById('nouvelleVariete');
-    const champConditionnement = document.getElementById('nouveauConditionnement');
-    const champSuremballage = document.getElementById('nouveauSuremballage');
     const nom = input.value.trim();
     if (!nom) return;
     if (produits.some(function (p) { return p.nom.toLowerCase() === nom.toLowerCase(); })) {
       afficherToast('Ce produit existe déjà');
       return;
     }
-    const famille = champFamille.value === '__autre__' ? champFamilleAutre.value.trim() : champFamille.value;
     const ordreMax = produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0);
     const nouvelleListe = produits.concat([{
       nom: nom,
-      famille: famille,
-      variete: champVariete.value.trim(),
-      conditionnement: champConditionnement.value.trim(),
-      suremballage: champSuremballage.value,
+      famille: valeurChampListe('nouvelleFamille'),
+      variete: valeurChampListe('nouvelleVariete'),
+      conditionnement: valeurChampListe('nouveauConditionnement'),
+      suremballage: valeurChampListe('nouveauSuremballage'),
       actif: true,
       prixAchatDefaut: null,
       ordre: ordreMax + 1
     }]);
     db.collection('produits').doc('main').set({ liste: nouvelleListe }).then(function () {
       input.value = '';
-      champFamille.value = '';
-      champFamilleAutre.value = '';
-      champFamilleAutre.style.display = 'none';
-      champVariete.value = '';
-      champConditionnement.value = '';
-      champSuremballage.value = '';
+      CHAMPS_LISTES_PRODUIT.forEach(function (c) {
+        document.getElementById(c.idSelect).value = '';
+        const autre = document.getElementById(c.idSelect + 'Autre');
+        autre.value = '';
+        autre.style.display = 'none';
+      });
       enregistrerTransaction('produit_ajoute', nom, null);
       afficherToast(nom + ' ajouté');
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
@@ -1014,27 +1008,6 @@
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.supprimerTousLesProduits = supprimerTousLesProduits;
-
-  function importerProduitsJSON() {
-    const zone = document.getElementById('jsonImportProduits');
-    let nouvelleListe;
-    try {
-      nouvelleListe = JSON.parse(zone.value);
-    } catch (e) {
-      afficherToast('JSON invalide : ' + e.message);
-      return;
-    }
-    if (!Array.isArray(nouvelleListe)) {
-      afficherToast('Le contenu doit être un tableau JSON.');
-      return;
-    }
-    if (!confirm('Remplacer toute la liste de produits actuelle (' + produits.length + ' produits) par ces ' + nouvelleListe.length + ' produits ?')) return;
-    db.collection('produits').doc('main').set({ liste: nouvelleListe }).then(function () {
-      zone.value = '';
-      afficherToast(nouvelleListe.length + ' produits importés');
-    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
-  }
-  window.importerProduitsJSON = importerProduitsJSON;
 
 })();
 </script>

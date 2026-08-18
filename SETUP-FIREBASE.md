@@ -57,14 +57,9 @@ Au premier login, l'application crée automatiquement un document dans `users/{u
 
 ## 7. Créer la liste de produits
 
-Le premier chargement de l'application crée automatiquement les collections nécessaires, mais la liste de produits est vide au départ — c'est volontaire, aucun catalogue n'est pré-chargé. Deux options :
+Le premier chargement de l'application crée automatiquement les collections nécessaires, mais la liste de produits est vide au départ — c'est volontaire, aucun catalogue n'est pré-chargé.
 
-- **Recommandé** : dans l'onglet **Paramètres > Produits** de l'application (une fois connecté en admin), ajoutez chaque produit avec le formulaire (Désignation, Famille, Variété, Conditionnement, Suremballage) et le bouton "Ajouter".
-- **Import en masse** : toujours dans **Paramètres > Produits**, collez un tableau JSON dans le champ "Import en masse" (remplace toute la liste), au format :
-  ```json
-  [{ "nom": "Mini carotte botte 12x250g", "famille": "Mini légumes", "variete": "Mini carotte", "conditionnement": "Botte 250g", "suremballage": "Carton", "actif": true, "prixAchatDefaut": null, "ordre": 1 }]
-  ```
-  `Produits_initial.json` documente ce format (tableau vide par défaut).
+Dans l'onglet **Paramètres > Produits** de l'application (une fois connecté en admin), ajoutez chaque produit avec le formulaire : Désignation (texte libre), puis Famille / Variété / Conditionnement / Suremballage — quatre listes déroulantes alimentées par les valeurs déjà utilisées, chacune avec une option **« + Nouvelle... »** qui fait apparaître un champ texte pour créer une nouvelle valeur la première fois qu'elle est utilisée (ex : la première fois que vous ajoutez la famille « Mini légumes », vous la tapez ; ensuite elle apparaît dans la liste pour les produits suivants). Un bouton **« Supprimer tous les produits »** permet de vider toute la liste en une fois si besoin de repartir de zéro.
 
 ## Sécurité et coût
 

@@ -56,16 +56,16 @@ Même identité que l'app paloxs (cohérence entre les deux outils) : palette `-
 
 Le schéma produit garde en tête un export possible du catalogue de l'entreprise (fiche article : Code, EAN13, Désignation, Famille, Variété, Origine, Conditionnement, Calibre, Catégorie, PCB Vte, Suremballage, Label, Actif...), mais l'app ne conserve volontairement qu'un sous-ensemble de ces champs, jugés pertinents pour l'usage quotidien et pour la création manuelle depuis l'onglet **Paramètres** (pas de catalogue pré-rempli — chaque produit est créé par l'admin) :
 
-- `nom` (= Désignation complète de l'article)
+- `nom` (= Désignation complète de l'article, saisie libre — pas encore décidé si elle sera composée automatiquement à partir des autres champs, voir historique de conversation)
 - `famille` (ex : Oignon, Mini légumes)
 - `variete` (ex : Oignon de Roscoff, Mini carotte)
-- `conditionnement` (texte libre, ex : Sac 5kg, Barquette 250g, Tresse fourreau 1kg)
-- `suremballage` — catégorie générique choisie dans une liste fermée (`Palox`, `Carton`, `Caisse`, `Meuble`, `Coffret`, `Barquette`, `Sachet`, `Sans suremballage`) plutôt qu'une valeur détaillée (ex : « Caisse Ifco noire 6413 » → `Caisse`) — `Barquette`/`Sachet` ajoutés pour couvrir les mini légumes ; liste à étendre si un autre type de suremballage manque
+- `conditionnement` (ex : Sac 5kg, Barquette 250g, Tresse fourreau 1kg)
+- `suremballage` (ex : Palox, Carton, Caisse, Meuble, Coffret, Barquette, Sachet, Sans suremballage)
 - `actif`, `prixAchatDefaut`, `ordre`
 
-Champs volontairement **non conservés** : Code article, EAN13, Origine, Calibre, Catégorie, PCB Vte, Label, Préparation, Complément, Controle légumière, Marque, Poids U. Vte. Le champ `nom` (désignation) sert de clé d'unicité fonctionnelle : si un futur import contient un même produit sous deux codes différents (ex : ancien code numérique vs nouveau code alphanumérique), dédoublonner sur la désignation en gardant la ligne `Actif = OUI` en priorité.
+Champs volontairement **non conservés** : Code article, EAN13, Origine, Calibre, Catégorie, PCB Vte, Label, Préparation, Complément, Controle légumière, Marque, Poids U. Vte. Le champ `nom` (désignation) sert de clé d'unicité fonctionnelle.
 
-`Produits_initial.json` est un tableau vide par défaut (aucun catalogue pré-chargé) ; il documente le format attendu si un import en masse est refait plus tard (voir le champ **Import en masse (JSON)** de l'onglet Paramètres). Premières familles gérées : Oignon (Roscoff AOP), puis Mini légumes. Extension prévue à d'autres familles et, à terme, aux autres commerciaux (Nadine, Julien, Flo, Mickael, Stéphanie).
+`famille`, `variete`, `conditionnement` et `suremballage` sont **entièrement gérés par l'admin, sans liste figée dans le code** : dans l'onglet Paramètres, chacun des quatre champs est une liste déroulante alimentée par les valeurs déjà utilisées dans les produits existants, plus une option **« + Nouvelle... »** qui révèle un champ texte pour créer une valeur la première fois qu'elle est utilisée — elle réapparaît ensuite dans la liste déroulante pour les produits suivants. Aucun catalogue n'est pré-chargé (`Produits_initial.json` est un tableau vide, gardé comme documentation du format) ; l'admin construit sa liste produit par produit depuis l'app. Premières familles prévues : Oignon (Roscoff AOP), puis Mini légumes. Extension prévue à d'autres familles et, à terme, aux autres commerciaux (Nadine, Julien, Flo, Mickael, Stéphanie).
 
 ## Fichiers du dépôt
 
