@@ -60,7 +60,7 @@ Le schéma produit garde en tête un export possible du catalogue de l'entrepris
 - `famille` (ex : Oignon, Mini légumes)
 - `variete` (ex : Oignon de Roscoff, Mini carotte)
 - `conditionnement` (texte libre, ex : Sac 5kg, Barquette 250g, Tresse fourreau 1kg)
-- `suremballage` — catégorie générique choisie dans une liste fermée (`Palox`, `Carton`, `Caisse`, `Meuble`, `Coffret`, `Sans suremballage`) plutôt qu'une valeur détaillée (ex : « Caisse Ifco noire 6413 » → `Caisse`) — liste à étendre si un type de suremballage manque (ex : Barquette, Sachet pour les mini légumes)
+- `suremballage` — catégorie générique choisie dans une liste fermée (`Palox`, `Carton`, `Caisse`, `Meuble`, `Coffret`, `Barquette`, `Sachet`, `Sans suremballage`) plutôt qu'une valeur détaillée (ex : « Caisse Ifco noire 6413 » → `Caisse`) — `Barquette`/`Sachet` ajoutés pour couvrir les mini légumes ; liste à étendre si un autre type de suremballage manque
 - `actif`, `prixAchatDefaut`, `ordre`
 
 Champs volontairement **non conservés** : Code article, EAN13, Origine, Calibre, Catégorie, PCB Vte, Label, Préparation, Complément, Controle légumière, Marque, Poids U. Vte. Le champ `nom` (désignation) sert de clé d'unicité fonctionnelle : si un futur import contient un même produit sous deux codes différents (ex : ancien code numérique vs nouveau code alphanumérique), dédoublonner sur la désignation en gardant la ligne `Actif = OUI` en priorité.
