@@ -711,7 +711,7 @@
     document.getElementById('vue' + vue.charAt(0).toUpperCase() + vue.slice(1)).classList.add('actif');
 
     if (vue === 'production') rendreProduction();
-    else if (vue === 'achats') { chargerAchatsSiBesoin(); rendreAchats(); }
+    else if (vue === 'achats') { chargerAchatsSiBesoin(); rendreFormulaireAchat(); rendreAchats(); }
     else if (vue === 'commerce') rendreCommerce();
     else if (vue === 'prixAchat') rendrePrixAchat();
     else if (vue === 'historique') { chargerHistoriqueSiBesoin(); rendreHistorique(); }
@@ -805,11 +805,11 @@
       const cache = dernierStockParProduit[p.nom] || {};
       const stockVeille = typeof cache.valeur === 'number' ? cache.valeur : 0;
       const dejaSaisi = commerceDuJour[p.nom] || {};
-      const achats = achatsDuJourParProduit[p.nom] || 0;
+      const achatsAujourdhui = achatsDuJourParProduit[p.nom] || 0;
       const detailAchats = achatsDuJourDetailParProduit[p.nom] || [];
       const ventes = (typeof dejaSaisi.ventes === 'number') ? dejaSaisi.ventes : 0;
       let reservationsActuelles = (typeof p.reservations === 'number') ? p.reservations : 0;
-      const stockReel = stockVeille + achats - ventes;
+      const stockReel = stockVeille + achatsAujourdhui - ventes;
 
       const tr = document.createElement('tr');
       const tdNom = document.createElement('td');
@@ -822,7 +822,7 @@
 
       const tdAchats = document.createElement('td');
       tdAchats.className = 'centre mono';
-      tdAchats.textContent = achats;
+      tdAchats.textContent = achatsAujourdhui;
 
       const tdReel = document.createElement('td');
       tdReel.className = 'centre pastille-stock ' + (stockReel < 0 ? 'negatif' : 'positif');
@@ -856,7 +856,7 @@
             input.classList.add('enregistre');
             enregistrerTransaction(nomChamp, p.nom, v);
             const ve = v || 0;
-            const reel = stockVeille + achats - ve;
+            const reel = stockVeille + achatsAujourdhui - ve;
             tdReel.textContent = reel;
             tdReel.className = 'centre pastille-stock ' + (reel < 0 ? 'negatif' : 'positif');
             majDisponible(reel);
@@ -906,7 +906,7 @@
         btnDetail.textContent = ouvert ? '▸ Détail' : '▾ Détail';
         if (!ouvert) {
           let html = '';
-          html += '<strong>Achats aujourd\'hui (' + achats + ')</strong>';
+          html += '<strong>Achats aujourd\'hui (' + achatsAujourdhui + ')</strong>';
           if (detailAchats.length) {
             html += '<ul style="margin:6px 0 12px 18px; padding:0;">' + detailAchats.map(function (d) {
               const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
@@ -1067,6 +1067,11 @@
     const lignesValides = lignesAchatEnCours.filter(function (l) { return l.produit && l.quantite !== '' && l.quantite !== null && typeof l.quantite !== 'undefined'; });
     if (!lignesValides.length) {
       afficherToast('Ajoutez au moins une ligne produit avec une quantité');
+      return;
+    }
+    const ligneTransporteurSansNom = lignesValides.some(function (l) { return l.transportType === 'transporteur' && !l.transporteurNom.trim(); });
+    if (ligneTransporteurSansNom) {
+      afficherToast('Saisissez le nom du nouveau transporteur pour chaque ligne concernée');
       return;
     }
     const lignes = lignesValides.map(function (l) {
@@ -1261,8 +1266,12 @@
   }
 
   function rendreAchats() {
-    rendreFormulaireAchat();
-
+    // N'appelle volontairement PAS rendreFormulaireAchat() ici : cette fonction est
+    // déclenchée par tous les listeners Firestore (rendreVueActive) et par la recherche
+    // du récap, y compris pendant que l'utilisateur est en train de saisir une ligne
+    // d'achat — reconstruire le formulaire à chaque fois lui ferait perdre le focus/curseur
+    // en pleine frappe. Le formulaire n'est (re)construit que sur des actions structurelles
+    // explicites (ouverture de l'onglet, ajout/retrait de ligne, édition, annulation, envoi).
     const q = (document.getElementById('filtreAchats').value || '').toLowerCase();
     const corps = document.getElementById('corpsRecapAchats');
     corps.innerHTML = '';
