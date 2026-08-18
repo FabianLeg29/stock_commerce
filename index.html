@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suivi Stock — La Légumière</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<!-- Firebase (SDK "compat", pas de build nécessaire) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+
+<style>
+  :root {
+    --copper: #963E88;
+    --wave-1: #B23C92;
+    --wave-2: #5B2A66;
+    --copper-soft: #EAD7E6;
+    --bg: #E3DECF;
+    --panel: #FBF9F3;
+    --ink: #2B2620;
+    --ok: #2E7D32;
+    --ok-soft: #E8F5E9;
+    --danger: #B71C1C;
+    --danger-soft: #FBE9E7;
+    --line: #E4DED0;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+  h1, h2, h3, .brand { font-family: 'Fraunces', serif; }
+  input, select, button { font-family: 'Inter', sans-serif; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  .wave {
+    height: 18px;
+    background: linear-gradient(90deg, var(--wave-1), var(--wave-2));
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 24'><path d='M0 14 C40 22, 80 4, 130 12 C180 20, 220 2, 300 10' fill='none' stroke='black' stroke-width='4' stroke-linecap='round'/></svg>") repeat-x;
+    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 24'><path d='M0 14 C40 22, 80 4, 130 12 C180 20, 220 2, 300 10' fill='none' stroke='black' stroke-width='4' stroke-linecap='round'/></svg>") repeat-x;
+  }
+
+  /* ---------- Écran de connexion ---------- */
+  #ecranConnexion {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .carteConnexion {
+    background: var(--panel);
+    border-radius: 20px;
+    padding: 40px 36px;
+    max-width: 380px;
+    width: 100%;
+    box-shadow: 0 12px 30px rgba(43,38,32,0.12);
+    text-align: center;
+  }
+  .icone-legume {
+    width: 56px; height: 56px;
+    margin: 0 auto 12px auto;
+    border-radius: 50%;
+    background: var(--copper-soft);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+  }
+  .carteConnexion h1 { font-size: 22px; margin: 0 0 4px 0; color: var(--copper); }
+  .carteConnexion p.sous-titre { margin: 0 0 24px 0; color: #746a5e; font-size: 14px; }
+  .champ { text-align: left; margin-bottom: 14px; }
+  .champ label { display: block; font-size: 13px; color: #746a5e; margin-bottom: 6px; }
+  .champ input {
+    width: 100%; padding: 12px 14px; border-radius: 10px;
+    border: 1.5px solid var(--line); font-size: 15px; background: white;
+  }
+  .champ input:focus { outline: none; border-color: var(--copper); }
+  .bouton {
+    display: inline-block; padding: 12px 20px; border-radius: 10px; border: none;
+    font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; text-align: center;
+  }
+  .bouton-principal { background: var(--copper); color: white; width: 100%; margin-top: 6px; }
+  .bouton-principal:hover { background: var(--wave-2); }
+  .erreur { color: var(--danger); font-size: 13px; margin-top: 10px; min-height: 16px; }
+
+  /* ---------- App ---------- */
+  #app { display: none; min-height: 100vh; flex-direction: column; }
+  header.entete {
+    background: var(--panel);
+    padding: 14px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  header.entete .titre { display: flex; align-items: center; gap: 10px; }
+  header.entete h1 { font-size: 19px; margin: 0; color: var(--copper); }
+  .badge-role {
+    display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+    background: var(--copper-soft); color: var(--copper);
+  }
+  .infos-utilisateur { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #746a5e; }
+  .lien-deco { color: var(--copper); text-decoration: underline; cursor: pointer; font-size: 13px; background: none; border: none; }
+
+  nav.onglets {
+    display: flex; gap: 4px; padding: 8px 16px 0 16px; background: var(--panel);
+    border-bottom: 1px solid var(--line); overflow-x: auto;
+  }
+  nav.onglets button {
+    border: none; background: transparent; padding: 10px 16px; font-size: 14px; font-weight: 600;
+    color: #8a8072; cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap;
+  }
+  nav.onglets button.actif { color: var(--copper); border-bottom-color: var(--copper); }
+
+  main { flex: 1; padding: 18px; max-width: 1100px; margin: 0 auto; width: 100%; }
+  .vue { display: none; }
+  .vue.actif { display: block; }
+
+  .barre-outils {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px;
+  }
+  .barre-outils input[type=text] {
+    flex: 1; min-width: 200px; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line);
+    font-size: 14px; background: var(--panel);
+  }
+  .date-du-jour { font-size: 13px; color: #746a5e; }
+
+  .carte-tableau {
+    background: var(--panel); border-radius: 14px; overflow: hidden; box-shadow: 0 2px 10px rgba(43,38,32,0.06);
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); font-size: 14px; }
+  th { background: var(--copper-soft); color: var(--copper); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; }
+  td.produit { font-weight: 600; }
+  td.centre, th.centre { text-align: center; }
+
+  input.champ-valeur {
+    width: 90px; padding: 8px; font-size: 15px; font-weight: 600; text-align: center;
+    border: 1.5px solid var(--line); border-radius: 8px; background: white;
+  }
+  input.champ-valeur.enregistre { border-color: var(--ok); background: var(--ok-soft); }
+  input.champ-valeur:disabled { background: #f0eee7; color: #999; }
+
+  .pastille-stock { font-weight: 700; }
+  .pastille-stock.negatif { color: var(--danger); }
+  .pastille-stock.positif { color: var(--ok); }
+
+  .toggle {
+    display: inline-block; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 13px;
+    cursor: pointer; user-select: none; border: 2px solid transparent;
+  }
+  .toggle.oui { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
+  .toggle.non { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+  .toggle.lecture-seule { cursor: default; opacity: 0.7; }
+
+  .ligne-ajout { display: flex; gap: 8px; margin-bottom: 14px; }
+  .ligne-ajout input { flex: 1; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line); font-size: 14px; }
+  .ligne-ajout button { background: var(--copper); color: white; border: none; border-radius: 10px; padding: 0 20px; font-weight: 600; cursor: pointer; }
+
+  .section-titre { font-size: 15px; margin: 26px 0 10px 0; color: var(--copper); }
+
+  select.select-role {
+    padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 13px; background: white;
+  }
+
+  .vide { padding: 40px; text-align: center; color: #a49a89; }
+
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: white; padding: 11px 22px; border-radius: 24px;
+    font-size: 13px; opacity: 0; transition: opacity 0.25s; pointer-events: none; z-index: 50;
+  }
+  .toast.show { opacity: 1; }
+
+  .bouton-secondaire {
+    background: white; border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 16px;
+    font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer;
+  }
+
+  @media (max-width: 640px) {
+    main { padding: 12px; }
+    th, td { padding: 9px 10px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- =========================================================
+     ÉCRAN DE CONNEXION
+     ========================================================= -->
+<div id="ecranConnexion">
+  <div class="carteConnexion">
+    <div class="wave" style="margin: -40px -36px 20px -36px; border-radius: 20px 20px 0 0;"></div>
+    <div class="icone-legume">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 7L12 3L21 7L12 11L3 7Z" stroke="#963E88" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M3 7V17L12 21V11" stroke="#963E88" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M21 7V17L12 21" stroke="#963E88" stroke-width="1.6" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>Suivi Stock</h1>
+    <p class="sous-titre">La Légumière — Production &amp; Commerce</p>
+    <form id="formConnexion" onsubmit="return false;">
+      <div class="champ">
+        <label for="champEmail">Adresse email</label>
+        <input type="email" id="champEmail" autocomplete="username" required>
+      </div>
+      <div class="champ">
+        <label for="champMdp">Mot de passe</label>
+        <input type="password" id="champMdp" autocomplete="current-password" required>
+      </div>
+      <button class="bouton bouton-principal" id="boutonConnexion" type="submit">Se connecter</button>
+      <div class="erreur" id="erreurConnexion"></div>
+    </form>
+  </div>
+</div>
+
+<!-- =========================================================
+     APPLICATION
+     ========================================================= -->
+<div id="app">
+  <div class="wave"></div>
+  <header class="entete">
+    <div class="titre">
+      <h1>Suivi Stock — La Légumière</h1>
+    </div>
+    <div class="infos-utilisateur">
+      <span id="emailUtilisateur"></span>
+      <span class="badge-role" id="badgeRole"></span>
+      <button class="lien-deco" onclick="deconnexion()">Se déconnecter</button>
+    </div>
+  </header>
+
+  <nav class="onglets">
+    <button data-vue="production" onclick="allerA('production')">Production</button>
+    <button data-vue="commerce" onclick="allerA('commerce')">Commerce</button>
+    <button data-vue="historique" onclick="allerA('historique')">Historique</button>
+    <button data-vue="parametres" id="ongletParametres" onclick="allerA('parametres')" style="display:none;">Paramètres</button>
+  </nav>
+
+  <main>
+    <!-- ---------------- PRODUCTION ---------------- -->
+    <div class="vue" id="vueProduction">
+      <div class="barre-outils">
+        <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
+        <span class="date-du-jour" id="dateProduction"></span>
+      </div>
+      <div class="carte-tableau">
+        <table>
+          <thead><tr><th>Produit</th><th class="centre" style="width:130px;">Stock du soir</th><th style="width:30px;"></th></tr></thead>
+          <tbody id="corpsProduction"></tbody>
+        </table>
+        <div class="vide" id="videProduction" style="display:none;">Aucun produit actif pour le moment.</div>
+      </div>
+    </div>
+
+    <!-- ---------------- COMMERCE ---------------- -->
+    <div class="vue" id="vueCommerce">
+      <div class="barre-outils">
+        <input type="text" id="filtreCommerce" placeholder="Rechercher un produit..." oninput="rendreCommerce()">
+        <span class="date-du-jour" id="dateCommerce"></span>
+      </div>
+      <div class="carte-tableau">
+        <table>
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th class="centre">Dernier stock connu</th>
+              <th class="centre">Achats</th>
+              <th class="centre">Ventes</th>
+              <th class="centre">Prix d'achat</th>
+              <th class="centre">Stock réel</th>
+            </tr>
+          </thead>
+          <tbody id="corpsCommerce"></tbody>
+        </table>
+        <div class="vide" id="videCommerce" style="display:none;">Aucun produit actif pour le moment.</div>
+      </div>
+    </div>
+
+    <!-- ---------------- HISTORIQUE ---------------- -->
+    <div class="vue" id="vueHistorique">
+      <div class="barre-outils">
+        <input type="text" id="filtreHistorique" placeholder="Rechercher (produit, type, responsable)..." oninput="rendreHistorique()">
+        <button class="bouton-secondaire" onclick="exporterHistoriqueCSV()">Exporter CSV</button>
+      </div>
+      <div class="carte-tableau">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Type</th><th>Produit</th><th class="centre">Valeur</th><th>Responsable</th><th style="width:30px;"></th></tr>
+          </thead>
+          <tbody id="corpsHistorique"></tbody>
+        </table>
+        <div class="vide" id="videHistorique" style="display:none;">Aucun mouvement pour l'instant.</div>
+      </div>
+    </div>
+
+    <!-- ---------------- PARAMETRES (admin) ---------------- -->
+    <div class="vue" id="vueParametres">
+      <h3 class="section-titre" style="margin-top:0;">Produits</h3>
+      <div class="ligne-ajout">
+        <input type="text" id="nouveauProduit" placeholder="Nom du nouveau produit...">
+        <button onclick="ajouterProduit()">Ajouter</button>
+      </div>
+      <div class="carte-tableau">
+        <table>
+          <thead><tr><th>Produit</th><th class="centre">Prix d'achat par défaut</th><th class="centre">Actif</th></tr></thead>
+          <tbody id="corpsProduits"></tbody>
+        </table>
+      </div>
+
+      <h3 class="section-titre">Comptes</h3>
+      <div class="carte-tableau">
+        <table>
+          <thead><tr><th>Email</th><th class="centre">Rôle</th></tr></thead>
+          <tbody id="corpsComptes"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ============================================================
+  // CONFIGURATION FIREBASE — À REMPLIER
+  // Voir SETUP-FIREBASE.md : créez un projet Firebase (Auth email/
+  // mot de passe + Firestore) et collez ici la config donnée par
+  // la console Firebase (Paramètres du projet > Vos applications).
+  // ============================================================
+  const firebaseConfig = {
+    apiKey: "REMPLACER_apiKey",
+    authDomain: "REMPLACER.firebaseapp.com",
+    projectId: "REMPLACER_projectId",
+    storageBucket: "REMPLACER.appspot.com",
+    messagingSenderId: "REMPLACER_senderId",
+    appId: "REMPLACER_appId"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  // ============================================================
+  // ÉTAT LOCAL
+  // ============================================================
+  let utilisateurCourant = null;   // { uid, email }
+  let roleCourant = 'viewer';      // 'admin' | 'commerce' | 'production' | 'viewer'
+  let produits = [];               // [{ nom, actif, prixAchatDefaut, ordre }]
+  let dernierStockParProduit = {}; // { nom: { valeur, date } }
+  let saisieDuJour = {};           // { nom: stockSoir }
+  let commerceDuJour = {};         // { nom: { achats, ventes, prixAchat } }
+  let historique = [];             // [{ id, date, type, produit, valeur, responsable, horodatage }]
+  let comptes = [];                // [{ uid, email, role }]
+  let desabonnements = [];         // fonctions unsubscribe des listeners Firestore
+  let vueActive = 'production';
+  let historiqueCharge = false;
+
+  const AUJOURD_HUI = new Date().toISOString().slice(0, 10);
+
+  // ============================================================
+  // UTILITAIRES
+  // ============================================================
+  function slugify(texte) {
+    return String(texte)
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  function idJourProduit(date, produit) {
+    return date + '__' + slugify(produit);
+  }
+
+  function afficherToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function () { t.classList.remove('show'); }, 1600);
+  }
+
+  function peutSaisirProduction() { return roleCourant === 'production' || roleCourant === 'admin'; }
+  function peutGererCommerce() { return roleCourant === 'commerce' || roleCourant === 'admin'; }
+  function estAdmin() { return roleCourant === 'admin'; }
+
+  function libelleRole(r) {
+    return { admin: 'Administrateur', commerce: 'Commerce', production: 'Production', viewer: 'Consultation' }[r] || r;
+  }
+
+  // ============================================================
+  // AUTHENTIFICATION
+  // ============================================================
+  document.getElementById('formConnexion').addEventListener('submit', function () {
+    const email = document.getElementById('champEmail').value.trim();
+    const mdp = document.getElementById('champMdp').value;
+    const erreurEl = document.getElementById('erreurConnexion');
+    erreurEl.textContent = '';
+    auth.signInWithEmailAndPassword(email, mdp).catch(function (err) {
+      erreurEl.textContent = "Connexion impossible : email ou mot de passe incorrect.";
+      console.error(err);
+    });
+  });
+
+  function deconnexion() {
+    detacherListeners();
+    auth.signOut();
+  }
+  window.deconnexion = deconnexion;
+
+  auth.onAuthStateChanged(function (user) {
+    if (user) {
+      utilisateurCourant = { uid: user.uid, email: user.email };
+      obtenirOuCreerRole(user.uid, user.email).then(function (role) {
+        roleCourant = role;
+        document.getElementById('ecranConnexion').style.display = 'none';
+        document.getElementById('app').style.display = 'flex';
+        document.getElementById('emailUtilisateur').textContent = user.email;
+        document.getElementById('badgeRole').textContent = libelleRole(role);
+        document.getElementById('ongletParametres').style.display = estAdmin() ? '' : 'none';
+        attacherListeners();
+        allerA('production');
+      });
+    } else {
+      utilisateurCourant = null;
+      roleCourant = 'viewer';
+      document.getElementById('app').style.display = 'none';
+      document.getElementById('ecranConnexion').style.display = 'flex';
+    }
+  });
+
+  function obtenirOuCreerRole(uid, email) {
+    const ref = db.collection('users').doc(uid);
+    return ref.get().then(function (snap) {
+      if (snap.exists) return snap.data().role || 'viewer';
+      return ref.set({ email: email, role: 'viewer' }).then(function () { return 'viewer'; });
+    });
+  }
+
+  // ============================================================
+  // LISTENERS TEMPS RÉEL
+  // ============================================================
+  function attacherListeners() {
+    detacherListeners();
+
+    desabonnements.push(
+      db.collection('produits').doc('main').onSnapshot(function (snap) {
+        const data = snap.exists ? snap.data() : { liste: [] };
+        produits = (data.liste || []).slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); });
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
+      db.collection('dernierStock').doc('main').onSnapshot(function (snap) {
+        dernierStockParProduit = snap.exists ? (snap.data() || {}) : {};
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
+      db.collection('saisieStock').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
+        const out = {};
+        qs.forEach(function (doc) { out[doc.data().produit] = doc.data().stockSoir; });
+        saisieDuJour = out;
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
+      db.collection('commerce').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
+        const out = {};
+        qs.forEach(function (doc) {
+          const d = doc.data();
+          out[d.produit] = { achats: d.achats, ventes: d.ventes, prixAchat: d.prixAchat };
+        });
+        commerceDuJour = out;
+        rendreVueActive();
+      })
+    );
+
+    if (estAdmin()) {
+      desabonnements.push(
+        db.collection('users').onSnapshot(function (qs) {
+          const out = [];
+          qs.forEach(function (doc) { out.push({ uid: doc.id, email: doc.data().email, role: doc.data().role }); });
+          comptes = out;
+          if (vueActive === 'parametres') rendreParametres();
+        })
+      );
+    }
+  }
+
+  function detacherListeners() {
+    desabonnements.forEach(function (fn) { try { fn(); } catch (e) {} });
+    desabonnements = [];
+    historiqueCharge = false;
+  }
+
+  function chargerHistoriqueSiBesoin() {
+    if (historiqueCharge) return;
+    historiqueCharge = true;
+    desabonnements.push(
+      db.collection('transactions').orderBy('horodatage', 'desc').limit(300).onSnapshot(function (qs) {
+        const out = [];
+        qs.forEach(function (doc) {
+          const d = doc.data();
+          out.push({
+            id: doc.id, date: d.date, type: d.type, produit: d.produit,
+            valeur: d.valeur, responsable: d.responsable,
+            horodatage: d.horodatage && d.horodatage.toDate ? d.horodatage.toDate() : null
+          });
+        });
+        historique = out;
+        if (vueActive === 'historique') rendreHistorique();
+      })
+    );
+  }
+
+  function enregistrerTransaction(type, produit, valeur) {
+    db.collection('transactions').add({
+      date: AUJOURD_HUI, type: type, produit: produit, valeur: valeur,
+      responsable: utilisateurCourant ? utilisateurCourant.email : '?',
+      horodatage: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(function (e) { console.error(e); });
+  }
+
+  // ============================================================
+  // NAVIGATION
+  // ============================================================
+  function allerA(vue) {
+    vueActive = vue;
+    document.querySelectorAll('nav.onglets button').forEach(function (b) {
+      b.classList.toggle('actif', b.dataset.vue === vue);
+    });
+    document.querySelectorAll('main .vue').forEach(function (v) { v.classList.remove('actif'); });
+    document.getElementById('vue' + vue.charAt(0).toUpperCase() + vue.slice(1)).classList.add('actif');
+
+    if (vue === 'production') rendreProduction();
+    else if (vue === 'commerce') rendreCommerce();
+    else if (vue === 'historique') { chargerHistoriqueSiBesoin(); rendreHistorique(); }
+    else if (vue === 'parametres') rendreParametres();
+  }
+  window.allerA = allerA;
+
+  function rendreVueActive() {
+    if (vueActive === 'production') rendreProduction();
+    else if (vueActive === 'commerce') rendreCommerce();
+    else if (vueActive === 'parametres') rendreParametres();
+  }
+
+  // ============================================================
+  // PRODUCTION
+  // ============================================================
+  function rendreProduction() {
+    document.getElementById('dateProduction').textContent = 'Soir du ' + AUJOURD_HUI;
+    const q = (document.getElementById('filtreProduction').value || '').toLowerCase();
+    const actifs = produits.filter(function (p) { return p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
+    const corps = document.getElementById('corpsProduction');
+    corps.innerHTML = '';
+    document.getElementById('videProduction').style.display = actifs.length ? 'none' : 'block';
+
+    actifs.forEach(function (p) {
+      const tr = document.createElement('tr');
+      const tdNom = document.createElement('td');
+      tdNom.className = 'produit';
+      tdNom.textContent = p.nom;
+
+      const tdVal = document.createElement('td');
+      tdVal.className = 'centre';
+      const valeurActuelle = (typeof saisieDuJour[p.nom] !== 'undefined') ? saisieDuJour[p.nom] : '';
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.className = 'champ-valeur' + (valeurActuelle !== '' ? ' enregistre' : '');
+      input.value = valeurActuelle;
+      input.disabled = !peutSaisirProduction();
+
+      const tdStatut = document.createElement('td');
+      tdStatut.className = 'centre mono';
+
+      input.addEventListener('change', function () {
+        const valeur = input.value === '' ? null : Number(input.value);
+        input.classList.remove('enregistre');
+        const ref = db.collection('saisieStock').doc(idJourProduit(AUJOURD_HUI, p.nom));
+        const refCache = db.collection('dernierStock').doc('main');
+        const lot = db.batch();
+        lot.set(ref, {
+          date: AUJOURD_HUI, produit: p.nom, stockSoir: valeur,
+          horodatage: firebase.firestore.FieldValue.serverTimestamp(),
+          responsable: utilisateurCourant.email
+        }, { merge: true });
+        const majCache = {};
+        majCache[p.nom] = { valeur: valeur, date: AUJOURD_HUI };
+        lot.set(refCache, majCache, { merge: true });
+        lot.commit().then(function () {
+          input.classList.add('enregistre');
+          tdStatut.textContent = 'OK';
+          enregistrerTransaction('stock_soir', p.nom, valeur);
+          afficherToast(p.nom + ' enregistré');
+        }).catch(function (err) {
+          afficherToast('Erreur : ' + err.message);
+        });
+      });
+
+      tdVal.appendChild(input);
+      tr.appendChild(tdNom);
+      tr.appendChild(tdVal);
+      tr.appendChild(tdStatut);
+      corps.appendChild(tr);
+    });
+  }
+  window.rendreProduction = rendreProduction;
+
+  // ============================================================
+  // COMMERCE
+  // ============================================================
+  function rendreCommerce() {
+    document.getElementById('dateCommerce').textContent = "Aujourd'hui " + AUJOURD_HUI;
+    const q = (document.getElementById('filtreCommerce').value || '').toLowerCase();
+    const actifs = produits.filter(function (p) { return p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
+    const corps = document.getElementById('corpsCommerce');
+    corps.innerHTML = '';
+    document.getElementById('videCommerce').style.display = actifs.length ? 'none' : 'block';
+
+    actifs.forEach(function (p) {
+      const cache = dernierStockParProduit[p.nom] || {};
+      const stockVeille = typeof cache.valeur === 'number' ? cache.valeur : 0;
+      const dejaSaisi = commerceDuJour[p.nom] || {};
+      const achats = (typeof dejaSaisi.achats === 'number') ? dejaSaisi.achats : 0;
+      const ventes = (typeof dejaSaisi.ventes === 'number') ? dejaSaisi.ventes : 0;
+      const prixAchat = (typeof dejaSaisi.prixAchat !== 'undefined' && dejaSaisi.prixAchat !== null)
+        ? dejaSaisi.prixAchat : p.prixAchatDefaut;
+      const stockReel = stockVeille + achats - ventes;
+
+      const tr = document.createElement('tr');
+      const tdNom = document.createElement('td');
+      tdNom.className = 'produit';
+      tdNom.textContent = p.nom;
+
+      const tdVeille = document.createElement('td');
+      tdVeille.className = 'centre mono';
+      tdVeille.textContent = stockVeille + (cache.date ? ' (' + cache.date + ')' : '');
+
+      const tdReel = document.createElement('td');
+      tdReel.className = 'centre pastille-stock ' + (stockReel < 0 ? 'negatif' : 'positif');
+      tdReel.textContent = stockReel;
+
+      function champ(valeur, nomChamp) {
+        const td = document.createElement('td');
+        td.className = 'centre';
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = 'any';
+        input.min = '0';
+        input.className = 'champ-valeur' + (valeur !== '' && valeur !== null && typeof valeur !== 'undefined' ? ' enregistre' : '');
+        input.value = (valeur === null || typeof valeur === 'undefined') ? '' : valeur;
+        input.disabled = !peutGererCommerce();
+        input.addEventListener('change', function () {
+          input.classList.remove('enregistre');
+          const v = input.value === '' ? null : Number(input.value);
+          const ref = db.collection('commerce').doc(idJourProduit(AUJOURD_HUI, p.nom));
+          const donnees = { date: AUJOURD_HUI, produit: p.nom, horodatage: firebase.firestore.FieldValue.serverTimestamp(), responsable: utilisateurCourant.email };
+          donnees[nomChamp] = v;
+          ref.set(donnees, { merge: true }).then(function () {
+            input.classList.add('enregistre');
+            enregistrerTransaction(nomChamp, p.nom, v);
+            const a = nomChamp === 'achats' ? v || 0 : achats;
+            const ve = nomChamp === 'ventes' ? v || 0 : ventes;
+            tdReel.textContent = stockVeille + a - ve;
+            tdReel.className = 'centre pastille-stock ' + ((stockVeille + a - ve) < 0 ? 'negatif' : 'positif');
+            afficherToast(p.nom + ' mis à jour');
+          }).catch(function (err) { afficherToast('Erreur : ' + err.message); });
+        });
+        td.appendChild(input);
+        return td;
+      }
+
+      tr.appendChild(tdNom);
+      tr.appendChild(tdVeille);
+      tr.appendChild(champ(achats, 'achats'));
+      tr.appendChild(champ(ventes, 'ventes'));
+      tr.appendChild(champ(prixAchat, 'prixAchat'));
+      tr.appendChild(tdReel);
+      corps.appendChild(tr);
+    });
+  }
+  window.rendreCommerce = rendreCommerce;
+
+  // ============================================================
+  // HISTORIQUE
+  // ============================================================
+  function rendreHistorique() {
+    const q = (document.getElementById('filtreHistorique').value || '').toLowerCase();
+    const filtres = historique.filter(function (h) {
+      return !q || (h.produit || '').toLowerCase().indexOf(q) !== -1 ||
+        (h.type || '').toLowerCase().indexOf(q) !== -1 ||
+        (h.responsable || '').toLowerCase().indexOf(q) !== -1;
+    });
+    const corps = document.getElementById('corpsHistorique');
+    corps.innerHTML = '';
+    document.getElementById('videHistorique').style.display = filtres.length ? 'none' : 'block';
+
+    filtres.forEach(function (h) {
+      const tr = document.createElement('tr');
+      const tdDate = document.createElement('td');
+      tdDate.className = 'mono';
+      tdDate.textContent = h.horodatage ? h.horodatage.toLocaleString('fr-FR') : h.date;
+      const tdType = document.createElement('td');
+      tdType.textContent = libelleTypeTransaction(h.type);
+      const tdProduit = document.createElement('td');
+      tdProduit.textContent = h.produit;
+      const tdValeur = document.createElement('td');
+      tdValeur.className = 'centre mono';
+      tdValeur.textContent = (h.valeur === null || typeof h.valeur === 'undefined') ? '—' : h.valeur;
+      const tdResp = document.createElement('td');
+      tdResp.textContent = h.responsable;
+      const tdAction = document.createElement('td');
+      if (estAdmin()) {
+        const btn = document.createElement('button');
+        btn.className = 'bouton-secondaire';
+        btn.textContent = 'Suppr.';
+        btn.onclick = function () {
+          db.collection('transactions').doc(h.id).delete().catch(function (e) { afficherToast('Erreur : ' + e.message); });
+        };
+        tdAction.appendChild(btn);
+      }
+      tr.appendChild(tdDate); tr.appendChild(tdType); tr.appendChild(tdProduit);
+      tr.appendChild(tdValeur); tr.appendChild(tdResp); tr.appendChild(tdAction);
+      corps.appendChild(tr);
+    });
+  }
+  window.rendreHistorique = rendreHistorique;
+
+  function libelleTypeTransaction(t) {
+    return {
+      stock_soir: 'Stock du soir', achats: 'Achats', ventes: 'Ventes', prixAchat: "Prix d'achat",
+      produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté'
+    }[t] || t;
+  }
+
+  function exporterHistoriqueCSV() {
+    const lignes = [['Date', 'Type', 'Produit', 'Valeur', 'Responsable']];
+    historique.forEach(function (h) {
+      lignes.push([h.date, libelleTypeTransaction(h.type), h.produit, h.valeur, h.responsable]);
+    });
+    const csv = lignes.map(function (l) { return l.map(function (c) { return '"' + String(c === null || typeof c === 'undefined' ? '' : c).replace(/"/g, '""') + '"'; }).join(';'); }).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'historique_stock_' + AUJOURD_HUI + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  window.exporterHistoriqueCSV = exporterHistoriqueCSV;
+
+  // ============================================================
+  // PARAMETRES (admin)
+  // ============================================================
+  function rendreParametres() {
+    if (!estAdmin()) return;
+    const corpsProduits = document.getElementById('corpsProduits');
+    corpsProduits.innerHTML = '';
+    produits.forEach(function (p) {
+      const tr = document.createElement('tr');
+      const tdNom = document.createElement('td');
+      tdNom.className = 'produit';
+      tdNom.textContent = p.nom;
+
+      const tdPrix = document.createElement('td');
+      tdPrix.className = 'centre';
+      const inputPrix = document.createElement('input');
+      inputPrix.type = 'number';
+      inputPrix.step = 'any';
+      inputPrix.className = 'champ-valeur';
+      inputPrix.value = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '' : p.prixAchatDefaut;
+      inputPrix.addEventListener('change', function () {
+        modifierProduit(p.nom, { prixAchatDefaut: inputPrix.value === '' ? null : Number(inputPrix.value) });
+      });
+      tdPrix.appendChild(inputPrix);
+
+      const tdActif = document.createElement('td');
+      tdActif.className = 'centre';
+      const span = document.createElement('span');
+      span.className = 'toggle ' + (p.actif ? 'oui' : 'non');
+      span.textContent = p.actif ? 'Actif' : 'Inactif';
+      span.onclick = function () {
+        modifierProduit(p.nom, { actif: !p.actif });
+        enregistrerTransaction('produit_actif', p.nom, !p.actif ? 'Oui' : 'Non');
+      };
+      tdActif.appendChild(span);
+
+      tr.appendChild(tdNom); tr.appendChild(tdPrix); tr.appendChild(tdActif);
+      corpsProduits.appendChild(tr);
+    });
+
+    const corpsComptes = document.getElementById('corpsComptes');
+    corpsComptes.innerHTML = '';
+    comptes.forEach(function (c) {
+      const tr = document.createElement('tr');
+      const tdEmail = document.createElement('td');
+      tdEmail.textContent = c.email;
+      const tdRole = document.createElement('td');
+      tdRole.className = 'centre';
+      const select = document.createElement('select');
+      select.className = 'select-role';
+      ['admin', 'commerce', 'production', 'viewer'].forEach(function (r) {
+        const opt = document.createElement('option');
+        opt.value = r; opt.textContent = libelleRole(r);
+        if (r === c.role) opt.selected = true;
+        select.appendChild(opt);
+      });
+      const estSoiMeme = utilisateurCourant && utilisateurCourant.uid === c.uid;
+      select.disabled = estSoiMeme;
+      if (estSoiMeme) select.title = "Vous ne pouvez pas modifier votre propre rôle.";
+      select.addEventListener('change', function () {
+        db.collection('users').doc(c.uid).update({ role: select.value }).then(function () {
+          afficherToast('Rôle mis à jour pour ' + c.email);
+        }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+      });
+      tdRole.appendChild(select);
+      tr.appendChild(tdEmail); tr.appendChild(tdRole);
+      corpsComptes.appendChild(tr);
+    });
+  }
+  window.rendreParametres = rendreParametres;
+
+  function modifierProduit(nom, champs) {
+    const nouvelleListe = produits.map(function (p) {
+      return p.nom === nom ? Object.assign({}, p, champs) : p;
+    });
+    db.collection('produits').doc('main').set({ liste: nouvelleListe }).catch(function (e) {
+      afficherToast('Erreur : ' + e.message);
+    });
+  }
+
+  function ajouterProduit() {
+    const input = document.getElementById('nouveauProduit');
+    const nom = input.value.trim();
+    if (!nom) return;
+    if (produits.some(function (p) { return p.nom.toLowerCase() === nom.toLowerCase(); })) {
+      afficherToast('Ce produit existe déjà');
+      return;
+    }
+    const ordreMax = produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0);
+    const nouvelleListe = produits.concat([{ nom: nom, actif: true, prixAchatDefaut: null, ordre: ordreMax + 1 }]);
+    db.collection('produits').doc('main').set({ liste: nouvelleListe }).then(function () {
+      input.value = '';
+      enregistrerTransaction('produit_ajoute', nom, null);
+      afficherToast(nom + ' ajouté');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.ajouterProduit = ajouterProduit;
+
+})();
+</script>
+</body>
+</html>

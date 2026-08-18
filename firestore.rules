@@ -1,0 +1,78 @@
+rules_version = '2';
+
+// ============================================================
+// Suivi Stock — La Légumière
+// Rôles (stockés dans users/{uid}.role) :
+//   admin      : tout, y compris gestion des comptes et des produits
+//   commerce   : achats / ventes / prix d'achat (collection "commerce")
+//   production : stock du soir (collection "saisieStock")
+//   viewer     : lecture seule partout (rôle par défaut)
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function connecte() {
+      return request.auth != null;
+    }
+
+    function monRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function estAdmin() {
+      return connecte() && monRole() == 'admin';
+    }
+
+    function estCommerce() {
+      return connecte() && (monRole() == 'commerce' || monRole() == 'admin');
+    }
+
+    function estProduction() {
+      return connecte() && (monRole() == 'production' || monRole() == 'admin');
+    }
+
+    // ---- Comptes / rôles ----
+    match /users/{uid} {
+      allow read: if connecte();
+      // Un compte ne peut pas modifier son propre rôle (sécurité anti-blocage).
+      // Auto-création à la 1ère connexion, uniquement pour soi-même et uniquement en rôle 'viewer'
+      // (empêche qu'un utilisateur se crée directement en 'admin' en contournant l'application).
+      allow create: if connecte() && request.auth.uid == uid && request.resource.data.role == 'viewer';
+      allow update: if estAdmin() && request.auth.uid != uid;
+      allow delete: if estAdmin() && request.auth.uid != uid;
+    }
+
+    // ---- Liste des produits (actif / prix par défaut) ----
+    match /produits/{docId} {
+      allow read: if connecte();
+      allow write: if estAdmin();
+    }
+
+    // ---- Cache "dernier stock connu" par produit (mis à jour par la Production) ----
+    match /dernierStock/{docId} {
+      allow read: if connecte();
+      allow write: if estProduction() || estCommerce();
+    }
+
+    // ---- Saisie du stock du soir (Production) ----
+    match /saisieStock/{docId} {
+      allow read: if connecte();
+      allow write: if estProduction();
+    }
+
+    // ---- Achats / ventes / prix (Commerce) ----
+    match /commerce/{docId} {
+      allow read: if connecte();
+      allow write: if estCommerce();
+    }
+
+    // ---- Historique (journal des actions) ----
+    match /transactions/{docId} {
+      allow read: if connecte();
+      allow create: if estProduction() || estCommerce();
+      allow update: if false;
+      allow delete: if estAdmin();
+    }
+  }
+}
