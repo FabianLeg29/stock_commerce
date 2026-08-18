@@ -158,8 +158,8 @@
   .toggle.non { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
   .toggle.lecture-seule { cursor: default; opacity: 0.7; }
 
-  .ligne-ajout { display: flex; gap: 8px; margin-bottom: 14px; }
-  .ligne-ajout input { flex: 1; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line); font-size: 14px; }
+  .ligne-ajout { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .ligne-ajout input, .ligne-ajout select { flex: 1 1 160px; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line); font-size: 14px; background: white; }
   .ligne-ajout button { background: var(--copper); color: white; border: none; border-radius: 10px; padding: 0 20px; font-weight: 600; cursor: pointer; }
 
   .section-titre { font-size: 15px; margin: 26px 0 10px 0; color: var(--copper); }
@@ -322,12 +322,24 @@
     <div class="vue" id="vueParametres">
       <h3 class="section-titre" style="margin-top:0;">Produits</h3>
       <div class="ligne-ajout">
-        <input type="text" id="nouveauProduit" placeholder="Nom du nouveau produit...">
+        <input type="text" id="nouveauProduit" placeholder="Désignation du produit...">
+        <input type="text" id="nouvelleFamille" placeholder="Famille (ex : Oignon)">
+        <input type="text" id="nouvelleVariete" placeholder="Variété (ex : Oignon de Roscoff)">
+        <input type="text" id="nouveauConditionnement" placeholder="Conditionnement (ex : Sac 5kg)">
+        <select id="nouveauSuremballage">
+          <option value="">Suremballage...</option>
+          <option value="Palox">Palox</option>
+          <option value="Carton">Carton</option>
+          <option value="Caisse">Caisse</option>
+          <option value="Meuble">Meuble</option>
+          <option value="Coffret">Coffret</option>
+          <option value="Sans suremballage">Sans suremballage</option>
+        </select>
         <button onclick="ajouterProduit()">Ajouter</button>
       </div>
       <div class="carte-tableau">
         <table>
-          <thead><tr><th>Produit</th><th class="centre">Prix d'achat par défaut</th><th class="centre">Actif</th></tr></thead>
+          <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Prix d'achat par défaut</th><th class="centre">Actif</th></tr></thead>
           <tbody id="corpsProduits"></tbody>
         </table>
       </div>
@@ -805,6 +817,18 @@
       tdNom.className = 'produit';
       tdNom.textContent = p.nom;
 
+      const tdFamille = document.createElement('td');
+      tdFamille.textContent = p.famille || '';
+
+      const tdVariete = document.createElement('td');
+      tdVariete.textContent = p.variete || '';
+
+      const tdConditionnement = document.createElement('td');
+      tdConditionnement.textContent = p.conditionnement || '';
+
+      const tdSuremballage = document.createElement('td');
+      tdSuremballage.textContent = p.suremballage || '';
+
       const tdPrix = document.createElement('td');
       tdPrix.className = 'centre';
       const inputPrix = document.createElement('input');
@@ -828,7 +852,9 @@
       };
       tdActif.appendChild(span);
 
-      tr.appendChild(tdNom); tr.appendChild(tdPrix); tr.appendChild(tdActif);
+      tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete);
+      tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
+      tr.appendChild(tdPrix); tr.appendChild(tdActif);
       corpsProduits.appendChild(tr);
     });
 
@@ -874,6 +900,10 @@
 
   function ajouterProduit() {
     const input = document.getElementById('nouveauProduit');
+    const champFamille = document.getElementById('nouvelleFamille');
+    const champVariete = document.getElementById('nouvelleVariete');
+    const champConditionnement = document.getElementById('nouveauConditionnement');
+    const champSuremballage = document.getElementById('nouveauSuremballage');
     const nom = input.value.trim();
     if (!nom) return;
     if (produits.some(function (p) { return p.nom.toLowerCase() === nom.toLowerCase(); })) {
@@ -881,9 +911,22 @@
       return;
     }
     const ordreMax = produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0);
-    const nouvelleListe = produits.concat([{ nom: nom, actif: true, prixAchatDefaut: null, ordre: ordreMax + 1 }]);
+    const nouvelleListe = produits.concat([{
+      nom: nom,
+      famille: champFamille.value.trim(),
+      variete: champVariete.value.trim(),
+      conditionnement: champConditionnement.value.trim(),
+      suremballage: champSuremballage.value,
+      actif: true,
+      prixAchatDefaut: null,
+      ordre: ordreMax + 1
+    }]);
     db.collection('produits').doc('main').set({ liste: nouvelleListe }).then(function () {
       input.value = '';
+      champFamille.value = '';
+      champVariete.value = '';
+      champConditionnement.value = '';
+      champSuremballage.value = '';
       enregistrerTransaction('produit_ajoute', nom, null);
       afficherToast(nom + ' ajouté');
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });

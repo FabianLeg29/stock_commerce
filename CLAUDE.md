@@ -15,7 +15,7 @@ L'app paloxs stocke tout dans **un seul document Firestore** (`planStockage/main
 
 ```
 Firestore
-├── produits/main            { liste: [ { nom, actif, prixAchatDefaut, ordre } ] }
+├── produits/main            { liste: [ { nom, famille, variete, conditionnement, suremballage, actif, prixAchatDefaut, ordre } ] }
 ├── dernierStock/main        { [nomProduit]: { valeur, date } }   ← cache du dernier stock connu
 ├── saisieStock/{date__slug} { date, produit, stockSoir, horodatage, responsable }
 ├── commerce/{date__slug}    { date, produit, achats, ventes, prixAchat, horodatage, responsable }
@@ -54,7 +54,18 @@ Même identité que l'app paloxs (cohérence entre les deux outils) : palette `-
 
 ## Origine des données produits
 
-La liste initiale (~107 produits) vient de la fiche **fredv** d'un fichier Excel existant (`Jeudi 07 Mai.xlsx`), qui servait jusque-là de suivi de stock quotidien pour un commercial. Cette application vise à terme à remplacer cet usage Excel pour ce même flux (stock du soir → achats/ventes → stock réel), avant extension possible aux autres commerciaux (Nadine, Julien, Flo, Mickael, Stéphanie) une fois validée sur le terrain avec Fred. Fichier prêt à importer : `Produits_initial.json`.
+La liste initiale vient d'un export du catalogue produits de l'entreprise (fiche article : Code, EAN13, Désignation, Famille, Variété, Origine, Conditionnement, Calibre, Catégorie, PCB Vte, Suremballage, Label, Actif...). L'app ne conserve volontairement qu'un sous-ensemble de ces champs, jugés pertinents pour l'usage quotidien et pour un ajout manuel ultérieur (onglet Paramètres) :
+
+- `nom` (= Désignation complète de l'article)
+- `famille` (ex : Oignon)
+- `variete` (ex : Oignon de Roscoff)
+- `conditionnement` (ex : Sac 5kg, Tresse fourreau 1kg, Vrac 5kg)
+- `suremballage` — **simplifié** en une catégorie générique déduite du texte de la désignation (`Palox`, `Carton`, `Caisse`, `Meuble`, `Coffret`, `Sans suremballage`), plutôt que la valeur détaillée du fichier source (ex : « Caisse Ifco noire 6413 » → `Caisse`)
+- `actif`, `prixAchatDefaut`, `ordre` (déjà présents dans le modèle d'origine)
+
+Champs volontairement **non conservés** : Code article, EAN13, Origine, Calibre, Catégorie, PCB Vte, Label, Préparation, Complément, Controle légumière, Marque, Poids U. Vte. Le champ `nom` (désignation) sert de clé d'unicité fonctionnelle (comme avant) : si le fichier source contient un même produit sous deux codes différents (ex : ancien code numérique vs nouveau code alphanumérique), dédoublonner sur la désignation en gardant la ligne `Actif = OUI` en priorité.
+
+Premier import réalisé (2026-08) : catalogue *Oignon de Roscoff AOP*, 61 produits après dédoublonnage. Fichier prêt à importer : `Produits_initial.json`. Extension prévue à d'autres familles de produits et, à terme, aux autres commerciaux (Nadine, Julien, Flo, Mickael, Stéphanie).
 
 ## Fichiers du dépôt
 
@@ -62,7 +73,7 @@ La liste initiale (~107 produits) vient de la fiche **fredv** d'un fichier Excel
 - `firestore.rules` — règles de sécurité Firestore (rôles, lecture/écriture par collection).
 - `SETUP-FIREBASE.md` — guide pas-à-pas de configuration Firebase (projet, Auth, Firestore, règles, comptes, import produits).
 - `README-DEPLOIEMENT.md` — guide pas-à-pas pour créer le dépôt GitHub et activer GitHub Pages.
-- `Produits_initial.json` — liste des ~107 produits de fredv, prête à coller dans `produits/main.liste`.
+- `Produits_initial.json` — catalogue produits prêt à coller dans `produits/main.liste` (voir « Origine des données produits » ci-dessus pour le schéma des champs).
 
 ## Pour continuer le développement
 

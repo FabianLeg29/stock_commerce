@@ -62,9 +62,9 @@ Le premier chargement de l'application crée automatiquement les collections né
 - **Rapide** : dans l'onglet **Paramètres > Produits** de l'application (une fois connecté en admin), ajoutez les produits un par un avec le bouton "Ajouter".
 - **En une fois** : dans la console Firebase > Firestore > collection `produits` > créez un document avec l'ID `main` et un champ `liste` (tableau) contenant un objet par produit, au format :
   ```json
-  { "nom": "CFL 6T", "actif": true, "prixAchatDefaut": null, "ordre": 1 }
+  { "nom": "Oignon de Roscoff AOP cal.50/70 Tr. fourreau 1kg x10 Carton France", "famille": "Oignon", "variete": "Oignon de Roscoff", "conditionnement": "Tresse fourreau 1kg", "suremballage": "Carton", "actif": true, "prixAchatDefaut": null, "ordre": 1 }
   ```
-  Le fichier `Produits_initial.json` fourni contient déjà les ~107 produits de la fiche fredv prêts à coller (Firestore console permet de coller un tableau JSON complet dans l'éditeur de champ).
+  Le fichier `Produits_initial.json` fourni contient déjà le catalogue prêt à coller (Firestore console permet de coller un tableau JSON complet dans l'éditeur de champ).
 
 ## Sécurité et coût
 
