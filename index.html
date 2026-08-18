@@ -321,6 +321,11 @@
     <!-- ---------------- PARAMETRES (admin) ---------------- -->
     <div class="vue" id="vueParametres">
       <h3 class="section-titre" style="margin-top:0;">Produits</h3>
+      <div class="carte-tableau" style="padding:16px; margin-bottom:14px;">
+        <div style="font-size:13px; color:#746a5e; margin-bottom:8px;">Import en masse : collez un tableau JSON de produits (remplace toute la liste actuelle).</div>
+        <textarea id="jsonImportProduits" rows="4" style="width:100%; padding:10px; border-radius:10px; border:1.5px solid var(--line); font-family:'IBM Plex Mono',monospace; font-size:12px;" placeholder='[{"nom":"...","famille":"...","variete":"...","conditionnement":"...","suremballage":"...","actif":true,"prixAchatDefaut":null,"ordre":1}]'></textarea>
+        <button class="bouton-secondaire" style="margin-top:8px;" onclick="importerProduitsJSON()">Importer (remplace la liste)</button>
+      </div>
       <div class="ligne-ajout">
         <input type="text" id="nouveauProduit" placeholder="Désignation du produit...">
         <input type="text" id="nouvelleFamille" placeholder="Famille (ex : Oignon)">
@@ -339,7 +344,7 @@
       </div>
       <div class="carte-tableau">
         <table>
-          <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Prix d'achat par défaut</th><th class="centre">Actif</th></tr></thead>
+          <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Prix d'achat par défaut</th><th class="centre">Actif</th><th style="width:70px;"></th></tr></thead>
           <tbody id="corpsProduits"></tbody>
         </table>
       </div>
@@ -782,7 +787,7 @@
   function libelleTypeTransaction(t) {
     return {
       stock_soir: 'Stock du soir', achats: 'Achats', ventes: 'Ventes', prixAchat: "Prix d'achat",
-      produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté'
+      produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé'
     }[t] || t;
   }
 
@@ -852,9 +857,24 @@
       };
       tdActif.appendChild(span);
 
+      const tdSuppr = document.createElement('td');
+      tdSuppr.className = 'centre';
+      const btnSuppr = document.createElement('button');
+      btnSuppr.className = 'bouton-secondaire';
+      btnSuppr.textContent = 'Suppr.';
+      btnSuppr.onclick = function () {
+        if (!confirm('Supprimer définitivement « ' + p.nom + ' » de la liste des produits ?')) return;
+        const nouvelleListe = produits.filter(function (x) { return x.nom !== p.nom; });
+        db.collection('produits').doc('main').set({ liste: nouvelleListe }).then(function () {
+          enregistrerTransaction('produit_supprime', p.nom, null);
+          afficherToast(p.nom + ' supprimé');
+        }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+      };
+      tdSuppr.appendChild(btnSuppr);
+
       tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete);
       tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
-      tr.appendChild(tdPrix); tr.appendChild(tdActif);
+      tr.appendChild(tdPrix); tr.appendChild(tdActif); tr.appendChild(tdSuppr);
       corpsProduits.appendChild(tr);
     });
 
@@ -932,6 +952,27 @@
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.ajouterProduit = ajouterProduit;
+
+  function importerProduitsJSON() {
+    const zone = document.getElementById('jsonImportProduits');
+    let nouvelleListe;
+    try {
+      nouvelleListe = JSON.parse(zone.value);
+    } catch (e) {
+      afficherToast('JSON invalide : ' + e.message);
+      return;
+    }
+    if (!Array.isArray(nouvelleListe)) {
+      afficherToast('Le contenu doit être un tableau JSON.');
+      return;
+    }
+    if (!confirm('Remplacer toute la liste de produits actuelle (' + produits.length + ' produits) par ces ' + nouvelleListe.length + ' produits ?')) return;
+    db.collection('produits').doc('main').set({ liste: nouvelleListe }).then(function () {
+      zone.value = '';
+      afficherToast(nouvelleListe.length + ' produits importés');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.importerProduitsJSON = importerProduitsJSON;
 
 })();
 </script>
