@@ -256,7 +256,9 @@
 
   <nav class="onglets">
     <button data-vue="production" onclick="allerA('production')">Production</button>
+    <button data-vue="achats" onclick="allerA('achats')">Achats</button>
     <button data-vue="commerce" onclick="allerA('commerce')">Commerce</button>
+    <button data-vue="prixAchat" onclick="allerA('prixAchat')">Prix d'achat</button>
     <button data-vue="historique" onclick="allerA('historique')">Historique</button>
     <button data-vue="parametres" id="ongletParametres" onclick="allerA('parametres')" style="display:none;">Paramètres</button>
   </nav>
@@ -277,6 +279,56 @@
       </div>
     </div>
 
+    <!-- ---------------- ACHATS ---------------- -->
+    <div class="vue" id="vueAchats">
+      <div id="carteNouvelAchat">
+      <h3 class="section-titre" style="margin-top:0;">Nouvel achat</h3>
+      <div class="carte-tableau" style="padding:16px; margin-bottom:14px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+          <div style="flex:1 1 220px;">
+            <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Fournisseur</label>
+            <select id="achatFournisseur" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; background:white;"></select>
+            <input type="text" id="achatFournisseurAutre" placeholder="Nom du nouveau fournisseur..." style="display:none; width:100%; margin-top:6px; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
+          </div>
+          <div style="flex:1 1 160px;">
+            <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Date</label>
+            <input type="date" id="achatDate" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
+          </div>
+        </div>
+        <div id="corpsLignesAchat"></div>
+        <button class="bouton-secondaire" style="margin-top:6px;" onclick="ajouterLigneAchat()">+ Ajouter une ligne produit</button>
+        <div style="margin-top:14px; display:flex; gap:8px;">
+          <button onclick="enregistrerAchat()" id="boutonEnregistrerAchat">Enregistrer l'achat</button>
+          <button class="bouton-secondaire" id="boutonAnnulerAchat" style="display:none;" onclick="annulerEditionAchat()">Annuler la modification</button>
+        </div>
+      </div>
+      </div>
+
+      <h3 class="section-titre">Récapitulatif des achats</h3>
+      <div class="barre-outils">
+        <input type="text" id="filtreAchats" placeholder="Rechercher (fournisseur, produit, transporteur, responsable)..." oninput="rendreAchats()">
+      </div>
+      <div class="carte-tableau">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Fournisseur</th>
+              <th>Produit</th>
+              <th class="centre">Quantité</th>
+              <th class="centre">Prix d'achat</th>
+              <th class="centre">Heure de départ</th>
+              <th>Transport</th>
+              <th>Responsable</th>
+              <th style="width:140px;"></th>
+            </tr>
+          </thead>
+          <tbody id="corpsRecapAchats"></tbody>
+        </table>
+        <div class="vide" id="videRecapAchats" style="display:none;">Aucun achat enregistré pour le moment.</div>
+      </div>
+    </div>
+
     <!-- ---------------- COMMERCE ---------------- -->
     <div class="vue" id="vueCommerce">
       <div class="barre-outils">
@@ -291,18 +343,23 @@
               <th class="centre">Dernier stock connu</th>
               <th class="centre">Achats</th>
               <th class="centre">Ventes</th>
-              <th class="centre">Prix d'achat</th>
               <th class="centre">Réservations</th>
               <th class="centre">Stock réel</th>
               <th class="centre">Stock disponible</th>
+              <th style="width:70px;"></th>
             </tr>
           </thead>
           <tbody id="corpsCommerce"></tbody>
         </table>
         <div class="vide" id="videCommerce" style="display:none;">Aucun produit actif pour le moment.</div>
       </div>
+    </div>
 
-      <h3 class="section-titre">Gestion des produits</h3>
+    <!-- ---------------- PRIX D'ACHAT ---------------- -->
+    <div class="vue" id="vuePrixAchat">
+      <div class="barre-outils">
+        <input type="text" id="filtrePrixAchat" placeholder="Rechercher un produit..." oninput="rendrePrixAchat()">
+      </div>
       <div class="carte-tableau">
         <table>
           <thead>
@@ -408,7 +465,13 @@
   let produits = [];               // [{ nom, actif, prixAchatDefaut, ordre }]
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: stockSoir }
-  let commerceDuJour = {};         // { nom: { achats, ventes, prixAchat } }
+  let commerceDuJour = {};         // { nom: { ventes } }
+  let achatsDuJourParProduit = {};       // { nom: quantiteTotale }
+  let achatsDuJourDetailParProduit = {}; // { nom: [ { achatId, fournisseur, quantite, prixAchat, heureDepart, transportType, transporteurNom } ] }
+  let achats = [];                 // tous les achats chargés (récap) : [{ id, date, fournisseur, responsable, horodatage, lignes: [...] }]
+  let achatsCharges = false;
+  let achatEnEditionId = null;
+  let lignesAchatEnCours = [{ produit: '', quantite: '', prixAchat: '', heureDepart: '', transportType: '', transporteurNom: '' }];
   let historique = [];             // [{ id, date, type, produit, valeur, responsable, horodatage }]
   let comptes = [];                // [{ uid, email, role }]
   let desabonnements = [];         // fonctions unsubscribe des listeners Firestore
@@ -540,9 +603,31 @@
         const out = {};
         qs.forEach(function (doc) {
           const d = doc.data();
-          out[d.produit] = { achats: d.achats, ventes: d.ventes, prixAchat: d.prixAchat };
+          out[d.produit] = { ventes: d.ventes };
         });
         commerceDuJour = out;
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
+      db.collection('achats').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
+        const totaux = {};
+        const details = {};
+        qs.forEach(function (doc) {
+          const d = doc.data();
+          (d.lignes || []).forEach(function (ligne) {
+            totaux[ligne.produit] = (totaux[ligne.produit] || 0) + (Number(ligne.quantite) || 0);
+            if (!details[ligne.produit]) details[ligne.produit] = [];
+            details[ligne.produit].push({
+              achatId: doc.id, fournisseur: d.fournisseur, quantite: ligne.quantite,
+              prixAchat: ligne.prixAchat, heureDepart: ligne.heureDepart,
+              transportType: ligne.transportType, transporteurNom: ligne.transporteurNom
+            });
+          });
+        });
+        achatsDuJourParProduit = totaux;
+        achatsDuJourDetailParProduit = details;
         rendreVueActive();
       })
     );
@@ -563,6 +648,7 @@
     desabonnements.forEach(function (fn) { try { fn(); } catch (e) {} });
     desabonnements = [];
     historiqueCharge = false;
+    achatsCharges = false;
   }
 
   function chargerHistoriqueSiBesoin() {
@@ -581,6 +667,26 @@
         });
         historique = out;
         if (vueActive === 'historique') rendreHistorique();
+      })
+    );
+  }
+
+  function chargerAchatsSiBesoin() {
+    if (achatsCharges) return;
+    achatsCharges = true;
+    desabonnements.push(
+      db.collection('achats').orderBy('horodatage', 'desc').limit(200).onSnapshot(function (qs) {
+        const out = [];
+        qs.forEach(function (doc) {
+          const d = doc.data();
+          out.push({
+            id: doc.id, date: d.date, fournisseur: d.fournisseur, responsable: d.responsable,
+            horodatage: d.horodatage && d.horodatage.toDate ? d.horodatage.toDate() : null,
+            lignes: d.lignes || []
+          });
+        });
+        achats = out;
+        if (vueActive === 'achats') rendreAchats();
       })
     );
   }
@@ -605,7 +711,9 @@
     document.getElementById('vue' + vue.charAt(0).toUpperCase() + vue.slice(1)).classList.add('actif');
 
     if (vue === 'production') rendreProduction();
+    else if (vue === 'achats') { chargerAchatsSiBesoin(); rendreAchats(); }
     else if (vue === 'commerce') rendreCommerce();
+    else if (vue === 'prixAchat') rendrePrixAchat();
     else if (vue === 'historique') { chargerHistoriqueSiBesoin(); rendreHistorique(); }
     else if (vue === 'parametres') rendreParametres();
   }
@@ -613,7 +721,9 @@
 
   function rendreVueActive() {
     if (vueActive === 'production') rendreProduction();
+    else if (vueActive === 'achats') rendreAchats();
     else if (vueActive === 'commerce') rendreCommerce();
+    else if (vueActive === 'prixAchat') rendrePrixAchat();
     else if (vueActive === 'parametres') rendreParametres();
   }
 
@@ -695,10 +805,9 @@
       const cache = dernierStockParProduit[p.nom] || {};
       const stockVeille = typeof cache.valeur === 'number' ? cache.valeur : 0;
       const dejaSaisi = commerceDuJour[p.nom] || {};
-      const achats = (typeof dejaSaisi.achats === 'number') ? dejaSaisi.achats : 0;
+      const achats = achatsDuJourParProduit[p.nom] || 0;
+      const detailAchats = achatsDuJourDetailParProduit[p.nom] || [];
       const ventes = (typeof dejaSaisi.ventes === 'number') ? dejaSaisi.ventes : 0;
-      const prixAchat = (typeof dejaSaisi.prixAchat !== 'undefined' && dejaSaisi.prixAchat !== null)
-        ? dejaSaisi.prixAchat : p.prixAchatDefaut;
       let reservationsActuelles = (typeof p.reservations === 'number') ? p.reservations : 0;
       const stockReel = stockVeille + achats - ventes;
 
@@ -710,6 +819,10 @@
       const tdVeille = document.createElement('td');
       tdVeille.className = 'centre mono';
       tdVeille.textContent = stockVeille + (cache.date ? ' (' + cache.date + ')' : '');
+
+      const tdAchats = document.createElement('td');
+      tdAchats.className = 'centre mono';
+      tdAchats.textContent = achats;
 
       const tdReel = document.createElement('td');
       tdReel.className = 'centre pastille-stock ' + (stockReel < 0 ? 'negatif' : 'positif');
@@ -742,9 +855,8 @@
           ref.set(donnees, { merge: true }).then(function () {
             input.classList.add('enregistre');
             enregistrerTransaction(nomChamp, p.nom, v);
-            const a = nomChamp === 'achats' ? v || 0 : achats;
-            const ve = nomChamp === 'ventes' ? v || 0 : ventes;
-            const reel = stockVeille + a - ve;
+            const ve = v || 0;
+            const reel = stockVeille + achats - ve;
             tdReel.textContent = reel;
             tdReel.className = 'centre pastille-stock ' + (reel < 0 ? 'negatif' : 'positif');
             majDisponible(reel);
@@ -774,27 +886,64 @@
       });
       tdReservations.appendChild(inputReservations);
 
+      const tdDetail = document.createElement('td');
+      tdDetail.className = 'centre';
+      const btnDetail = document.createElement('button');
+      btnDetail.className = 'bouton-secondaire';
+      btnDetail.textContent = '▸ Détail';
+      tdDetail.appendChild(btnDetail);
+
+      const trDetail = document.createElement('tr');
+      trDetail.style.display = 'none';
+      const tdDetailContenu = document.createElement('td');
+      tdDetailContenu.colSpan = 8;
+      tdDetailContenu.style.cssText = 'background:var(--bg); font-size:13px; padding:14px 20px;';
+      trDetail.appendChild(tdDetailContenu);
+
+      btnDetail.onclick = function () {
+        const ouvert = trDetail.style.display !== 'none';
+        trDetail.style.display = ouvert ? 'none' : 'table-row';
+        btnDetail.textContent = ouvert ? '▸ Détail' : '▾ Détail';
+        if (!ouvert) {
+          let html = '';
+          html += '<strong>Achats aujourd\'hui (' + achats + ')</strong>';
+          if (detailAchats.length) {
+            html += '<ul style="margin:6px 0 12px 18px; padding:0;">' + detailAchats.map(function (d) {
+              const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
+              const prix = (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
+              return '<li>' + d.quantite + ' — ' + d.fournisseur + ' — ' + prix + ' — ' + (d.heureDepart || '—') + ' — ' + transport + '</li>';
+            }).join('') + '</ul>';
+          } else {
+            html += '<div style="margin:6px 0 12px 0; color:#a49a89;">Aucun achat aujourd\'hui.</div>';
+          }
+          html += '<strong>Ventes aujourd\'hui :</strong> ' + ventes + '<br>';
+          html += '<strong>Réservations en cours :</strong> ' + reservationsActuelles;
+          tdDetailContenu.innerHTML = html;
+        }
+      };
+
       tr.appendChild(tdNom);
       tr.appendChild(tdVeille);
-      tr.appendChild(champ(achats, 'achats'));
+      tr.appendChild(tdAchats);
       tr.appendChild(champ(ventes, 'ventes'));
-      tr.appendChild(champ(prixAchat, 'prixAchat'));
       tr.appendChild(tdReservations);
       tr.appendChild(tdReel);
       tr.appendChild(tdDisponible);
+      tr.appendChild(tdDetail);
       corps.appendChild(tr);
+      corps.appendChild(trDetail);
     });
-
-    rendreGestionProduitsCommerce();
   }
   window.rendreCommerce = rendreCommerce;
 
-  function rendreGestionProduitsCommerce() {
+  function rendrePrixAchat() {
+    const q = (document.getElementById('filtrePrixAchat').value || '').toLowerCase();
+    const filtres = produits.filter(function (p) { return p.nom.toLowerCase().indexOf(q) !== -1; });
     const corps = document.getElementById('corpsGestionProduits');
     corps.innerHTML = '';
-    document.getElementById('videGestionProduits').style.display = produits.length ? 'none' : 'block';
+    document.getElementById('videGestionProduits').style.display = filtres.length ? 'none' : 'block';
 
-    produits.forEach(function (p) {
+    filtres.forEach(function (p) {
       const tr = document.createElement('tr');
       const tdNom = document.createElement('td');
       tdNom.className = 'produit';
@@ -845,6 +994,338 @@
       corps.appendChild(tr);
     });
   }
+  window.rendrePrixAchat = rendrePrixAchat;
+
+  // ============================================================
+  // ACHATS
+  // ============================================================
+  function ligneAchatVide() {
+    return { produit: '', quantite: '', prixAchat: '', heureDepart: '', transportType: '', transporteurNom: '' };
+  }
+
+  function ajouterLigneAchat() {
+    lignesAchatEnCours.push(ligneAchatVide());
+    rendreFormulaireAchat();
+  }
+  window.ajouterLigneAchat = ajouterLigneAchat;
+
+  function retirerLigneAchat(index) {
+    lignesAchatEnCours.splice(index, 1);
+    if (!lignesAchatEnCours.length) lignesAchatEnCours.push(ligneAchatVide());
+    rendreFormulaireAchat();
+  }
+
+  function annulerEditionAchat() {
+    achatEnEditionId = null;
+    lignesAchatEnCours = [ligneAchatVide()];
+    document.getElementById('achatDate').value = AUJOURD_HUI;
+    document.getElementById('boutonAnnulerAchat').style.display = 'none';
+    document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
+    document.getElementById('achatFournisseur').value = '';
+    document.getElementById('achatFournisseurAutre').value = '';
+    document.getElementById('achatFournisseurAutre').style.display = 'none';
+    rendreFormulaireAchat();
+  }
+  window.annulerEditionAchat = annulerEditionAchat;
+
+  function chargerAchatPourEdition(a) {
+    achatEnEditionId = a.id;
+    lignesAchatEnCours = (a.lignes || []).map(function (l) {
+      return {
+        produit: l.produit, quantite: l.quantite, prixAchat: l.prixAchat,
+        heureDepart: l.heureDepart || '', transportType: l.transportType || '',
+        transporteurNom: l.transporteurNom || ''
+      };
+    });
+    if (!lignesAchatEnCours.length) lignesAchatEnCours = [ligneAchatVide()];
+    document.getElementById('achatDate').value = a.date;
+    document.getElementById('boutonAnnulerAchat').style.display = '';
+    document.getElementById('boutonEnregistrerAchat').textContent = 'Enregistrer les modifications';
+    rendreFormulaireAchat();
+    const selectFournisseur = document.getElementById('achatFournisseur');
+    if (Array.from(selectFournisseur.options).some(function (o) { return o.value === a.fournisseur; })) {
+      selectFournisseur.value = a.fournisseur;
+      document.getElementById('achatFournisseurAutre').style.display = 'none';
+    } else {
+      selectFournisseur.value = '__autre__';
+      document.getElementById('achatFournisseurAutre').style.display = '';
+      document.getElementById('achatFournisseurAutre').value = a.fournisseur;
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function enregistrerAchat() {
+    if (!peutGererCommerce()) return;
+    const selectFournisseur = document.getElementById('achatFournisseur');
+    const champFournisseurAutre = document.getElementById('achatFournisseurAutre');
+    const fournisseur = selectFournisseur.value === '__autre__' ? champFournisseurAutre.value.trim() : selectFournisseur.value;
+    const date = document.getElementById('achatDate').value || AUJOURD_HUI;
+    if (!fournisseur) {
+      afficherToast('Choisissez ou saisissez un fournisseur');
+      return;
+    }
+    const lignesValides = lignesAchatEnCours.filter(function (l) { return l.produit && l.quantite !== '' && l.quantite !== null && typeof l.quantite !== 'undefined'; });
+    if (!lignesValides.length) {
+      afficherToast('Ajoutez au moins une ligne produit avec une quantité');
+      return;
+    }
+    const lignes = lignesValides.map(function (l) {
+      return {
+        produit: l.produit,
+        quantite: Number(l.quantite),
+        prixAchat: (l.prixAchat === '' || l.prixAchat === null || typeof l.prixAchat === 'undefined') ? null : Number(l.prixAchat),
+        heureDepart: l.heureDepart || '',
+        transportType: l.transportType || '',
+        transporteurNom: l.transportType === 'transporteur' ? (l.transporteurNom || '') : ''
+      };
+    });
+    const donnees = {
+      date: date,
+      fournisseur: fournisseur,
+      responsable: utilisateurCourant.email,
+      horodatage: firebase.firestore.FieldValue.serverTimestamp(),
+      lignes: lignes
+    };
+    const enregistrement = achatEnEditionId
+      ? db.collection('achats').doc(achatEnEditionId).set(donnees)
+      : db.collection('achats').add(donnees);
+    const futEdition = !!achatEnEditionId;
+    enregistrement.then(function () {
+      lignes.forEach(function (l) { enregistrerTransaction('achats', l.produit, l.quantite); });
+      afficherToast(futEdition ? 'Achat modifié' : 'Achat enregistré');
+      annulerEditionAchat();
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.enregistrerAchat = enregistrerAchat;
+
+  function rendreFormulaireAchat() {
+    const carte = document.getElementById('carteNouvelAchat');
+    if (carte) carte.style.display = peutGererCommerce() ? '' : 'none';
+    if (!peutGererCommerce()) return;
+
+    const selectFournisseur = document.getElementById('achatFournisseur');
+    const champFournisseurAutre = document.getElementById('achatFournisseurAutre');
+    const valeurFournisseurActuelle = selectFournisseur.value;
+    const fournisseurs = Array.from(new Set(achats.map(function (a) { return a.fournisseur; }).filter(Boolean))).sort();
+    selectFournisseur.innerHTML = '';
+    const optVideF = document.createElement('option');
+    optVideF.value = ''; optVideF.textContent = 'Fournisseur...';
+    selectFournisseur.appendChild(optVideF);
+    fournisseurs.forEach(function (f) {
+      const o = document.createElement('option'); o.value = f; o.textContent = f;
+      selectFournisseur.appendChild(o);
+    });
+    const optAutreF = document.createElement('option');
+    optAutreF.value = '__autre__'; optAutreF.textContent = '+ Nouveau fournisseur...';
+    selectFournisseur.appendChild(optAutreF);
+    if (Array.from(selectFournisseur.options).some(function (o) { return o.value === valeurFournisseurActuelle; })) {
+      selectFournisseur.value = valeurFournisseurActuelle;
+    }
+    selectFournisseur.onchange = function () {
+      champFournisseurAutre.style.display = selectFournisseur.value === '__autre__' ? '' : 'none';
+    };
+    champFournisseurAutre.style.display = selectFournisseur.value === '__autre__' ? '' : 'none';
+
+    const champDate = document.getElementById('achatDate');
+    if (!champDate.value) champDate.value = AUJOURD_HUI;
+
+    const transporteurs = Array.from(new Set(
+      achats.reduce(function (acc, a) {
+        (a.lignes || []).forEach(function (l) { if (l.transportType === 'transporteur' && l.transporteurNom) acc.push(l.transporteurNom); });
+        return acc;
+      }, [])
+    )).sort();
+
+    const produitsTries = produits.slice().sort(function (a, b) { return a.nom.localeCompare(b.nom); });
+
+    function bloc(labelTexte, element) {
+      const conteneur = document.createElement('div');
+      conteneur.style.cssText = 'flex:1 1 150px;';
+      const label = document.createElement('label');
+      label.style.cssText = 'display:block; font-size:12px; color:#746a5e; margin-bottom:4px;';
+      label.textContent = labelTexte;
+      conteneur.appendChild(label);
+      conteneur.appendChild(element);
+      return conteneur;
+    }
+
+    const corps = document.getElementById('corpsLignesAchat');
+    corps.innerHTML = '';
+
+    lignesAchatEnCours.forEach(function (ligne, index) {
+      const rangee = document.createElement('div');
+      rangee.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--line);';
+
+      const selectProduit = document.createElement('select');
+      selectProduit.style.cssText = 'width:100%; padding:9px 10px; border-radius:8px; border:1.5px solid var(--line); font-size:13px; background:white;';
+      const optVideP = document.createElement('option');
+      optVideP.value = ''; optVideP.textContent = 'Produit...';
+      selectProduit.appendChild(optVideP);
+      produitsTries.forEach(function (p) {
+        const o = document.createElement('option'); o.value = p.nom; o.textContent = p.nom;
+        if (p.nom === ligne.produit) o.selected = true;
+        selectProduit.appendChild(o);
+      });
+      selectProduit.addEventListener('change', function () { ligne.produit = selectProduit.value; });
+
+      const inputQuantite = document.createElement('input');
+      inputQuantite.type = 'number'; inputQuantite.step = 'any'; inputQuantite.min = '0';
+      inputQuantite.className = 'champ-valeur'; inputQuantite.style.width = '100%';
+      inputQuantite.value = ligne.quantite;
+      inputQuantite.addEventListener('input', function () { ligne.quantite = inputQuantite.value; });
+
+      const inputPrix = document.createElement('input');
+      inputPrix.type = 'number'; inputPrix.step = 'any'; inputPrix.min = '0';
+      inputPrix.className = 'champ-valeur'; inputPrix.style.width = '100%';
+      inputPrix.value = ligne.prixAchat;
+      inputPrix.addEventListener('input', function () { ligne.prixAchat = inputPrix.value; });
+
+      const inputHeure = document.createElement('input');
+      inputHeure.type = 'time';
+      inputHeure.style.cssText = 'width:100%; padding:9px 10px; border-radius:8px; border:1.5px solid var(--line); font-size:13px;';
+      inputHeure.value = ligne.heureDepart;
+      inputHeure.addEventListener('input', function () { ligne.heureDepart = inputHeure.value; });
+
+      const selectTransport = document.createElement('select');
+      selectTransport.style.cssText = 'width:100%; padding:9px 10px; border-radius:8px; border:1.5px solid var(--line); font-size:13px; background:white;';
+      const optVideT = document.createElement('option');
+      optVideT.value = ''; optVideT.textContent = 'Transport...';
+      selectTransport.appendChild(optVideT);
+      const optRamasse = document.createElement('option');
+      optRamasse.value = 'ramasse'; optRamasse.textContent = 'Ramasse';
+      selectTransport.appendChild(optRamasse);
+      transporteurs.forEach(function (t) {
+        const o = document.createElement('option'); o.value = t; o.textContent = t;
+        selectTransport.appendChild(o);
+      });
+      const optAutreT = document.createElement('option');
+      optAutreT.value = '__autre__'; optAutreT.textContent = '+ Nouveau transporteur...';
+      selectTransport.appendChild(optAutreT);
+      if (ligne.transportType === 'ramasse') {
+        selectTransport.value = 'ramasse';
+      } else if (ligne.transportType === 'transporteur' && ligne.transporteurNom && transporteurs.indexOf(ligne.transporteurNom) !== -1) {
+        selectTransport.value = ligne.transporteurNom;
+      } else if (ligne.transportType === 'transporteur' && ligne.transporteurNom) {
+        selectTransport.value = '__autre__';
+      }
+
+      const inputTransporteurAutre = document.createElement('input');
+      inputTransporteurAutre.type = 'text';
+      inputTransporteurAutre.placeholder = 'Nom du transporteur...';
+      const afficherAutreT = selectTransport.value === '__autre__';
+      inputTransporteurAutre.style.cssText = 'width:100%; margin-top:6px; padding:9px 10px; border-radius:8px; border:1.5px solid var(--line); font-size:13px; display:' + (afficherAutreT ? 'block' : 'none') + ';';
+      if (afficherAutreT) inputTransporteurAutre.value = ligne.transporteurNom || '';
+      inputTransporteurAutre.addEventListener('input', function () { ligne.transporteurNom = inputTransporteurAutre.value; });
+
+      selectTransport.addEventListener('change', function () {
+        if (selectTransport.value === 'ramasse') {
+          ligne.transportType = 'ramasse'; ligne.transporteurNom = '';
+          inputTransporteurAutre.style.display = 'none';
+        } else if (selectTransport.value === '__autre__') {
+          ligne.transportType = 'transporteur'; ligne.transporteurNom = '';
+          inputTransporteurAutre.style.display = 'block';
+          inputTransporteurAutre.value = '';
+          inputTransporteurAutre.focus();
+        } else if (selectTransport.value === '') {
+          ligne.transportType = ''; ligne.transporteurNom = '';
+          inputTransporteurAutre.style.display = 'none';
+        } else {
+          ligne.transportType = 'transporteur'; ligne.transporteurNom = selectTransport.value;
+          inputTransporteurAutre.style.display = 'none';
+        }
+      });
+
+      const blocTransport = document.createElement('div');
+      blocTransport.style.cssText = 'flex:1 1 170px;';
+      const labelTransport = document.createElement('label');
+      labelTransport.style.cssText = 'display:block; font-size:12px; color:#746a5e; margin-bottom:4px;';
+      labelTransport.textContent = 'Transport';
+      blocTransport.appendChild(labelTransport);
+      blocTransport.appendChild(selectTransport);
+      blocTransport.appendChild(inputTransporteurAutre);
+
+      const btnRetirer = document.createElement('button');
+      btnRetirer.className = 'bouton-secondaire';
+      btnRetirer.textContent = 'Retirer';
+      btnRetirer.style.cssText = 'flex:0 0 auto; height:38px;';
+      btnRetirer.onclick = function () { retirerLigneAchat(index); };
+
+      rangee.appendChild(bloc('Produit', selectProduit));
+      rangee.appendChild(bloc('Quantité', inputQuantite));
+      rangee.appendChild(bloc("Prix d'achat", inputPrix));
+      rangee.appendChild(bloc('Heure de départ', inputHeure));
+      rangee.appendChild(blocTransport);
+      rangee.appendChild(btnRetirer);
+      corps.appendChild(rangee);
+    });
+  }
+
+  function rendreAchats() {
+    rendreFormulaireAchat();
+
+    const q = (document.getElementById('filtreAchats').value || '').toLowerCase();
+    const corps = document.getElementById('corpsRecapAchats');
+    corps.innerHTML = '';
+
+    const lignesAffichees = [];
+    achats.forEach(function (a) {
+      (a.lignes || []).forEach(function (l) { lignesAffichees.push({ achat: a, ligne: l }); });
+    });
+
+    const filtrees = lignesAffichees.filter(function (item) {
+      if (!q) return true;
+      const transport = item.ligne.transportType === 'ramasse' ? 'ramasse' : (item.ligne.transporteurNom || '');
+      return (item.achat.fournisseur || '').toLowerCase().indexOf(q) !== -1 ||
+        (item.ligne.produit || '').toLowerCase().indexOf(q) !== -1 ||
+        transport.toLowerCase().indexOf(q) !== -1 ||
+        (item.achat.responsable || '').toLowerCase().indexOf(q) !== -1;
+    });
+
+    document.getElementById('videRecapAchats').style.display = filtrees.length ? 'none' : 'block';
+
+    filtrees.forEach(function (item) {
+      const a = item.achat, l = item.ligne;
+      const tr = document.createElement('tr');
+
+      const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.textContent = a.date;
+      const tdFournisseur = document.createElement('td'); tdFournisseur.textContent = a.fournisseur;
+      const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
+      const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.textContent = l.quantite;
+      const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono';
+      tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+      const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.textContent = l.heureDepart || '—';
+      const tdTransport = document.createElement('td');
+      tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
+      const tdResponsable = document.createElement('td'); tdResponsable.textContent = a.responsable;
+
+      const tdActions = document.createElement('td');
+      tdActions.className = 'centre';
+      if (peutGererCommerce()) {
+        const btnModifier = document.createElement('button');
+        btnModifier.className = 'bouton-secondaire';
+        btnModifier.textContent = 'Modifier';
+        btnModifier.style.marginRight = '6px';
+        btnModifier.onclick = function () { chargerAchatPourEdition(a); };
+        const btnSupprimer = document.createElement('button');
+        btnSupprimer.className = 'bouton-secondaire';
+        btnSupprimer.textContent = 'Suppr.';
+        btnSupprimer.onclick = function () {
+          if (!confirm('Supprimer définitivement cet achat (' + a.fournisseur + ', ' + a.date + ', toutes ses lignes) ?')) return;
+          db.collection('achats').doc(a.id).delete().then(function () {
+            afficherToast('Achat supprimé');
+          }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+        };
+        tdActions.appendChild(btnModifier);
+        tdActions.appendChild(btnSupprimer);
+      }
+
+      tr.appendChild(tdDate); tr.appendChild(tdFournisseur); tr.appendChild(tdProduit);
+      tr.appendChild(tdQuantite); tr.appendChild(tdPrix); tr.appendChild(tdHeure);
+      tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdActions);
+      corps.appendChild(tr);
+    });
+  }
+  window.rendreAchats = rendreAchats;
 
   // ============================================================
   // HISTORIQUE

@@ -4,8 +4,9 @@ rules_version = '2';
 // Suivi Stock — La Légumière
 // Rôles (stockés dans users/{uid}.role) :
 //   admin      : tout, y compris gestion des comptes et des produits
-//   commerce   : achats / ventes / prix d'achat (collection "commerce"),
-//                + actif/prixAchatDefaut/reservations d'un produit existant (pas la création/suppression)
+//   commerce   : ventes (collection "commerce"), achats/livraisons (collection
+//                "achats"), + actif/prixAchatDefaut/reservations d'un produit
+//                existant (pas la création/suppression de produit)
 //   production : stock du soir (collection "saisieStock")
 //   viewer     : lecture seule partout
 //   aucun      : rôle par défaut au 1er login — aucun accès à l'application
@@ -74,10 +75,16 @@ service cloud.firestore {
       allow write: if estProduction();
     }
 
-    // ---- Achats / ventes / prix (Commerce) ----
+    // ---- Ventes du jour (Commerce) ----
     match /commerce/{docId} {
       allow read: if connecte();
       allow write: if estCommerce();
+    }
+
+    // ---- Achats (une livraison = un document, plusieurs lignes produit) ----
+    match /achats/{achatId} {
+      allow read: if connecte();
+      allow create, update, delete: if estCommerce();
     }
 
     // ---- Historique (journal des actions) ----

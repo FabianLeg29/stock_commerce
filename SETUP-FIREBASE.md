@@ -61,7 +61,7 @@ Le premier chargement de l'application crée automatiquement les collections né
 
 Dans l'onglet **Paramètres > Produits** de l'application (une fois connecté en admin), ajoutez chaque produit avec le formulaire : Désignation (texte libre), puis Famille / Variété / Conditionnement / Suremballage — quatre listes déroulantes alimentées par les valeurs déjà utilisées, chacune avec une option **« + Nouvelle... »** qui fait apparaître un champ texte pour créer une nouvelle valeur la première fois qu'elle est utilisée (ex : la première fois que vous ajoutez la famille « Mini légumes », vous la tapez ; ensuite elle apparaît dans la liste pour les produits suivants). Un bouton **« Supprimer tous les produits »** permet de vider toute la liste en une fois si besoin de repartir de zéro.
 
-Une fois les produits créés, un compte **commerce** peut ajuster leur prix d'achat par défaut et leur statut actif/inactif (saisonnalité) directement depuis l'onglet **Commerce > Gestion des produits**, sans passer par Paramètres — la création, la suppression et les familles/variétés/conditionnements/suremballages restent réservées à l'admin.
+Une fois les produits créés, un compte **commerce** peut ajuster leur prix d'achat par défaut et leur statut actif/inactif (saisonnalité) directement depuis l'onglet **Prix d'achat**, sans passer par Paramètres — la création, la suppression et les familles/variétés/conditionnements/suremballages restent réservées à l'admin.
 
 ## Sécurité et coût
 
