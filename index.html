@@ -120,6 +120,13 @@
   }
   nav.onglets button.actif { color: var(--copper); border-bottom-color: var(--copper); }
 
+  .sous-onglets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .sous-onglets button {
+    border: 1.5px solid var(--line); background: white; padding: 7px 14px; border-radius: 20px;
+    font-size: 13px; font-weight: 600; color: #8a8072; cursor: pointer;
+  }
+  .sous-onglets button.actif { background: var(--copper); border-color: var(--copper); color: white; }
+
   main { flex: 1; padding: 18px; max-width: 1100px; margin: 0 auto; width: 100%; }
   .vue { display: none; }
   .vue.actif { display: block; }
@@ -277,6 +284,7 @@
       <div class="barre-outils">
         <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
         <span class="date-du-jour" id="dateProduction"></span>
+        <button class="bouton-secondaire" onclick="exporterStockSoirExcel()">Exporter le stock du soir (.xlsx)</button>
       </div>
       <div class="ligne-ajout" id="ligneAjoutProduction">
         <button onclick="basculerListeInactifs()" id="boutonListeInactifs">Ajouter</button>
@@ -358,6 +366,7 @@
         <input type="text" id="filtreCommerce" placeholder="Rechercher un produit..." oninput="rendreCommerce()">
         <span class="date-du-jour" id="dateCommerce"></span>
       </div>
+      <div class="sous-onglets" id="sousOngletsCommerce"></div>
       <div class="carte-tableau">
         <table>
           <thead>
@@ -365,8 +374,8 @@
               <th>Produit</th>
               <th class="centre">Dernier stock connu</th>
               <th class="centre">Achats</th>
-              <th class="centre">Ventes</th>
-              <th class="centre">Réservations</th>
+              <th class="centre" id="entierVentesLabel">Ventes</th>
+              <th class="centre" id="entierReservationsLabel">Réservations</th>
               <th class="centre">Stock réel</th>
               <th class="centre">Stock disponible</th>
               <th style="width:70px;"></th>
@@ -514,7 +523,10 @@
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
-  let commerceDuJour = {};         // { nom: { ventes } }
+  let commerceDuJour = {};                    // { nom: { ventes, reservations } } — sommes tous commerciaux confondus
+  let commerceDuJourDetailParProduit = {};    // { nom: [ { id, commercial, ventes, reservations } ] } — détail par commercial
+  let commerciaux = [];             // comptes ayant le rôle commerce : [{ uid, email }]
+  let commerceSousOnglet = 'global'; // 'global' ou l'email d'un commercial (sous-onglet actif de l'onglet Commerce)
   let achatsDuJourParProduit = {};       // { nom: quantiteTotale }
   let achatsDuJourDetailParProduit = {}; // { nom: [ { achatId, fournisseur, quantite, prixAchat, heureDepart, transportType, transporteurNom } ] }
   let achats = [];                 // tous les achats chargés (récap) : [{ id, date, fournisseur, responsable, horodatage, lignes: [...] }]
@@ -560,6 +572,14 @@
     return { admin: 'Administrateur', commerce: 'Commerce', production: 'Production', viewer: 'Consultation', aucun: 'Non autorisé' }[r] || r;
   }
 
+  function libelleCommercial(email) {
+    if (!email) return '';
+    const prefixe = email.split('@')[0];
+    return prefixe.split(/[._-]+/).map(function (mot) {
+      return mot ? mot.charAt(0).toUpperCase() + mot.slice(1) : mot;
+    }).join(' ');
+  }
+
   // ============================================================
   // AUTHENTIFICATION
   // ============================================================
@@ -585,6 +605,7 @@
       utilisateurCourant = { uid: user.uid, email: user.email };
       obtenirOuCreerRole(user.uid, user.email).then(function (role) {
         roleCourant = role;
+        commerceSousOnglet = (role === 'commerce') ? user.email : 'global';
         document.getElementById('ecranConnexion').style.display = 'none';
         if (role === 'aucun') {
           document.getElementById('app').style.display = 'none';
@@ -668,13 +689,30 @@
 
     desabonnements.push(
       db.collection('commerce').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
-        const out = {};
+        const sommes = {};
+        const details = {};
         qs.forEach(function (doc) {
           const d = doc.data();
-          out[d.produit] = { ventes: d.ventes };
+          const ventes = d.ventes || 0;
+          const reservations = d.reservations || 0;
+          if (!sommes[d.produit]) sommes[d.produit] = { ventes: 0, reservations: 0 };
+          sommes[d.produit].ventes += ventes;
+          sommes[d.produit].reservations += reservations;
+          if (!details[d.produit]) details[d.produit] = [];
+          details[d.produit].push({ id: doc.id, commercial: d.commercial, ventes: ventes, reservations: reservations });
         });
-        commerceDuJour = out;
+        commerceDuJour = sommes;
+        commerceDuJourDetailParProduit = details;
         rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
+      db.collection('users').where('role', '==', 'commerce').onSnapshot(function (qs) {
+        const out = [];
+        qs.forEach(function (doc) { out.push({ uid: doc.id, email: doc.data().email }); });
+        commerciaux = out.sort(function (a, b) { return a.email.localeCompare(b.email); });
+        if (vueActive === 'commerce') rendreCommerce();
       })
     );
 
@@ -897,6 +935,33 @@
   }
   window.rendreProduction = rendreProduction;
 
+  function exporterStockSoirExcel() {
+    if (typeof XLSX === 'undefined') {
+      afficherToast('Bibliothèque Excel indisponible, réessayez.');
+      return;
+    }
+    const actifs = produits.filter(function (p) { return p.actif; })
+      .slice().sort(function (a, b) {
+        const familleA = a.famille || 'Sans famille', familleB = b.famille || 'Sans famille';
+        if (familleA !== familleB) return familleA.localeCompare(familleB);
+        return (a.ordre || 0) - (b.ordre || 0);
+      });
+    const feuille = [['Famille', 'Produit', 'Haut', 'Bas', 'Total']];
+    actifs.forEach(function (p) {
+      const saisie = saisieDuJour[p.nom] || {};
+      feuille.push([
+        p.famille || 'Sans famille', p.nom,
+        (saisie.stockHaut === null || typeof saisie.stockHaut === 'undefined') ? '' : saisie.stockHaut,
+        (saisie.stockBas === null || typeof saisie.stockBas === 'undefined') ? '' : saisie.stockBas,
+        (saisie.stockSoir === null || typeof saisie.stockSoir === 'undefined') ? '' : saisie.stockSoir
+      ]);
+    });
+    const classeur = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuille), 'Stock du soir');
+    XLSX.writeFile(classeur, 'stock_du_soir_' + AUJOURD_HUI + '.xlsx');
+  }
+  window.exporterStockSoirExcel = exporterStockSoirExcel;
+
   function prochainOrdreProduit() {
     return produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0) + 1;
   }
@@ -946,8 +1011,32 @@
   // ============================================================
   // COMMERCE
   // ============================================================
+  function rendreSousOngletsCommerce() {
+    const conteneur = document.getElementById('sousOngletsCommerce');
+    conteneur.innerHTML = '';
+    const optionGlobal = document.createElement('button');
+    optionGlobal.textContent = 'Global';
+    optionGlobal.className = commerceSousOnglet === 'global' ? 'actif' : '';
+    optionGlobal.onclick = function () { commerceSousOnglet = 'global'; rendreCommerce(); };
+    conteneur.appendChild(optionGlobal);
+
+    commerciaux.forEach(function (c) {
+      const bouton = document.createElement('button');
+      bouton.textContent = libelleCommercial(c.email);
+      bouton.className = commerceSousOnglet === c.email ? 'actif' : '';
+      bouton.onclick = function () { commerceSousOnglet = c.email; rendreCommerce(); };
+      conteneur.appendChild(bouton);
+    });
+  }
+
   function rendreCommerce() {
     document.getElementById('dateCommerce').textContent = "Aujourd'hui " + AUJOURD_HUI;
+    rendreSousOngletsCommerce();
+
+    const estGlobal = commerceSousOnglet === 'global';
+    document.getElementById('entierVentesLabel').textContent = estGlobal ? 'Ventes (total)' : 'Mes ventes';
+    document.getElementById('entierReservationsLabel').textContent = estGlobal ? 'Réservations (total)' : 'Mes réservations';
+
     const q = (document.getElementById('filtreCommerce').value || '').toLowerCase();
     const actifs = produits.filter(function (p) { return p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
     const corps = document.getElementById('corpsCommerce');
@@ -957,12 +1046,26 @@
     actifs.forEach(function (p) {
       const cache = dernierStockParProduit[p.nom] || {};
       const stockVeille = typeof cache.valeur === 'number' ? cache.valeur : 0;
-      const dejaSaisi = commerceDuJour[p.nom] || {};
       const achatsAujourdhui = achatsDuJourParProduit[p.nom] || 0;
       const detailAchats = achatsDuJourDetailParProduit[p.nom] || [];
-      const ventes = (typeof dejaSaisi.ventes === 'number') ? dejaSaisi.ventes : 0;
-      let reservationsActuelles = (typeof p.reservations === 'number') ? p.reservations : 0;
-      const stockReel = stockVeille + achatsAujourdhui - ventes;
+      const sommeGlobale = commerceDuJour[p.nom] || { ventes: 0, reservations: 0 };
+      const detailCommerciaux = commerceDuJourDetailParProduit[p.nom] || [];
+
+      const stockReel = stockVeille + achatsAujourdhui - sommeGlobale.ventes;
+      const stockDisponible = stockReel - sommeGlobale.reservations;
+
+      let venteAffichee = sommeGlobale.ventes;
+      let reservationAffichee = sommeGlobale.reservations;
+      let peutEditerIci = false;
+      let idDocPersonnel = null;
+
+      if (!estGlobal) {
+        const entreePerso = detailCommerciaux.find(function (d) { return d.commercial === commerceSousOnglet; });
+        venteAffichee = entreePerso ? entreePerso.ventes : 0;
+        reservationAffichee = entreePerso ? entreePerso.reservations : 0;
+        idDocPersonnel = idJourProduit(AUJOURD_HUI, p.nom) + '__' + slugify(commerceSousOnglet);
+        peutEditerIci = peutGererCommerce() && !!utilisateurCourant && (estAdmin() || utilisateurCourant.email === commerceSousOnglet);
+      }
 
       const tr = document.createElement('tr');
       const tdNom = document.createElement('td');
@@ -982,62 +1085,48 @@
       tdReel.textContent = stockReel;
 
       const tdDisponible = document.createElement('td');
-      function majDisponible(reel) {
-        const disponible = reel - reservationsActuelles;
-        tdDisponible.textContent = disponible;
-        tdDisponible.className = 'centre mono pastille-stock ' + (disponible < 0 ? 'negatif' : 'positif');
-      }
-      majDisponible(stockReel);
+      tdDisponible.className = 'centre mono pastille-stock ' + (stockDisponible < 0 ? 'negatif' : 'positif');
+      tdDisponible.textContent = stockDisponible;
 
-      function champ(valeur, nomChamp) {
+      function champCommerce(valeur, nomChamp) {
         const td = document.createElement('td');
         td.className = 'centre';
         const input = document.createElement('input');
         input.type = 'number';
         input.step = 'any';
         input.min = '0';
-        input.className = 'champ-valeur' + (valeur !== '' && valeur !== null && typeof valeur !== 'undefined' ? ' enregistre' : '');
-        input.value = (valeur === null || typeof valeur === 'undefined') ? '' : valeur;
-        input.disabled = !peutGererCommerce();
-        input.addEventListener('change', function () {
-          input.classList.remove('enregistre');
-          const v = input.value === '' ? null : Number(input.value);
-          const ref = db.collection('commerce').doc(idJourProduit(AUJOURD_HUI, p.nom));
-          const donnees = { date: AUJOURD_HUI, produit: p.nom, horodatage: firebase.firestore.FieldValue.serverTimestamp(), responsable: utilisateurCourant.email };
-          donnees[nomChamp] = v;
-          ref.set(donnees, { merge: true }).then(function () {
-            input.classList.add('enregistre');
-            enregistrerTransaction(nomChamp, p.nom, v);
-            const ve = v || 0;
-            const reel = stockVeille + achatsAujourdhui - ve;
-            tdReel.textContent = reel;
-            tdReel.className = 'centre pastille-stock ' + (reel < 0 ? 'negatif' : 'positif');
-            majDisponible(reel);
-            afficherToast(p.nom + ' mis à jour');
-          }).catch(function (err) { afficherToast('Erreur : ' + err.message); });
-        });
+        input.className = 'champ-valeur' + (valeur ? ' enregistre' : '');
+        input.value = valeur || '';
+        input.disabled = !peutEditerIci;
+        if (peutEditerIci) {
+          input.addEventListener('change', function () {
+            input.classList.remove('enregistre');
+            const v = input.value === '' ? 0 : Number(input.value);
+            const donnees = {
+              date: AUJOURD_HUI, produit: p.nom, commercial: commerceSousOnglet,
+              horodatage: firebase.firestore.FieldValue.serverTimestamp(), responsable: utilisateurCourant.email
+            };
+            donnees[nomChamp] = v;
+            db.collection('commerce').doc(idDocPersonnel).set(donnees, { merge: true }).then(function () {
+              input.classList.add('enregistre');
+              enregistrerTransaction(nomChamp, p.nom, v);
+              afficherToast(p.nom + ' mis à jour');
+            }).catch(function (err) { afficherToast('Erreur : ' + err.message); });
+          });
+        }
         td.appendChild(input);
         return td;
       }
 
-      const tdReservations = document.createElement('td');
-      tdReservations.className = 'centre';
-      const inputReservations = document.createElement('input');
-      inputReservations.type = 'number';
-      inputReservations.step = 'any';
-      inputReservations.min = '0';
-      inputReservations.className = 'champ-valeur' + (reservationsActuelles ? ' enregistre' : '');
-      inputReservations.value = reservationsActuelles || '';
-      inputReservations.disabled = !peutGererCommerce();
-      inputReservations.addEventListener('change', function () {
-        const v = inputReservations.value === '' ? 0 : Number(inputReservations.value);
-        modifierProduit(p.id, { reservations: v });
-        enregistrerTransaction('reservations', p.nom, v);
-        inputReservations.classList.toggle('enregistre', !!v);
-        reservationsActuelles = v;
-        majDisponible(stockReel);
-      });
-      tdReservations.appendChild(inputReservations);
+      function champLectureSeule(valeur) {
+        const td = document.createElement('td');
+        td.className = 'centre mono';
+        td.textContent = valeur;
+        return td;
+      }
+
+      const tdVentes = estGlobal ? champLectureSeule(venteAffichee) : champCommerce(venteAffichee, 'ventes');
+      const tdReservations = estGlobal ? champLectureSeule(reservationAffichee) : champCommerce(reservationAffichee, 'reservations');
 
       const tdDetail = document.createElement('td');
       tdDetail.className = 'centre';
@@ -1069,8 +1158,12 @@
           } else {
             html += '<div style="margin:6px 0 12px 0; color:#a49a89;">Aucun achat aujourd\'hui.</div>';
           }
-          html += '<strong>Ventes aujourd\'hui :</strong> ' + ventes + '<br>';
-          html += '<strong>Réservations en cours :</strong> ' + reservationsActuelles;
+          const ventesParCommercial = detailCommerciaux.filter(function (d) { return d.ventes; })
+            .map(function (d) { return libelleCommercial(d.commercial) + ' : ' + d.ventes; }).join(', ');
+          const reservationsParCommercial = detailCommerciaux.filter(function (d) { return d.reservations; })
+            .map(function (d) { return libelleCommercial(d.commercial) + ' : ' + d.reservations; }).join(', ');
+          html += '<strong>Ventes par commercial :</strong> ' + (ventesParCommercial || '—') + ' (total ' + sommeGlobale.ventes + ')<br>';
+          html += '<strong>Réservations par commercial :</strong> ' + (reservationsParCommercial || '—') + ' (total ' + sommeGlobale.reservations + ')';
           tdDetailContenu.innerHTML = html;
         }
       };
@@ -1078,7 +1171,7 @@
       tr.appendChild(tdNom);
       tr.appendChild(tdVeille);
       tr.appendChild(tdAchats);
-      tr.appendChild(champ(ventes, 'ventes'));
+      tr.appendChild(tdVentes);
       tr.appendChild(tdReservations);
       tr.appendChild(tdReel);
       tr.appendChild(tdDisponible);
@@ -1642,9 +1735,9 @@
     ]).then(function (resultats) {
       const saisieSnap = resultats[0], commerceSnap = resultats[1], achatsSnap = resultats[2], transactionsSnap = resultats[3];
 
-      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Conditionnement', 'Suremballage', 'Actif', "Prix d'achat par défaut", 'Réservations', 'Ordre']];
+      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Conditionnement', 'Suremballage', 'Actif', "Prix d'achat par défaut", 'Ordre']];
       produits.slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
-        feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, p.reservations || 0, p.ordre || '']);
+        feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, p.ordre || '']);
       });
 
       const feuilleStock = [['Date', 'Produit', 'Haut', 'Bas', 'Total', 'Importé', 'Responsable']];
@@ -1653,10 +1746,10 @@
         feuilleStock.push([d.date, d.produit, d.stockHaut, d.stockBas, d.stockSoir, d.importe ? 'Oui' : 'Non', d.responsable]);
       });
 
-      const feuilleVentes = [['Date', 'Produit', 'Ventes', 'Responsable']];
+      const feuilleVentes = [['Date', 'Produit', 'Commercial', 'Ventes', 'Réservations', 'Responsable']];
       commerceSnap.forEach(function (doc) {
         const d = doc.data();
-        feuilleVentes.push([d.date, d.produit, d.ventes, d.responsable]);
+        feuilleVentes.push([d.date, d.produit, libelleCommercial(d.commercial), d.ventes, d.reservations, d.responsable]);
       });
 
       const feuilleAchats = [['Date', 'Fournisseur', 'Produit', 'Quantité', "Prix d'achat", 'Heure de départ', 'Transport', 'Responsable']];
@@ -1862,7 +1955,6 @@
       suremballage: valeurChampListe('nouveauSuremballage'),
       actif: true,
       prixAchatDefaut: null,
-      reservations: 0,
       ordre: prochainOrdreProduit()
     }).then(function () {
       input.value = '';
