@@ -305,6 +305,20 @@
   <main>
     <!-- ---------------- PRODUCTION ---------------- -->
     <div class="vue" id="vueProduction">
+      <div class="barre-outils">
+        <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
+        <span class="date-du-jour" id="dateProduction"></span>
+        <button class="bouton-secondaire" onclick="exporterStockSoirExcel()">Exporter le stock du soir (.xlsx)</button>
+      </div>
+      <div class="ligne-ajout" id="ligneAjoutProduction">
+        <button onclick="basculerListeInactifs()" id="boutonListeInactifs">Ajouter</button>
+      </div>
+      <div class="carte-tableau" id="carteListeInactifs" style="display:none; padding:16px; margin-bottom:14px;">
+        <input type="text" id="filtreInactifs" placeholder="Rechercher un produit inactif..." oninput="rendreListeInactifs()" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; margin-bottom:10px;">
+        <div id="listeInactifs"></div>
+        <div class="vide" id="videListeInactifs" style="display:none;">Aucun produit inactif ne correspond.</div>
+      </div>
+
       <div id="blocDemarrerStockSoir">
         <h3 class="section-titre" style="margin-top:0;">Démarrer un stock du soir</h3>
         <div class="ligne-ajout">
@@ -321,34 +335,26 @@
       </div>
 
       <div id="blocSessionStockSoir" style="display:none;">
-        <div class="barre-outils">
-          <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
+        <div class="ligne-ajout">
           <span class="date-du-jour" id="resumeSessionStockSoir"></span>
+          <button onclick="terminerStockSoir()" id="boutonTerminerStockSoir">Terminer et enregistrer</button>
+          <button class="bouton-secondaire" onclick="annulerStockSoir()" id="boutonAnnulerStockSoir">Annuler</button>
         </div>
-        <div class="ligne-ajout" id="ligneAjoutProduction">
-          <button onclick="basculerListeInactifs()" id="boutonListeInactifs">Ajouter</button>
-          <button class="bouton-secondaire" onclick="exporterStockSoirExcel()">Exporter le stock du soir (.xlsx)</button>
-          <button onclick="terminerStockSoir()">Terminer et enregistrer</button>
-          <button class="bouton-secondaire" onclick="annulerStockSoir()">Annuler</button>
-        </div>
-        <div class="carte-tableau" id="carteListeInactifs" style="display:none; padding:16px; margin-bottom:14px;">
-          <input type="text" id="filtreInactifs" placeholder="Rechercher un produit inactif..." oninput="rendreListeInactifs()" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; margin-bottom:10px;">
-          <div id="listeInactifs"></div>
-          <div class="vide" id="videListeInactifs" style="display:none;">Aucun produit inactif ne correspond.</div>
-        </div>
-        <div class="carte-tableau">
-          <table>
-            <thead>
-              <tr>
-                <th>Produit</th>
-                <th class="centre" style="width:140px;" id="entierColonneStockSoir">Stock</th>
-                <th class="centre" style="width:100px;">Total</th>
-              </tr>
-            </thead>
-            <tbody id="corpsProduction"></tbody>
-          </table>
-          <div class="vide" id="videProduction" style="display:none;">Aucun produit actif pour le moment.</div>
-        </div>
+      </div>
+
+      <div class="carte-tableau">
+        <table>
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th class="centre" style="width:100px;">Haut</th>
+              <th class="centre" style="width:100px;">Bas</th>
+              <th class="centre" style="width:100px;">Total</th>
+            </tr>
+          </thead>
+          <tbody id="corpsProduction"></tbody>
+        </table>
+        <div class="vide" id="videProduction" style="display:none;">Aucun produit actif pour le moment.</div>
       </div>
     </div>
 
@@ -603,6 +609,7 @@
   let operateurs = [];           // personnes réalisant les contrôles de stock du soir, gérées depuis Paramètres (admin)
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: valeurTexte } — comptage local de la session, écrit en une fois à la fin
+  let terminaisonEnCours = false; // true pendant l'écriture Firestore de "Terminer et enregistrer" (anti double-clic)
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
@@ -1004,6 +1011,7 @@
   window.demarrerStockSoir = demarrerStockSoir;
 
   function annulerStockSoir() {
+    if (terminaisonEnCours) return;
     if (Object.keys(saisieSessionEnCours).length && !confirm('Abandonner cette saisie sans l\'enregistrer ?')) return;
     sessionStockSoir = null;
     saisieSessionEnCours = {};
@@ -1012,7 +1020,7 @@
   window.annulerStockSoir = annulerStockSoir;
 
   function terminerStockSoir() {
-    if (!sessionStockSoir) return;
+    if (!sessionStockSoir || terminaisonEnCours) return;
     const entrees = Object.keys(saisieSessionEnCours).filter(function (nom) { return saisieSessionEnCours[nom] !== ''; });
     if (!entrees.length) { afficherToast('Aucune valeur saisie'); return; }
     const invalides = entrees.filter(function (nom) { return sommerExpression(saisieSessionEnCours[nom]) === null; });
@@ -1020,6 +1028,8 @@
       afficherToast('Valeur invalide pour : ' + invalides.join(', ') + ' — nombres séparés par + (ex. 12+8+5)');
       return;
     }
+    terminaisonEnCours = true;
+    rendreProduction();
 
     const cote = sessionStockSoir.cote;
     const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
@@ -1053,12 +1063,21 @@
         ' (' + (cote === 'haut' ? 'Stock Haut' : 'Stock Bas') + ')');
       sessionStockSoir = null;
       saisieSessionEnCours = {};
+      terminaisonEnCours = false;
       rendreProduction();
-    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+    }).catch(function (e) {
+      afficherToast('Erreur : ' + e.message);
+      terminaisonEnCours = false;
+      rendreProduction();
+    });
   }
   window.terminerStockSoir = terminerStockSoir;
 
   function rendreProduction() {
+    document.getElementById('dateProduction').textContent = 'Soir du ' + AUJOURD_HUI;
+    document.getElementById('ligneAjoutProduction').style.display = peutSaisirProduction() ? '' : 'none';
+    rendreListeInactifs();
+
     if (!sessionStockSoir) {
       document.getElementById('blocDemarrerStockSoir').style.display = '';
       document.getElementById('blocSessionStockSoir').style.display = 'none';
@@ -1074,18 +1093,19 @@
       document.getElementById('operateurDemarrerStockSoir').disabled = !peutDemarrer;
       document.getElementById('boutonDemarrerStockSoir').disabled = !peutDemarrer;
       rendreSelectOperateurs();
-      return;
+    } else {
+      document.getElementById('blocDemarrerStockSoir').style.display = 'none';
+      document.getElementById('blocSessionStockSoir').style.display = '';
+      const libelleCote = sessionStockSoir.cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
+      document.getElementById('resumeSessionStockSoir').textContent =
+        'Session en cours — ' + libelleCote + ' — ' + sessionStockSoir.operateur + ' — ' + sessionStockSoir.heure;
+      document.getElementById('boutonTerminerStockSoir').disabled = terminaisonEnCours;
+      document.getElementById('boutonAnnulerStockSoir').disabled = terminaisonEnCours;
     }
 
-    document.getElementById('blocDemarrerStockSoir').style.display = 'none';
-    document.getElementById('blocSessionStockSoir').style.display = '';
-    document.getElementById('ligneAjoutProduction').style.display = peutSaisirProduction() ? '' : 'none';
-    const libelleCote = sessionStockSoir.cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
-    document.getElementById('entierColonneStockSoir').textContent = libelleCote;
-    document.getElementById('resumeSessionStockSoir').textContent =
-      libelleCote + ' — ' + sessionStockSoir.operateur + ' — ' + sessionStockSoir.heure;
-
-    rendreListeInactifs();
+    // Le tableau (aperçu du jour) reste toujours affiché, pour tous les rôles — seule
+    // la colonne du côté choisi par la session en cours (s'il y en a une) devient un
+    // champ de saisie ; l'autre colonne et le reste du tableau restent en lecture seule.
     const q = (document.getElementById('filtreProduction').value || '').toLowerCase();
     const actifs = produits.filter(function (p) { return p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
     const corps = document.getElementById('corpsProduction');
@@ -1093,7 +1113,6 @@
     corps.innerHTML = '';
     document.getElementById('videProduction').style.display = actifs.length ? 'none' : 'block';
 
-    const champAutreValeur = sessionStockSoir.cote === 'haut' ? 'stockBas' : 'stockHaut';
     const groupes = {};
     actifs.forEach(function (p) {
       const famille = p.famille || 'Sans famille';
@@ -1105,14 +1124,13 @@
       const trTitre = document.createElement('tr');
       trTitre.className = 'entete-groupe';
       const tdTitre = document.createElement('td');
-      tdTitre.colSpan = 3;
+      tdTitre.colSpan = 4;
       tdTitre.textContent = famille;
       trTitre.appendChild(tdTitre);
       corps.appendChild(trTitre);
 
       groupes[famille].sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
         const saisie = saisieDuJour[p.nom] || {};
-        const autre = (typeof saisie[champAutreValeur] === 'number') ? saisie[champAutreValeur] : 0;
         const tr = document.createElement('tr');
         const tdNom = document.createElement('td');
         tdNom.className = 'produit';
@@ -1121,33 +1139,49 @@
         const tdTotal = document.createElement('td');
         tdTotal.className = 'centre mono';
 
-        const td = document.createElement('td');
-        td.className = 'centre';
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.placeholder = 'ex. 12+8+5';
-        input.dataset.produit = p.nom;
-        input.dataset.champ = 'stockSession';
-        const valeurEnCours = saisieSessionEnCours.hasOwnProperty(p.nom) ? saisieSessionEnCours[p.nom] : '';
-        input.className = 'champ-valeur' + (valeurEnCours !== '' ? ' enregistre' : '');
-        input.value = valeurEnCours;
-        input.disabled = !peutSaisirProduction();
-
-        function majTotal() {
-          const v = sommerExpression(input.value);
-          const rien = v === null && !autre;
-          tdTotal.textContent = rien ? '' : ((v || 0) + autre);
+        function texteLectureSeule(valeur) {
+          const td = document.createElement('td');
+          td.className = 'centre mono';
+          td.textContent = (valeur === null || typeof valeur === 'undefined') ? '—' : valeur;
+          return { td: td, input: null };
         }
 
-        input.addEventListener('input', function () {
-          saisieSessionEnCours[p.nom] = input.value;
-          majTotal();
-        });
+        function champSession() {
+          const td = document.createElement('td');
+          td.className = 'centre';
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.placeholder = 'ex. 12+8+5';
+          input.dataset.produit = p.nom;
+          input.dataset.champ = 'stockSession';
+          const valeurEnCours = saisieSessionEnCours.hasOwnProperty(p.nom) ? saisieSessionEnCours[p.nom] : '';
+          input.className = 'champ-valeur' + (valeurEnCours !== '' ? ' enregistre' : '');
+          input.value = valeurEnCours;
+          input.disabled = !peutSaisirProduction();
+          input.addEventListener('input', function () {
+            saisieSessionEnCours[p.nom] = input.value;
+            majTotal();
+          });
+          td.appendChild(input);
+          return { td: td, input: input };
+        }
+
+        const sessionHaut = sessionStockSoir && sessionStockSoir.cote === 'haut';
+        const sessionBas = sessionStockSoir && sessionStockSoir.cote === 'bas';
+        const blocHaut = sessionHaut ? champSession() : texteLectureSeule(saisie.stockHaut);
+        const blocBas = sessionBas ? champSession() : texteLectureSeule(saisie.stockBas);
+
+        function majTotal() {
+          const h = blocHaut.input ? sommerExpression(blocHaut.input.value) : (typeof saisie.stockHaut === 'number' ? saisie.stockHaut : null);
+          const b = blocBas.input ? sommerExpression(blocBas.input.value) : (typeof saisie.stockBas === 'number' ? saisie.stockBas : null);
+          const rien = h === null && b === null;
+          tdTotal.textContent = rien ? '' : ((h || 0) + (b || 0));
+        }
         majTotal();
-        td.appendChild(input);
 
         tr.appendChild(tdNom);
-        tr.appendChild(td);
+        tr.appendChild(blocHaut.td);
+        tr.appendChild(blocBas.td);
         tr.appendChild(tdTotal);
         corps.appendChild(tr);
       });
