@@ -699,7 +699,7 @@
           sommes[d.produit].ventes += ventes;
           sommes[d.produit].reservations += reservations;
           if (!details[d.produit]) details[d.produit] = [];
-          details[d.produit].push({ id: doc.id, commercial: d.commercial, ventes: ventes, reservations: reservations });
+          details[d.produit].push({ id: doc.id, commercial: d.commercial, ventes: d.ventes, reservations: d.reservations });
         });
         commerceDuJour = sommes;
         commerceDuJourDetailParProduit = details;
@@ -1040,6 +1040,21 @@
     const q = (document.getElementById('filtreCommerce').value || '').toLowerCase();
     const actifs = produits.filter(function (p) { return p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
     const corps = document.getElementById('corpsCommerce');
+
+    // Cette fonction est redéclenchée par tous les listeners Firestore (produits,
+    // dernierStock, saisieStock, achats, commerce, users), y compris pendant qu'un
+    // commercial est en train de taper une valeur dans un champ ventes/réservations —
+    // sans cette préservation, reconstruire le tableau lui ferait perdre le focus et
+    // la frappe en cours (même défaut déjà corrigé sur l'onglet Achats).
+    const elementActif = document.activeElement;
+    let saisieEnCours = null;
+    if (elementActif && elementActif.tagName === 'INPUT' && elementActif.classList.contains('champ-valeur') && corps.contains(elementActif)) {
+      saisieEnCours = {
+        produit: elementActif.dataset.produit, champ: elementActif.dataset.champ,
+        valeur: elementActif.value, debut: elementActif.selectionStart, fin: elementActif.selectionEnd
+      };
+    }
+
     corps.innerHTML = '';
     document.getElementById('videCommerce').style.display = actifs.length ? 'none' : 'block';
 
@@ -1061,8 +1076,8 @@
 
       if (!estGlobal) {
         const entreePerso = detailCommerciaux.find(function (d) { return d.commercial === commerceSousOnglet; });
-        venteAffichee = entreePerso ? entreePerso.ventes : 0;
-        reservationAffichee = entreePerso ? entreePerso.reservations : 0;
+        venteAffichee = entreePerso ? entreePerso.ventes : undefined;
+        reservationAffichee = entreePerso ? entreePerso.reservations : undefined;
         idDocPersonnel = idJourProduit(AUJOURD_HUI, p.nom) + '__' + slugify(commerceSousOnglet);
         peutEditerIci = peutGererCommerce() && !!utilisateurCourant && (estAdmin() || utilisateurCourant.email === commerceSousOnglet);
       }
@@ -1095,8 +1110,11 @@
         input.type = 'number';
         input.step = 'any';
         input.min = '0';
-        input.className = 'champ-valeur' + (valeur ? ' enregistre' : '');
-        input.value = valeur || '';
+        const estSaisi = valeur !== null && typeof valeur !== 'undefined';
+        input.className = 'champ-valeur' + (estSaisi ? ' enregistre' : '');
+        input.value = estSaisi ? valeur : '';
+        input.dataset.produit = p.nom;
+        input.dataset.champ = nomChamp;
         input.disabled = !peutEditerIci;
         if (peutEditerIci) {
           input.addEventListener('change', function () {
@@ -1179,6 +1197,19 @@
       corps.appendChild(tr);
       corps.appendChild(trDetail);
     });
+
+    if (saisieEnCours) {
+      const champs = corps.querySelectorAll('input.champ-valeur');
+      for (let i = 0; i < champs.length; i++) {
+        const el = champs[i];
+        if (el.dataset.produit === saisieEnCours.produit && el.dataset.champ === saisieEnCours.champ) {
+          el.value = saisieEnCours.valeur;
+          el.focus();
+          if (typeof saisieEnCours.debut === 'number') el.setSelectionRange(saisieEnCours.debut, saisieEnCours.fin);
+          break;
+        }
+      }
+    }
 
     rendreValidationStock();
   }
