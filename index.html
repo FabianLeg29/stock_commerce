@@ -293,7 +293,7 @@
   </header>
 
   <nav class="onglets">
-    <button data-vue="production" onclick="allerA('production')">Production</button>
+    <button data-vue="production" onclick="allerA('production')">Stock du soir</button>
     <button data-vue="achats" onclick="allerA('achats')">Achats</button>
     <button data-vue="commerce" onclick="allerA('commerce')">Commerce</button>
     <button data-vue="produits" onclick="allerA('produits')">Produits</button>
@@ -305,32 +305,50 @@
   <main>
     <!-- ---------------- PRODUCTION ---------------- -->
     <div class="vue" id="vueProduction">
-      <div class="barre-outils">
-        <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
-        <span class="date-du-jour" id="dateProduction"></span>
-        <button class="bouton-secondaire" onclick="exporterStockSoirExcel()">Exporter le stock du soir (.xlsx)</button>
+      <div id="blocDemarrerStockSoir">
+        <h3 class="section-titre" style="margin-top:0;">Démarrer un stock du soir</h3>
+        <div class="ligne-ajout">
+          <span class="date-du-jour" id="dateDemarrerStockSoir"></span>
+          <input type="time" id="heureDemarrerStockSoir">
+          <select id="coteDemarrerStockSoir">
+            <option value="haut">Stock Haut</option>
+            <option value="bas">Stock Bas</option>
+          </select>
+          <select id="operateurDemarrerStockSoir"></select>
+          <button onclick="demarrerStockSoir()" id="boutonDemarrerStockSoir">Démarrer</button>
+        </div>
+        <div class="vide" id="videOperateurs" style="display:none;">Aucun opérateur déclaré — un administrateur doit d'abord en ajouter un depuis l'onglet Paramètres.</div>
       </div>
-      <div class="ligne-ajout" id="ligneAjoutProduction">
-        <button onclick="basculerListeInactifs()" id="boutonListeInactifs">Ajouter</button>
-      </div>
-      <div class="carte-tableau" id="carteListeInactifs" style="display:none; padding:16px; margin-bottom:14px;">
-        <input type="text" id="filtreInactifs" placeholder="Rechercher un produit inactif..." oninput="rendreListeInactifs()" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; margin-bottom:10px;">
-        <div id="listeInactifs"></div>
-        <div class="vide" id="videListeInactifs" style="display:none;">Aucun produit inactif ne correspond.</div>
-      </div>
-      <div class="carte-tableau">
-        <table>
-          <thead>
-            <tr>
-              <th>Produit</th>
-              <th class="centre" style="width:100px;">Haut</th>
-              <th class="centre" style="width:100px;">Bas</th>
-              <th class="centre" style="width:100px;">Total</th>
-            </tr>
-          </thead>
-          <tbody id="corpsProduction"></tbody>
-        </table>
-        <div class="vide" id="videProduction" style="display:none;">Aucun produit actif pour le moment.</div>
+
+      <div id="blocSessionStockSoir" style="display:none;">
+        <div class="barre-outils">
+          <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
+          <span class="date-du-jour" id="resumeSessionStockSoir"></span>
+        </div>
+        <div class="ligne-ajout" id="ligneAjoutProduction">
+          <button onclick="basculerListeInactifs()" id="boutonListeInactifs">Ajouter</button>
+          <button class="bouton-secondaire" onclick="exporterStockSoirExcel()">Exporter le stock du soir (.xlsx)</button>
+          <button onclick="terminerStockSoir()">Terminer et enregistrer</button>
+          <button class="bouton-secondaire" onclick="annulerStockSoir()">Annuler</button>
+        </div>
+        <div class="carte-tableau" id="carteListeInactifs" style="display:none; padding:16px; margin-bottom:14px;">
+          <input type="text" id="filtreInactifs" placeholder="Rechercher un produit inactif..." oninput="rendreListeInactifs()" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; margin-bottom:10px;">
+          <div id="listeInactifs"></div>
+          <div class="vide" id="videListeInactifs" style="display:none;">Aucun produit inactif ne correspond.</div>
+        </div>
+        <div class="carte-tableau">
+          <table>
+            <thead>
+              <tr>
+                <th>Produit</th>
+                <th class="centre" style="width:140px;" id="entierColonneStockSoir">Stock</th>
+                <th class="centre" style="width:100px;">Total</th>
+              </tr>
+            </thead>
+            <tbody id="corpsProduction"></tbody>
+          </table>
+          <div class="vide" id="videProduction" style="display:none;">Aucun produit actif pour le moment.</div>
+        </div>
       </div>
     </div>
 
@@ -531,7 +549,14 @@
 
     <!-- ---------------- PARAMETRES (admin) ---------------- -->
     <div class="vue" id="vueParametres">
-      <h3 class="section-titre" style="margin-top:0;">Comptes</h3>
+      <h3 class="section-titre" style="margin-top:0;">Opérateurs</h3>
+      <p class="sous-titre-section">Personnes réalisant les contrôles de stock du soir (indépendant des comptes de connexion — un même compte tablette peut servir à plusieurs opérateurs).</p>
+      <div class="carte-referentiel" style="max-width:360px; margin-bottom:24px;">
+        <div id="listeOperateurs"></div>
+        <button class="bouton-nouveau-referentiel" onclick="ajouterLigneOperateurVide()">+ Nouvel opérateur</button>
+      </div>
+
+      <h3 class="section-titre">Comptes</h3>
       <div class="carte-tableau">
         <table>
           <thead><tr><th>Email</th><th class="centre">Rôle</th></tr></thead>
@@ -575,6 +600,9 @@
   let produits = [];               // [{ nom, actif, prixAchatDefaut, prixAchatUnite, ordre }]
   let referentiels = { familles: [], varietes: [], origines: [], conditionnements: [], suremballages: [] }; // listes gérées depuis l'onglet Produits (admin + commerce)
   let produitEnEdition = null; // id du produit dont la ligne est actuellement en édition dans l'onglet Produits
+  let operateurs = [];           // personnes réalisant les contrôles de stock du soir, gérées depuis Paramètres (admin)
+  let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
+  let saisieSessionEnCours = {};  // { nomProduit: valeurTexte } — comptage local de la session, écrit en une fois à la fin
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
@@ -756,7 +784,11 @@
         const out = {};
         qs.forEach(function (doc) {
           const d = doc.data();
-          out[d.produit] = { stockHaut: d.stockHaut, stockBas: d.stockBas, stockSoir: d.stockSoir };
+          out[d.produit] = {
+            stockHaut: d.stockHaut, stockBas: d.stockBas, stockSoir: d.stockSoir,
+            stockHautOperateur: d.stockHautOperateur, stockHautHeure: d.stockHautHeure,
+            stockBasOperateur: d.stockBasOperateur, stockBasHeure: d.stockBasHeure
+          };
         });
         saisieDuJour = out;
         rendreVueActive();
@@ -771,10 +803,20 @@
           out.push({
             id: doc.id, date: d.date, produit: d.produit,
             stockHaut: d.stockHaut, stockBas: d.stockBas, stockSoir: d.stockSoir,
+            stockHautOperateur: d.stockHautOperateur, stockHautHeure: d.stockHautHeure,
+            stockBasOperateur: d.stockBasOperateur, stockBasHeure: d.stockBasHeure,
             responsable: d.responsable
           });
         });
         saisieEnAttente = out;
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
+      db.collection('parametres').doc('operateurs').onSnapshot(function (snap) {
+        const d = snap.exists ? (snap.data() || {}) : {};
+        operateurs = (d.liste || []).slice().sort();
         rendreVueActive();
       })
     );
@@ -930,16 +972,128 @@
   // ============================================================
   // PRODUCTION
   // ============================================================
+  function rendreSelectOperateurs() {
+    const select = document.getElementById('operateurDemarrerStockSoir');
+    if (!select) return;
+    const valeurActuelle = select.value;
+    select.innerHTML = '';
+    const optVide = document.createElement('option');
+    optVide.value = '';
+    optVide.textContent = 'Opérateur...';
+    select.appendChild(optVide);
+    operateurs.forEach(function (o) {
+      const opt = document.createElement('option');
+      opt.value = o;
+      opt.textContent = o;
+      select.appendChild(opt);
+    });
+    if (operateurs.indexOf(valeurActuelle) !== -1) select.value = valeurActuelle;
+    document.getElementById('videOperateurs').style.display = operateurs.length ? 'none' : 'block';
+  }
+
+  function demarrerStockSoir() {
+    const heure = document.getElementById('heureDemarrerStockSoir').value;
+    const cote = document.getElementById('coteDemarrerStockSoir').value;
+    const operateur = document.getElementById('operateurDemarrerStockSoir').value;
+    if (!operateur) { afficherToast('Choisissez un opérateur'); return; }
+    if (!heure) { afficherToast("Renseignez l'heure du contrôle"); return; }
+    sessionStockSoir = { date: AUJOURD_HUI, heure: heure, cote: cote, operateur: operateur };
+    saisieSessionEnCours = {};
+    rendreProduction();
+  }
+  window.demarrerStockSoir = demarrerStockSoir;
+
+  function annulerStockSoir() {
+    if (Object.keys(saisieSessionEnCours).length && !confirm('Abandonner cette saisie sans l\'enregistrer ?')) return;
+    sessionStockSoir = null;
+    saisieSessionEnCours = {};
+    rendreProduction();
+  }
+  window.annulerStockSoir = annulerStockSoir;
+
+  function terminerStockSoir() {
+    if (!sessionStockSoir) return;
+    const entrees = Object.keys(saisieSessionEnCours).filter(function (nom) { return saisieSessionEnCours[nom] !== ''; });
+    if (!entrees.length) { afficherToast('Aucune valeur saisie'); return; }
+    const invalides = entrees.filter(function (nom) { return sommerExpression(saisieSessionEnCours[nom]) === null; });
+    if (invalides.length) {
+      afficherToast('Valeur invalide pour : ' + invalides.join(', ') + ' — nombres séparés par + (ex. 12+8+5)');
+      return;
+    }
+
+    const cote = sessionStockSoir.cote;
+    const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
+    const champOperateur = cote === 'haut' ? 'stockHautOperateur' : 'stockBasOperateur';
+    const champHeure = cote === 'haut' ? 'stockHautHeure' : 'stockBasHeure';
+    const champAutreValeur = cote === 'haut' ? 'stockBas' : 'stockHaut';
+
+    const lot = db.batch();
+    entrees.forEach(function (nom) {
+      const valeur = sommerExpression(saisieSessionEnCours[nom]);
+      const saisieExistante = saisieDuJour[nom] || {};
+      const autre = (typeof saisieExistante[champAutreValeur] === 'number') ? saisieExistante[champAutreValeur] : 0;
+      const donnees = {
+        date: AUJOURD_HUI, produit: nom,
+        stockSoir: valeur + autre,
+        horodatage: firebase.firestore.FieldValue.serverTimestamp(),
+        responsable: utilisateurCourant.email,
+        importe: false
+      };
+      donnees[champValeur] = valeur;
+      donnees[champOperateur] = sessionStockSoir.operateur;
+      donnees[champHeure] = sessionStockSoir.heure;
+      lot.set(db.collection('saisieStock').doc(idJourProduit(AUJOURD_HUI, nom)), donnees, { merge: true });
+    });
+
+    lot.commit().then(function () {
+      entrees.forEach(function (nom) {
+        enregistrerTransaction('stock_soir', nom, sommerExpression(saisieSessionEnCours[nom]));
+      });
+      afficherToast(entrees.length + ' produit(s) enregistré(s) — ' + sessionStockSoir.operateur +
+        ' (' + (cote === 'haut' ? 'Stock Haut' : 'Stock Bas') + ')');
+      sessionStockSoir = null;
+      saisieSessionEnCours = {};
+      rendreProduction();
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.terminerStockSoir = terminerStockSoir;
+
   function rendreProduction() {
-    document.getElementById('dateProduction').textContent = 'Soir du ' + AUJOURD_HUI;
+    if (!sessionStockSoir) {
+      document.getElementById('blocDemarrerStockSoir').style.display = '';
+      document.getElementById('blocSessionStockSoir').style.display = 'none';
+      document.getElementById('dateDemarrerStockSoir').textContent = "Aujourd'hui " + AUJOURD_HUI;
+      const inputHeure = document.getElementById('heureDemarrerStockSoir');
+      if (!inputHeure.value) {
+        const maintenant = new Date();
+        inputHeure.value = String(maintenant.getHours()).padStart(2, '0') + ':' + String(maintenant.getMinutes()).padStart(2, '0');
+      }
+      const peutDemarrer = peutSaisirProduction();
+      inputHeure.disabled = !peutDemarrer;
+      document.getElementById('coteDemarrerStockSoir').disabled = !peutDemarrer;
+      document.getElementById('operateurDemarrerStockSoir').disabled = !peutDemarrer;
+      document.getElementById('boutonDemarrerStockSoir').disabled = !peutDemarrer;
+      rendreSelectOperateurs();
+      return;
+    }
+
+    document.getElementById('blocDemarrerStockSoir').style.display = 'none';
+    document.getElementById('blocSessionStockSoir').style.display = '';
     document.getElementById('ligneAjoutProduction').style.display = peutSaisirProduction() ? '' : 'none';
+    const libelleCote = sessionStockSoir.cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
+    document.getElementById('entierColonneStockSoir').textContent = libelleCote;
+    document.getElementById('resumeSessionStockSoir').textContent =
+      libelleCote + ' — ' + sessionStockSoir.operateur + ' — ' + sessionStockSoir.heure;
+
     rendreListeInactifs();
     const q = (document.getElementById('filtreProduction').value || '').toLowerCase();
     const actifs = produits.filter(function (p) { return p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
     const corps = document.getElementById('corpsProduction');
+    const saisieEnCours = capturerSaisieEnCours(corps);
     corps.innerHTML = '';
     document.getElementById('videProduction').style.display = actifs.length ? 'none' : 'block';
 
+    const champAutreValeur = sessionStockSoir.cote === 'haut' ? 'stockBas' : 'stockHaut';
     const groupes = {};
     actifs.forEach(function (p) {
       const famille = p.famille || 'Sans famille';
@@ -951,13 +1105,14 @@
       const trTitre = document.createElement('tr');
       trTitre.className = 'entete-groupe';
       const tdTitre = document.createElement('td');
-      tdTitre.colSpan = 4;
+      tdTitre.colSpan = 3;
       tdTitre.textContent = famille;
       trTitre.appendChild(tdTitre);
       corps.appendChild(trTitre);
 
       groupes[famille].sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
         const saisie = saisieDuJour[p.nom] || {};
+        const autre = (typeof saisie[champAutreValeur] === 'number') ? saisie[champAutreValeur] : 0;
         const tr = document.createElement('tr');
         const tdNom = document.createElement('td');
         tdNom.className = 'produit';
@@ -966,76 +1121,38 @@
         const tdTotal = document.createElement('td');
         tdTotal.className = 'centre mono';
 
+        const td = document.createElement('td');
+        td.className = 'centre';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'ex. 12+8+5';
+        input.dataset.produit = p.nom;
+        input.dataset.champ = 'stockSession';
+        const valeurEnCours = saisieSessionEnCours.hasOwnProperty(p.nom) ? saisieSessionEnCours[p.nom] : '';
+        input.className = 'champ-valeur' + (valeurEnCours !== '' ? ' enregistre' : '');
+        input.value = valeurEnCours;
+        input.disabled = !peutSaisirProduction();
+
         function majTotal() {
-          const h = sommerExpression(inputHaut.value);
-          const b = sommerExpression(inputBas.value);
-          const rien = h === null && b === null;
-          tdTotal.textContent = rien ? '' : ((h || 0) + (b || 0));
+          const v = sommerExpression(input.value);
+          const rien = v === null && !autre;
+          tdTotal.textContent = rien ? '' : ((v || 0) + autre);
         }
 
-        function champHautBas(valeurInitiale) {
-          const td = document.createElement('td');
-          td.className = 'centre';
-          const input = document.createElement('input');
-          input.type = 'text';
-          input.placeholder = 'ex. 12+8+5';
-          input.className = 'champ-valeur' + (valeurInitiale !== '' && valeurInitiale !== null && typeof valeurInitiale !== 'undefined' ? ' enregistre' : '');
-          input.value = (valeurInitiale === null || typeof valeurInitiale === 'undefined') ? '' : valeurInitiale;
-          input.disabled = !peutSaisirProduction();
-          td.appendChild(input);
-          return { td: td, input: input };
-        }
-
-        const blocHaut = champHautBas(saisie.stockHaut);
-        const blocBas = champHautBas(saisie.stockBas);
-        const inputHaut = blocHaut.input;
-        const inputBas = blocBas.input;
+        input.addEventListener('input', function () {
+          saisieSessionEnCours[p.nom] = input.value;
+          majTotal();
+        });
         majTotal();
-
-        function enregistrer() {
-          if (inputHaut.value !== '' && sommerExpression(inputHaut.value) === null) {
-            afficherToast('Valeur invalide pour "Haut" — nombres séparés par + (ex. 12+8+5)');
-            return;
-          }
-          if (inputBas.value !== '' && sommerExpression(inputBas.value) === null) {
-            afficherToast('Valeur invalide pour "Bas" — nombres séparés par + (ex. 12+8+5)');
-            return;
-          }
-          const haut = sommerExpression(inputHaut.value);
-          const bas = sommerExpression(inputBas.value);
-          const total = (haut || 0) + (bas || 0);
-          inputHaut.value = (haut === null) ? '' : haut;
-          inputBas.value = (bas === null) ? '' : bas;
-          inputHaut.classList.remove('enregistre');
-          inputBas.classList.remove('enregistre');
-          const ref = db.collection('saisieStock').doc(idJourProduit(AUJOURD_HUI, p.nom));
-          ref.set({
-            date: AUJOURD_HUI, produit: p.nom,
-            stockHaut: haut, stockBas: bas, stockSoir: total,
-            horodatage: firebase.firestore.FieldValue.serverTimestamp(),
-            responsable: utilisateurCourant.email,
-            importe: false
-          }, { merge: true }).then(function () {
-            inputHaut.classList.add('enregistre');
-            inputBas.classList.add('enregistre');
-            majTotal();
-            enregistrerTransaction('stock_soir', p.nom, total);
-            afficherToast(p.nom + ' enregistré');
-          }).catch(function (err) {
-            afficherToast('Erreur : ' + err.message);
-          });
-        }
-
-        inputHaut.addEventListener('change', function () { majTotal(); enregistrer(); });
-        inputBas.addEventListener('change', function () { majTotal(); enregistrer(); });
+        td.appendChild(input);
 
         tr.appendChild(tdNom);
-        tr.appendChild(blocHaut.td);
-        tr.appendChild(blocBas.td);
+        tr.appendChild(td);
         tr.appendChild(tdTotal);
         corps.appendChild(tr);
       });
     });
+    restaurerSaisieEnCours(corps, saisieEnCours);
   }
   window.rendreProduction = rendreProduction;
 
@@ -1357,8 +1474,10 @@
       const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = s.produit;
       const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono';
       tdHaut.textContent = (s.stockHaut === null || typeof s.stockHaut === 'undefined') ? '—' : s.stockHaut;
+      if (s.stockHautOperateur) tdHaut.title = s.stockHautOperateur + (s.stockHautHeure ? ' — ' + s.stockHautHeure : '');
       const tdBas = document.createElement('td'); tdBas.className = 'centre mono';
       tdBas.textContent = (s.stockBas === null || typeof s.stockBas === 'undefined') ? '—' : s.stockBas;
+      if (s.stockBasOperateur) tdBas.title = s.stockBasOperateur + (s.stockBasHeure ? ' — ' + s.stockBasHeure : '');
       const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.textContent = s.stockSoir;
       const tdResponsable = document.createElement('td'); tdResponsable.textContent = s.responsable;
 
@@ -2086,6 +2205,8 @@
   function rendreParametres() {
     if (!estAdmin()) return;
 
+    rendreListeOperateurs();
+
     const corpsComptes = document.getElementById('corpsComptes');
     corpsComptes.innerHTML = '';
     comptes.forEach(function (c) {
@@ -2438,6 +2559,68 @@
     input.focus();
   }
   window.ajouterLigneReferentielVide = ajouterLigneReferentielVide;
+
+  // ---- Opérateurs (onglet Paramètres, admin uniquement) ----
+  function ajouterOperateur(nom) {
+    if (operateurs.indexOf(nom) !== -1) {
+      afficherToast('Cet opérateur existe déjà');
+      return;
+    }
+    db.collection('parametres').doc('operateurs').set(
+      { liste: firebase.firestore.FieldValue.arrayUnion(nom) }, { merge: true }
+    ).then(function () {
+      afficherToast('Ajouté');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+
+  function supprimerOperateur(nom) {
+    if (!confirm('Retirer « ' + nom + ' » de la liste des opérateurs ?')) return;
+    db.collection('parametres').doc('operateurs').update(
+      { liste: firebase.firestore.FieldValue.arrayRemove(nom) }
+    ).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+
+  function ajouterLigneOperateurVide() {
+    const conteneur = document.getElementById('listeOperateurs');
+    if (conteneur.querySelector('.ligne-referentiel-nouvelle')) return;
+    const ligne = document.createElement('div');
+    ligne.className = 'ligne-referentiel ligne-referentiel-nouvelle';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'champ-valeur';
+    input.placeholder = 'Nouvel opérateur...';
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') input.blur();
+    });
+    input.addEventListener('blur', function () {
+      const v = input.value.trim();
+      ligne.remove();
+      if (v) ajouterOperateur(v);
+    });
+    ligne.appendChild(input);
+    conteneur.appendChild(ligne);
+    input.focus();
+  }
+  window.ajouterLigneOperateurVide = ajouterLigneOperateurVide;
+
+  function rendreListeOperateurs() {
+    const conteneur = document.getElementById('listeOperateurs');
+    conteneur.innerHTML = '';
+    operateurs.forEach(function (nom) {
+      const ligne = document.createElement('div');
+      ligne.className = 'ligne-referentiel';
+      const span = document.createElement('span');
+      span.className = 'valeur-referentiel';
+      span.textContent = nom;
+      const lien = document.createElement('a');
+      lien.className = 'lien-supprimer';
+      lien.textContent = 'supprimer';
+      lien.onclick = function () { supprimerOperateur(nom); };
+      ligne.appendChild(span);
+      ligne.appendChild(lien);
+      conteneur.appendChild(ligne);
+    });
+  }
 
   // Supprime une famille ET les variétés qui lui sont rattachées (sinon elles
   // resteraient orphelines, invisibles dans le menu Variété puisque plus aucune

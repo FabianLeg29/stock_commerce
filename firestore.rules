@@ -3,7 +3,8 @@ rules_version = '2';
 // ============================================================
 // Suivi Stock — La Légumière
 // Rôles (stockés dans users/{uid}.role) :
-//   admin      : tout, y compris gestion des comptes
+//   admin      : tout, y compris gestion des comptes et de la liste des opérateurs
+//                de stock du soir (collection "parametres")
 //   commerce   : gestion complète des produits (collection "produits" — création,
 //                désignation, famille/variete/conditionnement/suremballage, prix
 //                d'achat/unité, actif, suppression) et des listes de référence dont
@@ -76,6 +77,15 @@ service cloud.firestore {
     match /referentiels/{docId} {
       allow read: if connecte();
       allow write: if estCommerce();
+    }
+
+    // ---- Paramètres divers (ex: liste des opérateurs de stock du soir) ----
+    // Gérés exclusivement par l'admin depuis l'onglet Paramètres — lecture ouverte à
+    // tous les rôles connectés (le choix d'un opérateur se fait depuis l'onglet
+    // Stock du soir, accessible à la production).
+    match /parametres/{docId} {
+      allow read: if connecte();
+      allow write: if estAdmin();
     }
 
     // ---- Cache "dernier stock connu" par produit ----
