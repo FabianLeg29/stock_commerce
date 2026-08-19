@@ -1929,20 +1929,11 @@
       tdNom.className = 'produit';
       tdNom.textContent = p.nom;
 
-      const tdFamille = document.createElement('td');
-      tdFamille.textContent = p.famille || '';
-
-      const tdVariete = document.createElement('td');
-      tdVariete.textContent = p.variete || '';
-
-      const tdOrigine = document.createElement('td');
-      tdOrigine.textContent = p.origine || '';
-
-      const tdConditionnement = document.createElement('td');
-      tdConditionnement.textContent = p.conditionnement || '';
-
-      const tdSuremballage = document.createElement('td');
-      tdSuremballage.textContent = p.suremballage || '';
+      const tdFamille = champTaxonomieProduit(p, 'famille', 'familles', peutGerer);
+      const tdVariete = champVarieteProduit(p, peutGerer);
+      const tdOrigine = champTaxonomieProduit(p, 'origine', 'origines', peutGerer);
+      const tdConditionnement = champTaxonomieProduit(p, 'conditionnement', 'conditionnements', peutGerer);
+      const tdSuremballage = champTaxonomieProduit(p, 'suremballage', 'suremballages', peutGerer);
 
       const tdActif = document.createElement('td');
       tdActif.className = 'centre';
@@ -2051,6 +2042,70 @@
     if (unite === 'colis') return 'colis';
     if (unite === 'kilo') return 'kg';
     return '';
+  }
+
+  // Édition en ligne d'un champ de taxonomie à plat (famille, origine, conditionnement,
+  // suremballage) depuis le tableau de l'onglet Produits — permet de corriger une erreur
+  // de saisie après coup, sans devoir supprimer/recréer le produit.
+  function champTaxonomieProduit(p, champ, champReferentiel, peutEditer) {
+    const td = document.createElement('td');
+    const select = document.createElement('select');
+    select.style.cssText = 'width:100%; padding:6px 8px; border-radius:6px; border:1.5px solid var(--line); font-size:13px; background:white;';
+    select.disabled = !peutEditer;
+    const depuisProduits = produits.map(function (pp) { return pp[champ]; }).filter(Boolean);
+    const depuisReferentiels = referentiels[champReferentiel] || [];
+    const valeurs = Array.from(new Set(depuisProduits.concat(depuisReferentiels))).sort();
+    const optVide = document.createElement('option');
+    optVide.value = '';
+    optVide.textContent = '—';
+    select.appendChild(optVide);
+    valeurs.forEach(function (v) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      select.appendChild(opt);
+    });
+    select.value = p[champ] || '';
+    if (peutEditer) {
+      select.addEventListener('change', function () {
+        modifierProduit(p.id, { [champ]: select.value });
+      });
+    }
+    td.appendChild(select);
+    return td;
+  }
+
+  // Variété dépend de la famille ACTUELLE du produit (celle déjà enregistrée) : ne
+  // propose que les variétés rattachées à cette famille. Un changement de famille se
+  // répercute ici au prochain rendu (déclenché par le listener Firestore sur produits).
+  function champVarieteProduit(p, peutEditer) {
+    const td = document.createElement('td');
+    const select = document.createElement('select');
+    select.style.cssText = 'width:100%; padding:6px 8px; border-radius:6px; border:1.5px solid var(--line); font-size:13px; background:white;';
+    select.disabled = !peutEditer;
+    const depuisProduits = produits.filter(function (pp) { return pp.famille === p.famille; })
+      .map(function (pp) { return pp.variete; }).filter(Boolean);
+    const depuisReferentiels = (referentiels.varietes || []).filter(function (v) { return v.famille === p.famille; })
+      .map(function (v) { return v.nom; });
+    const valeurs = Array.from(new Set(depuisProduits.concat(depuisReferentiels))).sort();
+    const optVide = document.createElement('option');
+    optVide.value = '';
+    optVide.textContent = '—';
+    select.appendChild(optVide);
+    valeurs.forEach(function (v) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      select.appendChild(opt);
+    });
+    select.value = p.variete || '';
+    if (peutEditer) {
+      select.addEventListener('change', function () {
+        modifierProduit(p.id, { variete: select.value });
+      });
+    }
+    td.appendChild(select);
+    return td;
   }
 
   function champPrixAchat(p, peutEditer) {
