@@ -427,6 +427,7 @@
               <th>Conditionnement</th>
               <th>Suremballage</th>
               <th class="centre">Prix d'achat par défaut</th>
+              <th class="centre">Unité</th>
               <th class="centre">Actif</th>
             </tr>
           </thead>
@@ -474,7 +475,7 @@
       </div>
       <div class="carte-tableau">
         <table>
-          <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Prix d'achat par défaut</th><th class="centre">Actif</th><th style="width:70px;"></th></tr></thead>
+          <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Prix d'achat par défaut</th><th class="centre">Unité</th><th class="centre">Actif</th><th style="width:70px;"></th></tr></thead>
           <tbody id="corpsProduits"></tbody>
         </table>
       </div>
@@ -520,7 +521,7 @@
   // ============================================================
   let utilisateurCourant = null;   // { uid, email }
   let roleCourant = 'aucun';       // 'admin' | 'commerce' | 'production' | 'viewer' | 'aucun'
-  let produits = [];               // [{ nom, actif, prixAchatDefaut, ordre }]
+  let produits = [];               // [{ nom, actif, prixAchatDefaut, prixAchatUnite, ordre }]
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
@@ -1090,7 +1091,12 @@
 
       const tdPrix = document.createElement('td');
       tdPrix.className = 'centre mono';
-      tdPrix.textContent = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '—' : p.prixAchatDefaut;
+      if (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') {
+        tdPrix.textContent = '—';
+      } else {
+        const unite = libelleUnitePrix(p.prixAchatUnite);
+        tdPrix.textContent = p.prixAchatDefaut + ' €' + (unite ? ' / ' + unite : '');
+      }
 
       const tdVeille = document.createElement('td');
       tdVeille.className = 'centre mono';
@@ -1321,18 +1327,8 @@
       const tdSuremballage = document.createElement('td');
       tdSuremballage.textContent = p.suremballage || '';
 
-      const tdPrix = document.createElement('td');
-      tdPrix.className = 'centre';
-      const inputPrix = document.createElement('input');
-      inputPrix.type = 'number';
-      inputPrix.step = 'any';
-      inputPrix.className = 'champ-valeur';
-      inputPrix.value = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '' : p.prixAchatDefaut;
-      inputPrix.disabled = !peutGererCommerce();
-      inputPrix.addEventListener('change', function () {
-        modifierProduit(p.id, { prixAchatDefaut: inputPrix.value === '' ? null : Number(inputPrix.value) });
-      });
-      tdPrix.appendChild(inputPrix);
+      const tdPrix = champPrixAchat(p, peutGererCommerce());
+      const tdUnite = champUniteAchat(p, peutGererCommerce());
 
       const tdActif = document.createElement('td');
       tdActif.className = 'centre';
@@ -1350,7 +1346,7 @@
 
       tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete);
       tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
-      tr.appendChild(tdPrix); tr.appendChild(tdActif);
+      tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdActif);
       corps.appendChild(tr);
     });
   }
@@ -1780,9 +1776,9 @@
     ]).then(function (resultats) {
       const saisieSnap = resultats[0], commerceSnap = resultats[1], achatsSnap = resultats[2], transactionsSnap = resultats[3];
 
-      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Conditionnement', 'Suremballage', 'Actif', "Prix d'achat par défaut", 'Ordre']];
+      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Conditionnement', 'Suremballage', 'Actif', "Prix d'achat par défaut", 'Unité', 'Ordre']];
       produits.slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
-        feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, p.ordre || '']);
+        feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, libelleUnitePrix(p.prixAchatUnite), p.ordre || '']);
       });
 
       const feuilleStock = [['Date', 'Produit', 'Haut', 'Bas', 'Total', 'Importé', 'Responsable']];
@@ -1852,17 +1848,8 @@
       const tdSuremballage = document.createElement('td');
       tdSuremballage.textContent = p.suremballage || '';
 
-      const tdPrix = document.createElement('td');
-      tdPrix.className = 'centre';
-      const inputPrix = document.createElement('input');
-      inputPrix.type = 'number';
-      inputPrix.step = 'any';
-      inputPrix.className = 'champ-valeur';
-      inputPrix.value = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '' : p.prixAchatDefaut;
-      inputPrix.addEventListener('change', function () {
-        modifierProduit(p.id, { prixAchatDefaut: inputPrix.value === '' ? null : Number(inputPrix.value) });
-      });
-      tdPrix.appendChild(inputPrix);
+      const tdPrix = champPrixAchat(p, true);
+      const tdUnite = champUniteAchat(p, true);
 
       const tdActif = document.createElement('td');
       tdActif.className = 'centre';
@@ -1891,7 +1878,7 @@
 
       tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete);
       tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
-      tr.appendChild(tdPrix); tr.appendChild(tdActif); tr.appendChild(tdSuppr);
+      tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdActif); tr.appendChild(tdSuppr);
       corpsProduits.appendChild(tr);
     });
 
@@ -1925,6 +1912,59 @@
     });
   }
   window.rendreParametres = rendreParametres;
+
+  function libelleUnitePrix(unite) {
+    if (unite === 'colis') return 'colis';
+    if (unite === 'kilo') return 'kg';
+    return '';
+  }
+
+  function champPrixAchat(p, peutEditer) {
+    const td = document.createElement('td');
+    td.className = 'centre';
+    const enveloppe = document.createElement('div');
+    enveloppe.style.cssText = 'display:flex; align-items:center; justify-content:center; gap:4px;';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = 'any';
+    input.className = 'champ-valeur';
+    input.value = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '' : p.prixAchatDefaut;
+    input.disabled = !peutEditer;
+    input.style.cssText = 'width:80px;';
+    if (peutEditer) {
+      input.addEventListener('change', function () {
+        modifierProduit(p.id, { prixAchatDefaut: input.value === '' ? null : Number(input.value) });
+      });
+    }
+    const symbole = document.createElement('span');
+    symbole.style.cssText = 'color:#a49a89;';
+    symbole.textContent = '€';
+    enveloppe.appendChild(input);
+    enveloppe.appendChild(symbole);
+    td.appendChild(enveloppe);
+    return td;
+  }
+
+  function champUniteAchat(p, peutEditer) {
+    const td = document.createElement('td');
+    td.className = 'centre';
+    const select = document.createElement('select');
+    [['', '— Choisir —'], ['colis', 'Colis'], ['kilo', 'Kilo']].forEach(function (opt) {
+      const option = document.createElement('option');
+      option.value = opt[0];
+      option.textContent = opt[1];
+      select.appendChild(option);
+    });
+    select.value = p.prixAchatUnite || '';
+    select.disabled = !peutEditer;
+    if (peutEditer) {
+      select.addEventListener('change', function () {
+        modifierProduit(p.id, { prixAchatUnite: select.value || null });
+      });
+    }
+    td.appendChild(select);
+    return td;
+  }
 
   function modifierProduit(id, champs) {
     db.collection('produits').doc(id).update(champs).catch(function (e) {
@@ -2000,6 +2040,7 @@
       suremballage: valeurChampListe('nouveauSuremballage'),
       actif: true,
       prixAchatDefaut: null,
+      prixAchatUnite: null,
       ordre: prochainOrdreProduit()
     }).then(function () {
       input.value = '';

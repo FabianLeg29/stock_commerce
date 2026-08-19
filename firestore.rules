@@ -58,8 +58,8 @@ service cloud.firestore {
     // production : peut modifier UNIQUEMENT le champ actif d'un produit existant
     // (réactiver un produit inactif depuis la liste de l'onglet Production) — ne
     // peut pas créer de nouveau produit ni le supprimer.
-    // commerce : peut modifier UNIQUEMENT les champs actif et prixAchatDefaut
-    // d'un produit existant (gestion commerciale au quotidien) — la
+    // commerce : peut modifier UNIQUEMENT les champs actif, prixAchatDefaut et
+    // prixAchatUnite d'un produit existant (gestion commerciale au quotidien) — la
     // suppression et les champs famille/variete/conditionnement/suremballage/nom
     // restent réservés à l'admin, y compris en cas de manipulation technique.
     match /produits/{produitId} {
@@ -67,7 +67,7 @@ service cloud.firestore {
       allow create: if estAdmin();
       allow delete: if estAdmin();
       allow update: if estAdmin() ||
-        (estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif', 'prixAchatDefaut'])) ||
+        (estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif', 'prixAchatDefaut', 'prixAchatUnite'])) ||
         (estProduction() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif']));
     }
 
