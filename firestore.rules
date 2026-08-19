@@ -6,8 +6,11 @@ rules_version = '2';
 //   admin      : tout, y compris gestion des comptes et des produits
 //   commerce   : ventes (collection "commerce"), achats/livraisons (collection
 //                "achats"), + actif/prixAchatDefaut/reservations d'un produit
-//                existant (pas la création/suppression de produit)
-//   production : stock du soir (collection "saisieStock")
+//                existant, + validation du stock du soir (champ "importe" de
+//                saisieStock) qui met à jour dernierStock (pas la création/
+//                suppression de produit, ni les valeurs saisies par la production)
+//   production : stock du soir (collection "saisieStock"), + création d'un
+//                nouveau produit (désignation minimale, pas sa modification)
 //   viewer     : lecture seule partout
 //   aucun      : rôle par défaut au 1er login — aucun accès à l'application
 //                tant qu'un administrateur n'a pas attribué un rôle
@@ -50,29 +53,37 @@ service cloud.firestore {
 
     // ---- Produits (un document par produit) ----
     // admin : tout (créer, tout modifier, supprimer).
+    // production : peut CRÉER un nouveau produit (désignation minimale, depuis
+    // l'onglet Production) mais ne peut pas le modifier ensuite ni le supprimer.
     // commerce : peut modifier UNIQUEMENT les champs actif, prixAchatDefaut et
     // reservations d'un produit existant (gestion commerciale au quotidien) — la
-    // création, la suppression et les champs famille/variete/conditionnement/
-    // suremballage/nom restent réservés à l'admin, y compris en cas de
-    // manipulation technique.
+    // suppression et les champs famille/variete/conditionnement/suremballage/nom
+    // restent réservés à l'admin, y compris en cas de manipulation technique.
     match /produits/{produitId} {
       allow read: if connecte();
-      allow create: if estAdmin();
+      allow create: if estAdmin() || estProduction();
       allow delete: if estAdmin();
       allow update: if estAdmin() ||
         (estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif', 'prixAchatDefaut', 'reservations']));
     }
 
-    // ---- Cache "dernier stock connu" par produit (mis à jour par la Production) ----
+    // ---- Cache "dernier stock connu" par produit ----
+    // Écrit uniquement par le rôle commerce, lors de la validation/import du
+    // stock du soir saisi par la production (voir saisieStock) — la production
+    // ne modifie plus ce cache directement.
     match /dernierStock/{docId} {
       allow read: if connecte();
-      allow write: if estProduction() || estCommerce();
+      allow write: if estCommerce();
     }
 
     // ---- Saisie du stock du soir (Production) ----
+    // production : écrit librement ses saisies (haut/bas/total, importe:false).
+    // commerce : peut UNIQUEMENT faire passer le champ importe à true, lors de la
+    // validation — ne peut pas modifier les valeurs saisies par la production.
     match /saisieStock/{docId} {
       allow read: if connecte();
       allow write: if estProduction();
+      allow update: if estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['importe']);
     }
 
     // ---- Ventes du jour (Commerce) ----

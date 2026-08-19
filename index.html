@@ -13,6 +13,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 
+<!-- SheetJS (génération de fichiers .xlsx côté client, pour la sauvegarde Excel) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
 <style>
   :root {
     --copper: #963E88;
@@ -164,6 +167,11 @@
 
   .section-titre { font-size: 15px; margin: 26px 0 10px 0; color: var(--copper); }
 
+  tr.entete-groupe td {
+    background: var(--copper-soft); color: var(--copper); font-weight: 700;
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 14px;
+  }
+
   select.select-role {
     padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 13px; background: white;
   }
@@ -270,9 +278,20 @@
         <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
         <span class="date-du-jour" id="dateProduction"></span>
       </div>
+      <div class="ligne-ajout" id="ligneAjoutProduction">
+        <input type="text" id="nouveauProduitProduction" placeholder="Ajouter un produit (désignation)...">
+        <button onclick="ajouterProduitDepuisProduction()">Ajouter</button>
+      </div>
       <div class="carte-tableau">
         <table>
-          <thead><tr><th>Produit</th><th class="centre" style="width:130px;">Stock du soir</th><th style="width:30px;"></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th class="centre" style="width:100px;">Haut</th>
+              <th class="centre" style="width:100px;">Bas</th>
+              <th class="centre" style="width:100px;">Total</th>
+            </tr>
+          </thead>
           <tbody id="corpsProduction"></tbody>
         </table>
         <div class="vide" id="videProduction" style="display:none;">Aucun produit actif pour le moment.</div>
@@ -353,6 +372,30 @@
         </table>
         <div class="vide" id="videCommerce" style="display:none;">Aucun produit actif pour le moment.</div>
       </div>
+
+      <h3 class="section-titre">Stock du soir à valider</h3>
+      <div id="carteValidationStock">
+        <div style="margin-bottom:10px;">
+          <button class="bouton-secondaire" onclick="validerToutLeStock()">Tout valider et importer</button>
+        </div>
+        <div class="carte-tableau">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Produit</th>
+                <th class="centre">Haut</th>
+                <th class="centre">Bas</th>
+                <th class="centre">Total</th>
+                <th>Responsable</th>
+                <th style="width:160px;"></th>
+              </tr>
+            </thead>
+            <tbody id="corpsValidationStock"></tbody>
+          </table>
+          <div class="vide" id="videValidationStock" style="display:none;">Aucun stock en attente de validation.</div>
+        </div>
+      </div>
     </div>
 
     <!-- ---------------- PRIX D'ACHAT ---------------- -->
@@ -384,6 +427,7 @@
       <div class="barre-outils">
         <input type="text" id="filtreHistorique" placeholder="Rechercher (produit, type, responsable)..." oninput="rendreHistorique()">
         <button class="bouton-secondaire" onclick="exporterHistoriqueCSV()">Exporter CSV</button>
+        <button class="bouton-secondaire" onclick="exporterSauvegardeExcel()">Exporter sauvegarde Excel (.xlsx)</button>
       </div>
       <div class="carte-tableau">
         <table>
@@ -464,7 +508,8 @@
   let roleCourant = 'aucun';       // 'admin' | 'commerce' | 'production' | 'viewer' | 'aucun'
   let produits = [];               // [{ nom, actif, prixAchatDefaut, ordre }]
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
-  let saisieDuJour = {};           // { nom: stockSoir }
+  let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
+  let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
   let commerceDuJour = {};         // { nom: { ventes } }
   let achatsDuJourParProduit = {};       // { nom: quantiteTotale }
   let achatsDuJourDetailParProduit = {}; // { nom: [ { achatId, fournisseur, quantite, prixAchat, heureDepart, transportType, transporteurNom } ] }
@@ -592,8 +637,27 @@
     desabonnements.push(
       db.collection('saisieStock').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
         const out = {};
-        qs.forEach(function (doc) { out[doc.data().produit] = doc.data().stockSoir; });
+        qs.forEach(function (doc) {
+          const d = doc.data();
+          out[d.produit] = { stockHaut: d.stockHaut, stockBas: d.stockBas, stockSoir: d.stockSoir };
+        });
         saisieDuJour = out;
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
+      db.collection('saisieStock').where('importe', '==', false).onSnapshot(function (qs) {
+        const out = [];
+        qs.forEach(function (doc) {
+          const d = doc.data();
+          out.push({
+            id: doc.id, date: d.date, produit: d.produit,
+            stockHaut: d.stockHaut, stockBas: d.stockBas, stockSoir: d.stockSoir,
+            responsable: d.responsable
+          });
+        });
+        saisieEnAttente = out;
         rendreVueActive();
       })
     );
@@ -732,63 +796,126 @@
   // ============================================================
   function rendreProduction() {
     document.getElementById('dateProduction').textContent = 'Soir du ' + AUJOURD_HUI;
+    document.getElementById('ligneAjoutProduction').style.display = peutSaisirProduction() ? '' : 'none';
     const q = (document.getElementById('filtreProduction').value || '').toLowerCase();
     const actifs = produits.filter(function (p) { return p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
     const corps = document.getElementById('corpsProduction');
     corps.innerHTML = '';
     document.getElementById('videProduction').style.display = actifs.length ? 'none' : 'block';
 
+    const groupes = {};
     actifs.forEach(function (p) {
-      const tr = document.createElement('tr');
-      const tdNom = document.createElement('td');
-      tdNom.className = 'produit';
-      tdNom.textContent = p.nom;
+      const famille = p.famille || 'Sans famille';
+      if (!groupes[famille]) groupes[famille] = [];
+      groupes[famille].push(p);
+    });
 
-      const tdVal = document.createElement('td');
-      tdVal.className = 'centre';
-      const valeurActuelle = (typeof saisieDuJour[p.nom] !== 'undefined') ? saisieDuJour[p.nom] : '';
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.min = '0';
-      input.className = 'champ-valeur' + (valeurActuelle !== '' ? ' enregistre' : '');
-      input.value = valeurActuelle;
-      input.disabled = !peutSaisirProduction();
+    Object.keys(groupes).sort().forEach(function (famille) {
+      const trTitre = document.createElement('tr');
+      trTitre.className = 'entete-groupe';
+      const tdTitre = document.createElement('td');
+      tdTitre.colSpan = 4;
+      tdTitre.textContent = famille;
+      trTitre.appendChild(tdTitre);
+      corps.appendChild(trTitre);
 
-      const tdStatut = document.createElement('td');
-      tdStatut.className = 'centre mono';
+      groupes[famille].sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
+        const saisie = saisieDuJour[p.nom] || {};
+        const tr = document.createElement('tr');
+        const tdNom = document.createElement('td');
+        tdNom.className = 'produit';
+        tdNom.textContent = p.nom;
 
-      input.addEventListener('change', function () {
-        const valeur = input.value === '' ? null : Number(input.value);
-        input.classList.remove('enregistre');
-        const ref = db.collection('saisieStock').doc(idJourProduit(AUJOURD_HUI, p.nom));
-        const refCache = db.collection('dernierStock').doc('main');
-        const lot = db.batch();
-        lot.set(ref, {
-          date: AUJOURD_HUI, produit: p.nom, stockSoir: valeur,
-          horodatage: firebase.firestore.FieldValue.serverTimestamp(),
-          responsable: utilisateurCourant.email
-        }, { merge: true });
-        const majCache = {};
-        majCache[p.nom] = { valeur: valeur, date: AUJOURD_HUI };
-        lot.set(refCache, majCache, { merge: true });
-        lot.commit().then(function () {
-          input.classList.add('enregistre');
-          tdStatut.textContent = 'OK';
-          enregistrerTransaction('stock_soir', p.nom, valeur);
-          afficherToast(p.nom + ' enregistré');
-        }).catch(function (err) {
-          afficherToast('Erreur : ' + err.message);
-        });
+        const tdTotal = document.createElement('td');
+        tdTotal.className = 'centre mono';
+
+        function majTotal() {
+          const rien = inputHaut.value === '' && inputBas.value === '';
+          const h = inputHaut.value === '' ? 0 : Number(inputHaut.value);
+          const b = inputBas.value === '' ? 0 : Number(inputBas.value);
+          tdTotal.textContent = rien ? '' : (h + b);
+        }
+
+        function champHautBas(valeurInitiale) {
+          const td = document.createElement('td');
+          td.className = 'centre';
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.min = '0';
+          input.className = 'champ-valeur' + (valeurInitiale !== '' && valeurInitiale !== null && typeof valeurInitiale !== 'undefined' ? ' enregistre' : '');
+          input.value = (valeurInitiale === null || typeof valeurInitiale === 'undefined') ? '' : valeurInitiale;
+          input.disabled = !peutSaisirProduction();
+          td.appendChild(input);
+          return { td: td, input: input };
+        }
+
+        const blocHaut = champHautBas(saisie.stockHaut);
+        const blocBas = champHautBas(saisie.stockBas);
+        const inputHaut = blocHaut.input;
+        const inputBas = blocBas.input;
+        majTotal();
+
+        function enregistrer() {
+          const haut = inputHaut.value === '' ? null : Number(inputHaut.value);
+          const bas = inputBas.value === '' ? null : Number(inputBas.value);
+          const total = (haut || 0) + (bas || 0);
+          inputHaut.classList.remove('enregistre');
+          inputBas.classList.remove('enregistre');
+          const ref = db.collection('saisieStock').doc(idJourProduit(AUJOURD_HUI, p.nom));
+          ref.set({
+            date: AUJOURD_HUI, produit: p.nom,
+            stockHaut: haut, stockBas: bas, stockSoir: total,
+            horodatage: firebase.firestore.FieldValue.serverTimestamp(),
+            responsable: utilisateurCourant.email,
+            importe: false
+          }, { merge: true }).then(function () {
+            inputHaut.classList.add('enregistre');
+            inputBas.classList.add('enregistre');
+            majTotal();
+            enregistrerTransaction('stock_soir', p.nom, total);
+            afficherToast(p.nom + ' enregistré');
+          }).catch(function (err) {
+            afficherToast('Erreur : ' + err.message);
+          });
+        }
+
+        inputHaut.addEventListener('change', function () { majTotal(); enregistrer(); });
+        inputBas.addEventListener('change', function () { majTotal(); enregistrer(); });
+
+        tr.appendChild(tdNom);
+        tr.appendChild(blocHaut.td);
+        tr.appendChild(blocBas.td);
+        tr.appendChild(tdTotal);
+        corps.appendChild(tr);
       });
-
-      tdVal.appendChild(input);
-      tr.appendChild(tdNom);
-      tr.appendChild(tdVal);
-      tr.appendChild(tdStatut);
-      corps.appendChild(tr);
     });
   }
   window.rendreProduction = rendreProduction;
+
+  function prochainOrdreProduit() {
+    return produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0) + 1;
+  }
+
+  function ajouterProduitDepuisProduction() {
+    if (!peutSaisirProduction()) return;
+    const input = document.getElementById('nouveauProduitProduction');
+    const nom = input.value.trim();
+    if (!nom) return;
+    const id = slugify(nom);
+    if (produits.some(function (p) { return p.id === id; })) {
+      afficherToast('Ce produit existe déjà');
+      return;
+    }
+    db.collection('produits').doc(id).set({
+      nom: nom, famille: '', variete: '', conditionnement: '', suremballage: '',
+      actif: true, prixAchatDefaut: null, reservations: 0, ordre: prochainOrdreProduit()
+    }).then(function () {
+      input.value = '';
+      enregistrerTransaction('produit_ajoute', nom, null);
+      afficherToast(nom + ' ajouté');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.ajouterProduitDepuisProduction = ajouterProduitDepuisProduction;
 
   // ============================================================
   // COMMERCE
@@ -933,8 +1060,65 @@
       corps.appendChild(tr);
       corps.appendChild(trDetail);
     });
+
+    rendreValidationStock();
   }
   window.rendreCommerce = rendreCommerce;
+
+  function rendreValidationStock() {
+    const carte = document.getElementById('carteValidationStock');
+    carte.style.display = peutGererCommerce() ? '' : 'none';
+    if (!peutGererCommerce()) return;
+
+    const corps = document.getElementById('corpsValidationStock');
+    corps.innerHTML = '';
+    document.getElementById('videValidationStock').style.display = saisieEnAttente.length ? 'none' : 'block';
+
+    saisieEnAttente.slice().sort(function (a, b) {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      return a.produit.localeCompare(b.produit);
+    }).forEach(function (s) {
+      const tr = document.createElement('tr');
+      const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.textContent = s.date;
+      const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = s.produit;
+      const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono';
+      tdHaut.textContent = (s.stockHaut === null || typeof s.stockHaut === 'undefined') ? '—' : s.stockHaut;
+      const tdBas = document.createElement('td'); tdBas.className = 'centre mono';
+      tdBas.textContent = (s.stockBas === null || typeof s.stockBas === 'undefined') ? '—' : s.stockBas;
+      const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.textContent = s.stockSoir;
+      const tdResponsable = document.createElement('td'); tdResponsable.textContent = s.responsable;
+
+      const tdAction = document.createElement('td');
+      tdAction.className = 'centre';
+      const btn = document.createElement('button');
+      btn.className = 'bouton-secondaire';
+      btn.textContent = 'Valider et importer';
+      btn.onclick = function () { validerStock([s]); };
+      tdAction.appendChild(btn);
+
+      tr.appendChild(tdDate); tr.appendChild(tdProduit); tr.appendChild(tdHaut);
+      tr.appendChild(tdBas); tr.appendChild(tdTotal); tr.appendChild(tdResponsable); tr.appendChild(tdAction);
+      corps.appendChild(tr);
+    });
+  }
+
+  function validerStock(entrees) {
+    if (!entrees.length) { afficherToast('Rien à valider'); return; }
+    const majCache = {};
+    entrees.forEach(function (s) { majCache[s.produit] = { valeur: s.stockSoir, date: s.date }; });
+    const lot = db.batch();
+    lot.set(db.collection('dernierStock').doc('main'), majCache, { merge: true });
+    entrees.forEach(function (s) { lot.update(db.collection('saisieStock').doc(s.id), { importe: true }); });
+    lot.commit().then(function () {
+      entrees.forEach(function (s) { enregistrerTransaction('stock_importe', s.produit, s.stockSoir); });
+      afficherToast((entrees.length > 1 ? entrees.length + ' produits importés' : entrees[0].produit + ' importé') + ' dans le stock commerce');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+
+  function validerToutLeStock() {
+    validerStock(saisieEnAttente);
+  }
+  window.validerToutLeStock = validerToutLeStock;
 
   function rendrePrixAchat() {
     const q = (document.getElementById('filtrePrixAchat').value || '').toLowerCase();
@@ -1406,6 +1590,66 @@
   }
   window.exporterHistoriqueCSV = exporterHistoriqueCSV;
 
+  function exporterSauvegardeExcel() {
+    if (typeof XLSX === 'undefined') {
+      afficherToast('Bibliothèque Excel indisponible, réessayez.');
+      return;
+    }
+    afficherToast('Préparation de la sauvegarde...');
+    Promise.all([
+      db.collection('saisieStock').orderBy('date', 'desc').limit(5000).get(),
+      db.collection('commerce').orderBy('date', 'desc').limit(5000).get(),
+      db.collection('achats').orderBy('horodatage', 'desc').limit(5000).get(),
+      db.collection('transactions').orderBy('horodatage', 'desc').limit(5000).get()
+    ]).then(function (resultats) {
+      const saisieSnap = resultats[0], commerceSnap = resultats[1], achatsSnap = resultats[2], transactionsSnap = resultats[3];
+
+      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Conditionnement', 'Suremballage', 'Actif', "Prix d'achat par défaut", 'Réservations', 'Ordre']];
+      produits.slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
+        feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, p.reservations || 0, p.ordre || '']);
+      });
+
+      const feuilleStock = [['Date', 'Produit', 'Haut', 'Bas', 'Total', 'Importé', 'Responsable']];
+      saisieSnap.forEach(function (doc) {
+        const d = doc.data();
+        feuilleStock.push([d.date, d.produit, d.stockHaut, d.stockBas, d.stockSoir, d.importe ? 'Oui' : 'Non', d.responsable]);
+      });
+
+      const feuilleVentes = [['Date', 'Produit', 'Ventes', 'Responsable']];
+      commerceSnap.forEach(function (doc) {
+        const d = doc.data();
+        feuilleVentes.push([d.date, d.produit, d.ventes, d.responsable]);
+      });
+
+      const feuilleAchats = [['Date', 'Fournisseur', 'Produit', 'Quantité', "Prix d'achat", 'Heure de départ', 'Transport', 'Responsable']];
+      achatsSnap.forEach(function (doc) {
+        const d = doc.data();
+        (d.lignes || []).forEach(function (l) {
+          const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '');
+          feuilleAchats.push([d.date, d.fournisseur, l.produit, l.quantite, l.prixAchat, l.heureDepart, transport, d.responsable]);
+        });
+      });
+
+      const feuilleHistorique = [['Date', 'Type', 'Produit', 'Valeur', 'Responsable']];
+      transactionsSnap.forEach(function (doc) {
+        const d = doc.data();
+        feuilleHistorique.push([d.date, libelleTypeTransaction(d.type), d.produit, d.valeur, d.responsable]);
+      });
+
+      const classeur = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleProduits), 'Produits');
+      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleStock), 'Stock du soir');
+      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleVentes), 'Ventes');
+      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleAchats), 'Achats');
+      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleHistorique), 'Historique');
+      XLSX.writeFile(classeur, 'sauvegarde_stock_' + AUJOURD_HUI + '.xlsx');
+      afficherToast('Sauvegarde Excel générée');
+    }).catch(function (e) {
+      afficherToast('Erreur : ' + e.message);
+    });
+  }
+  window.exporterSauvegardeExcel = exporterSauvegardeExcel;
+
   // ============================================================
   // PARAMETRES (admin)
   // ============================================================
@@ -1572,7 +1816,6 @@
       afficherToast('Ce produit existe déjà');
       return;
     }
-    const ordreMax = produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0);
     db.collection('produits').doc(id).set({
       nom: nom,
       famille: valeurChampListe('nouvelleFamille'),
@@ -1581,7 +1824,8 @@
       suremballage: valeurChampListe('nouveauSuremballage'),
       actif: true,
       prixAchatDefaut: null,
-      ordre: ordreMax + 1
+      reservations: 0,
+      ordre: prochainOrdreProduit()
     }).then(function () {
       input.value = '';
       CHAMPS_LISTES_PRODUIT.forEach(function (c) {
