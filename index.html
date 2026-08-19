@@ -489,7 +489,7 @@
         <input type="text" id="nouveauProduit" placeholder="Désignation (générée automatiquement, modifiable)...">
         <select id="nouvelleFamille" onchange="rendreSelectVariete(); recalculerDesignationAuto();"></select>
         <select id="nouvelleVariete" onchange="recalculerDesignationAuto()"></select>
-        <select id="nouvelleOrigine"></select>
+        <select id="nouvelleOrigine" onchange="recalculerDesignationAuto()"></select>
         <select id="nouveauConditionnement" onchange="recalculerDesignationAuto()"></select>
         <select id="nouveauSuremballage" onchange="recalculerDesignationAuto()"></select>
         <button onclick="ajouterProduit()">Ajouter</button>
@@ -620,6 +620,22 @@
   }
 
   function peutSaisirProduction() { return roleCourant === 'production' || roleCourant === 'admin'; }
+
+  // Permet de taper directement une addition (ex. "12+8+5") dans un champ de saisie de
+  // stock : additionne les nombres séparés par "+" plutôt que d'exiger un calcul mental
+  // avant la saisie. Renvoie null si le champ est vide ou si l'expression est invalide.
+  function sommerExpression(valeur) {
+    if (valeur === '' || valeur === null || typeof valeur === 'undefined') return null;
+    const parties = String(valeur).split('+').map(function (s) { return s.trim().replace(',', '.'); }).filter(function (s) { return s !== ''; });
+    if (!parties.length) return null;
+    let total = 0;
+    for (let i = 0; i < parties.length; i++) {
+      const n = Number(parties[i]);
+      if (isNaN(n)) return null;
+      total += n;
+    }
+    return total;
+  }
   function peutGererCommerce() { return roleCourant === 'commerce' || roleCourant === 'admin'; }
   function estAdmin() { return roleCourant === 'admin'; }
   function peutVoirPrix() { return roleCourant !== 'production'; }
@@ -951,18 +967,18 @@
         tdTotal.className = 'centre mono';
 
         function majTotal() {
-          const rien = inputHaut.value === '' && inputBas.value === '';
-          const h = inputHaut.value === '' ? 0 : Number(inputHaut.value);
-          const b = inputBas.value === '' ? 0 : Number(inputBas.value);
-          tdTotal.textContent = rien ? '' : (h + b);
+          const h = sommerExpression(inputHaut.value);
+          const b = sommerExpression(inputBas.value);
+          const rien = h === null && b === null;
+          tdTotal.textContent = rien ? '' : ((h || 0) + (b || 0));
         }
 
         function champHautBas(valeurInitiale) {
           const td = document.createElement('td');
           td.className = 'centre';
           const input = document.createElement('input');
-          input.type = 'number';
-          input.min = '0';
+          input.type = 'text';
+          input.placeholder = 'ex. 12+8+5';
           input.className = 'champ-valeur' + (valeurInitiale !== '' && valeurInitiale !== null && typeof valeurInitiale !== 'undefined' ? ' enregistre' : '');
           input.value = (valeurInitiale === null || typeof valeurInitiale === 'undefined') ? '' : valeurInitiale;
           input.disabled = !peutSaisirProduction();
@@ -977,9 +993,19 @@
         majTotal();
 
         function enregistrer() {
-          const haut = inputHaut.value === '' ? null : Number(inputHaut.value);
-          const bas = inputBas.value === '' ? null : Number(inputBas.value);
+          if (inputHaut.value !== '' && sommerExpression(inputHaut.value) === null) {
+            afficherToast('Valeur invalide pour "Haut" — nombres séparés par + (ex. 12+8+5)');
+            return;
+          }
+          if (inputBas.value !== '' && sommerExpression(inputBas.value) === null) {
+            afficherToast('Valeur invalide pour "Bas" — nombres séparés par + (ex. 12+8+5)');
+            return;
+          }
+          const haut = sommerExpression(inputHaut.value);
+          const bas = sommerExpression(inputBas.value);
           const total = (haut || 0) + (bas || 0);
+          inputHaut.value = (haut === null) ? '' : haut;
+          inputBas.value = (bas === null) ? '' : bas;
           inputHaut.classList.remove('enregistre');
           inputBas.classList.remove('enregistre');
           const ref = db.collection('saisieStock').doc(idJourProduit(AUJOURD_HUI, p.nom));
@@ -1973,17 +1999,44 @@
           btnEnregistrer.textContent = 'Enregistrer';
           btnEnregistrer.style.marginRight = '6px';
           btnEnregistrer.onclick = function () {
+            const nouvelleFamille = document.getElementById(prefixeId + 'famille').value;
+            const nouvelleVariete = document.getElementById(prefixeId + 'variete').value;
+            const nouvelleOrigine = document.getElementById(prefixeId + 'origine').value;
+            const nouveauConditionnement = document.getElementById(prefixeId + 'conditionnement').value;
+            const nouveauSuremballage = document.getElementById(prefixeId + 'suremballage').value;
+            const nouveauNom = composerDesignation(nouvelleVariete, nouvelleOrigine, nouveauConditionnement, nouveauSuremballage);
+
+            if (!nouveauNom) {
+              afficherToast('Désignation vide : renseignez au moins la variété, le conditionnement ou le suremballage');
+              return;
+            }
+            const renommage = nouveauNom !== p.nom;
+            if (renommage && produits.some(function (autre) { return autre.id !== p.id && autre.nom === nouveauNom; })) {
+              afficherToast('Un autre produit porte déjà cette désignation');
+              return;
+            }
+            if (renommage && !confirm(
+              'La désignation va changer de « ' + p.nom + ' » à « ' + nouveauNom + ' ».\n\n' +
+              'Le stock initial (dernier stock connu) sera reporté sous le nouveau nom, mais ' +
+              "l'historique déjà enregistré (stock du soir, ventes, achats, historique) restera " +
+              'associé à l\'ancien nom. Continuer ?'
+            )) return;
+
             const champs = {
-              famille: document.getElementById(prefixeId + 'famille').value,
-              variete: document.getElementById(prefixeId + 'variete').value,
-              origine: document.getElementById(prefixeId + 'origine').value,
-              conditionnement: document.getElementById(prefixeId + 'conditionnement').value,
-              suremballage: document.getElementById(prefixeId + 'suremballage').value
+              famille: nouvelleFamille, variete: nouvelleVariete, origine: nouvelleOrigine,
+              conditionnement: nouveauConditionnement, suremballage: nouveauSuremballage,
+              nom: nouveauNom
             };
             db.collection('produits').doc(p.id).update(champs).then(function () {
+              if (renommage && dernierStockParProduit[p.nom]) {
+                db.collection('dernierStock').doc('main').set(
+                  { [nouveauNom]: dernierStockParProduit[p.nom], [p.nom]: firebase.firestore.FieldValue.delete() },
+                  { merge: true }
+                ).catch(function (e) { afficherToast('Erreur (report du stock initial) : ' + e.message); });
+              }
               produitEnEdition = null;
               rendreProduits();
-              afficherToast(p.nom + ' mis à jour');
+              afficherToast(nouveauNom + ' mis à jour');
             }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
           };
           const btnAnnuler = document.createElement('button');
@@ -2278,12 +2331,16 @@
   }
   window.rendreSelectVariete = rendreSelectVariete;
 
+  function composerDesignation(variete, origine, conditionnement, suremballage) {
+    return [variete, origine, conditionnement, suremballage].filter(Boolean).join(' ');
+  }
+
   function recalculerDesignationAuto() {
     const variete = document.getElementById('nouvelleVariete').value;
+    const origine = document.getElementById('nouvelleOrigine').value;
     const conditionnement = document.getElementById('nouveauConditionnement').value;
     const suremballage = document.getElementById('nouveauSuremballage').value;
-    const parties = [variete, conditionnement, suremballage].filter(Boolean);
-    document.getElementById('nouveauProduit').value = parties.join(' ');
+    document.getElementById('nouveauProduit').value = composerDesignation(variete, origine, conditionnement, suremballage);
   }
   window.recalculerDesignationAuto = recalculerDesignationAuto;
 
