@@ -3,7 +3,9 @@ rules_version = '2';
 // ============================================================
 // Suivi Stock — La Légumière
 // Rôles (stockés dans users/{uid}.role) :
-//   admin      : tout, y compris gestion des comptes
+//   admin      : tout, y compris gestion des comptes et des listes de référence
+//                (familles/variétés/conditionnements/suremballages, collection
+//                "referentiels" — l'onglet Produits ne fait que les lire)
 //   commerce   : gestion complète des produits (collection "produits" — création,
 //                désignation, famille/variete/conditionnement/suremballage, prix
 //                d'achat/unité, actif, suppression), ventes/réservations du jour,
@@ -67,6 +69,15 @@ service cloud.firestore {
       allow delete: if estCommerce();
       allow update: if estCommerce() ||
         (estProduction() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif']));
+    }
+
+    // ---- Listes de référence (Famille / Variété / Conditionnement / Suremballage) ----
+    // Un seul document, un tableau de valeurs par catégorie. Gérées UNIQUEMENT depuis
+    // l'onglet Paramètres (admin) — l'onglet Produits ne fait que lire ces listes pour
+    // peupler ses listes déroulantes, il ne peut plus y ajouter de nouvelle valeur.
+    match /referentiels/{docId} {
+      allow read: if connecte();
+      allow write: if estAdmin();
     }
 
     // ---- Cache "dernier stock connu" par produit ----

@@ -172,6 +172,17 @@
   .ligne-ajout input, .ligne-ajout select { flex: 1 1 160px; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line); font-size: 14px; background: white; }
   .ligne-ajout button { background: var(--copper); color: white; border: none; border-radius: 10px; padding: 0 20px; font-weight: 600; cursor: pointer; }
 
+  .grille-referentiels { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .carte-referentiel { background: white; border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; }
+  .carte-referentiel h4 { margin: 0 0 10px 0; font-size: 12px; color: var(--copper); text-transform: uppercase; letter-spacing: .04em; }
+  .ligne-ajout-referentiel { display: flex; gap: 6px; margin-bottom: 10px; }
+  .ligne-ajout-referentiel input { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 13px; }
+  .ligne-ajout-referentiel button { background: var(--copper); color: white; border: none; border-radius: 8px; padding: 0 14px; font-weight: 600; cursor: pointer; font-size: 13px; }
+  .liste-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 4px 6px 4px 10px; font-size: 12.5px; }
+  .chip button { border: none; background: none; color: #a49a89; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+  .chip button:hover { color: var(--danger); }
+
   .section-titre { font-size: 15px; margin: 26px 0 10px 0; color: var(--copper); }
 
   tr.entete-groupe td {
@@ -463,14 +474,10 @@
       </div>
       <div class="ligne-ajout" id="ligneAjoutProduit" style="display:none;">
         <input type="text" id="nouveauProduit" placeholder="Désignation (générée automatiquement, modifiable)...">
-        <select id="nouvelleFamille" onchange="basculerChampAutre('nouvelleFamille'); recalculerDesignationAuto();"></select>
-        <input type="text" id="nouvelleFamilleAutre" placeholder="Nom de la nouvelle famille..." style="display:none;" oninput="recalculerDesignationAuto()">
-        <select id="nouvelleVariete" onchange="basculerChampAutre('nouvelleVariete'); recalculerDesignationAuto();"></select>
-        <input type="text" id="nouvelleVarieteAutre" placeholder="Nom de la nouvelle variété..." style="display:none;" oninput="recalculerDesignationAuto()">
-        <select id="nouveauConditionnement" onchange="basculerChampAutre('nouveauConditionnement'); recalculerDesignationAuto();"></select>
-        <input type="text" id="nouveauConditionnementAutre" placeholder="Nouveau conditionnement..." style="display:none;" oninput="recalculerDesignationAuto()">
-        <select id="nouveauSuremballage" onchange="basculerChampAutre('nouveauSuremballage'); recalculerDesignationAuto();"></select>
-        <input type="text" id="nouveauSuremballageAutre" placeholder="Nouveau suremballage..." style="display:none;" oninput="recalculerDesignationAuto()">
+        <select id="nouvelleFamille" onchange="recalculerDesignationAuto()"></select>
+        <select id="nouvelleVariete" onchange="recalculerDesignationAuto()"></select>
+        <select id="nouveauConditionnement" onchange="recalculerDesignationAuto()"></select>
+        <select id="nouveauSuremballage" onchange="recalculerDesignationAuto()"></select>
         <button onclick="ajouterProduit()">Ajouter</button>
       </div>
       <div class="carte-tableau">
@@ -483,7 +490,43 @@
 
     <!-- ---------------- PARAMETRES (admin) ---------------- -->
     <div class="vue" id="vueParametres">
-      <h3 class="section-titre" style="margin-top:0;">Comptes</h3>
+      <h3 class="section-titre" style="margin-top:0;">Listes de référence</h3>
+      <div class="grille-referentiels">
+        <div class="carte-referentiel">
+          <h4>Famille</h4>
+          <div class="ligne-ajout-referentiel">
+            <input type="text" id="nouvelleValeurFamilles" placeholder="Nouvelle famille...">
+            <button onclick="ajouterValeurReferentiel('familles', 'nouvelleValeurFamilles')">Ajouter</button>
+          </div>
+          <div class="liste-chips" id="listeFamilles"></div>
+        </div>
+        <div class="carte-referentiel">
+          <h4>Variété</h4>
+          <div class="ligne-ajout-referentiel">
+            <input type="text" id="nouvelleValeurVarietes" placeholder="Nouvelle variété...">
+            <button onclick="ajouterValeurReferentiel('varietes', 'nouvelleValeurVarietes')">Ajouter</button>
+          </div>
+          <div class="liste-chips" id="listeVarietes"></div>
+        </div>
+        <div class="carte-referentiel">
+          <h4>Conditionnement</h4>
+          <div class="ligne-ajout-referentiel">
+            <input type="text" id="nouvelleValeurConditionnements" placeholder="Nouveau conditionnement...">
+            <button onclick="ajouterValeurReferentiel('conditionnements', 'nouvelleValeurConditionnements')">Ajouter</button>
+          </div>
+          <div class="liste-chips" id="listeConditionnements"></div>
+        </div>
+        <div class="carte-referentiel">
+          <h4>Suremballage</h4>
+          <div class="ligne-ajout-referentiel">
+            <input type="text" id="nouvelleValeurSuremballages" placeholder="Nouveau suremballage...">
+            <button onclick="ajouterValeurReferentiel('suremballages', 'nouvelleValeurSuremballages')">Ajouter</button>
+          </div>
+          <div class="liste-chips" id="listeSuremballages"></div>
+        </div>
+      </div>
+
+      <h3 class="section-titre">Comptes</h3>
       <div class="carte-tableau">
         <table>
           <thead><tr><th>Email</th><th class="centre">Rôle</th></tr></thead>
@@ -525,6 +568,7 @@
   let utilisateurCourant = null;   // { uid, email }
   let roleCourant = 'aucun';       // 'admin' | 'commerce' | 'production' | 'viewer' | 'aucun'
   let produits = [];               // [{ nom, actif, prixAchatDefaut, prixAchatUnite, ordre }]
+  let referentiels = { familles: [], varietes: [], conditionnements: [], suremballages: [] }; // listes gérées depuis Paramètres (admin)
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
@@ -653,6 +697,19 @@
         const out = [];
         qs.forEach(function (doc) { out.push(Object.assign({ id: doc.id }, doc.data())); });
         produits = out.sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); });
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
+      db.collection('referentiels').doc('main').onSnapshot(function (snap) {
+        const d = snap.exists ? (snap.data() || {}) : {};
+        referentiels = {
+          familles: (d.familles || []).slice().sort(),
+          varietes: (d.varietes || []).slice().sort(),
+          conditionnements: (d.conditionnements || []).slice().sort(),
+          suremballages: (d.suremballages || []).slice().sort()
+        };
         rendreVueActive();
       })
     );
@@ -1906,6 +1963,11 @@
   function rendreParametres() {
     if (!estAdmin()) return;
 
+    rendreListeReferentiel('familles', 'listeFamilles');
+    rendreListeReferentiel('varietes', 'listeVarietes');
+    rendreListeReferentiel('conditionnements', 'listeConditionnements');
+    rendreListeReferentiel('suremballages', 'listeSuremballages');
+
     const corpsComptes = document.getElementById('corpsComptes');
     corpsComptes.innerHTML = '';
     comptes.forEach(function (c) {
@@ -2030,18 +2092,24 @@
   }
 
   const CHAMPS_LISTES_PRODUIT = [
-    { idSelect: 'nouvelleFamille', champ: 'famille', texteVide: 'Famille...', texteNouveau: '+ Nouvelle famille...' },
-    { idSelect: 'nouvelleVariete', champ: 'variete', texteVide: 'Variété...', texteNouveau: '+ Nouvelle variété...' },
-    { idSelect: 'nouveauConditionnement', champ: 'conditionnement', texteVide: 'Conditionnement...', texteNouveau: '+ Nouveau conditionnement...' },
-    { idSelect: 'nouveauSuremballage', champ: 'suremballage', texteVide: 'Suremballage...', texteNouveau: '+ Nouveau suremballage...' }
+    { idSelect: 'nouvelleFamille', champ: 'famille', champReferentiel: 'familles', texteVide: 'Famille...' },
+    { idSelect: 'nouvelleVariete', champ: 'variete', champReferentiel: 'varietes', texteVide: 'Variété...' },
+    { idSelect: 'nouveauConditionnement', champ: 'conditionnement', champReferentiel: 'conditionnements', texteVide: 'Conditionnement...' },
+    { idSelect: 'nouveauSuremballage', champ: 'suremballage', champReferentiel: 'suremballages', texteVide: 'Suremballage...' }
   ];
 
+  // Les listes déroulantes de la fiche produit ne proposent QUE des valeurs déjà
+  // déclarées dans les référentiels (Paramètres) ou déjà utilisées par un produit
+  // existant — il n'est plus possible de créer une nouvelle valeur depuis l'onglet
+  // Produits : cette création est réservée à l'onglet Paramètres (admin).
   function rendreSelectsProduits() {
     CHAMPS_LISTES_PRODUIT.forEach(function (c) {
       const select = document.getElementById(c.idSelect);
       if (!select) return;
       const valeurActuelle = select.value;
-      const valeurs = Array.from(new Set(produits.map(function (p) { return p[c.champ]; }).filter(Boolean))).sort();
+      const depuisProduits = produits.map(function (p) { return p[c.champ]; }).filter(Boolean);
+      const depuisReferentiels = referentiels[c.champReferentiel] || [];
+      const valeurs = Array.from(new Set(depuisProduits.concat(depuisReferentiels))).sort();
       select.innerHTML = '';
       const optVide = document.createElement('option');
       optVide.value = '';
@@ -2053,39 +2121,15 @@
         opt.textContent = v;
         select.appendChild(opt);
       });
-      const optAutre = document.createElement('option');
-      optAutre.value = '__autre__';
-      optAutre.textContent = c.texteNouveau;
-      select.appendChild(optAutre);
-      if (Array.from(select.options).some(function (o) { return o.value === valeurActuelle; })) {
-        select.value = valeurActuelle;
-      }
-      basculerChampAutre(c.idSelect);
+      if (valeurs.indexOf(valeurActuelle) !== -1) select.value = valeurActuelle;
     });
   }
 
-  function basculerChampAutre(idSelect) {
-    const select = document.getElementById(idSelect);
-    const champAutre = document.getElementById(idSelect + 'Autre');
-    if (!select || !champAutre) return;
-    const estAutre = select.value === '__autre__';
-    champAutre.style.display = estAutre ? '' : 'none';
-    if (!estAutre) champAutre.value = '';
-  }
-  window.basculerChampAutre = basculerChampAutre;
-
-  function valeurChampListe(idSelect) {
-    const select = document.getElementById(idSelect);
-    const champAutre = document.getElementById(idSelect + 'Autre');
-    return select.value === '__autre__' ? champAutre.value.trim() : select.value;
-  }
-
   function recalculerDesignationAuto() {
-    const famille = valeurChampListe('nouvelleFamille');
-    const variete = valeurChampListe('nouvelleVariete');
-    const conditionnement = valeurChampListe('nouveauConditionnement');
-    const suremballage = valeurChampListe('nouveauSuremballage');
-    const parties = [variete || famille, conditionnement, suremballage].filter(Boolean);
+    const variete = document.getElementById('nouvelleVariete').value;
+    const conditionnement = document.getElementById('nouveauConditionnement').value;
+    const suremballage = document.getElementById('nouveauSuremballage').value;
+    const parties = [variete, conditionnement, suremballage].filter(Boolean);
     document.getElementById('nouveauProduit').value = parties.join(' ');
   }
   window.recalculerDesignationAuto = recalculerDesignationAuto;
@@ -2101,10 +2145,10 @@
     }
     db.collection('produits').doc(id).set({
       nom: nom,
-      famille: valeurChampListe('nouvelleFamille'),
-      variete: valeurChampListe('nouvelleVariete'),
-      conditionnement: valeurChampListe('nouveauConditionnement'),
-      suremballage: valeurChampListe('nouveauSuremballage'),
+      famille: document.getElementById('nouvelleFamille').value,
+      variete: document.getElementById('nouvelleVariete').value,
+      conditionnement: document.getElementById('nouveauConditionnement').value,
+      suremballage: document.getElementById('nouveauSuremballage').value,
       actif: true,
       prixAchatDefaut: null,
       prixAchatUnite: null,
@@ -2113,15 +2157,55 @@
       input.value = '';
       CHAMPS_LISTES_PRODUIT.forEach(function (c) {
         document.getElementById(c.idSelect).value = '';
-        const autre = document.getElementById(c.idSelect + 'Autre');
-        autre.value = '';
-        autre.style.display = 'none';
       });
       enregistrerTransaction('produit_ajoute', nom, null);
       afficherToast(nom + ' ajouté');
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.ajouterProduit = ajouterProduit;
+
+  function ajouterValeurReferentiel(categorie, idInput) {
+    const input = document.getElementById(idInput);
+    const valeur = input.value.trim();
+    if (!valeur) return;
+    if ((referentiels[categorie] || []).indexOf(valeur) !== -1) {
+      afficherToast('Cette valeur existe déjà');
+      return;
+    }
+    db.collection('referentiels').doc('main').set(
+      { [categorie]: firebase.firestore.FieldValue.arrayUnion(valeur) }, { merge: true }
+    ).then(function () {
+      input.value = '';
+      afficherToast('Ajouté');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.ajouterValeurReferentiel = ajouterValeurReferentiel;
+
+  function supprimerValeurReferentiel(categorie, valeur) {
+    if (!confirm('Retirer « ' + valeur + ' » de cette liste ?')) return;
+    db.collection('referentiels').doc('main').update(
+      { [categorie]: firebase.firestore.FieldValue.arrayRemove(valeur) }
+    ).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.supprimerValeurReferentiel = supprimerValeurReferentiel;
+
+  function rendreListeReferentiel(categorie, idConteneur) {
+    const conteneur = document.getElementById(idConteneur);
+    conteneur.innerHTML = '';
+    (referentiels[categorie] || []).forEach(function (v) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      const texte = document.createElement('span');
+      texte.textContent = v;
+      const btn = document.createElement('button');
+      btn.textContent = '×';
+      btn.title = 'Retirer';
+      btn.onclick = function () { supprimerValeurReferentiel(categorie, v); };
+      chip.appendChild(texte);
+      chip.appendChild(btn);
+      conteneur.appendChild(chip);
+    });
+  }
 
   function supprimerTousLesProduits() {
     if (!produits.length) {
