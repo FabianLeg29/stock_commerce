@@ -279,8 +279,14 @@
         <span class="date-du-jour" id="dateProduction"></span>
       </div>
       <div class="ligne-ajout" id="ligneAjoutProduction">
-        <input type="text" id="nouveauProduitProduction" placeholder="Ajouter un produit (désignation)...">
-        <button onclick="ajouterProduitDepuisProduction()">Ajouter</button>
+        <input type="text" id="nouveauProduitProduction" placeholder="Nouveau produit (désignation)...">
+        <button onclick="ajouterProduitDepuisProduction()">Créer un nouveau produit</button>
+        <button class="bouton-secondaire" onclick="basculerListeInactifs()" id="boutonListeInactifs">Réactiver un produit inactif...</button>
+      </div>
+      <div class="carte-tableau" id="carteListeInactifs" style="display:none; padding:16px; margin-bottom:14px;">
+        <input type="text" id="filtreInactifs" placeholder="Rechercher un produit inactif..." oninput="rendreListeInactifs()" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; margin-bottom:10px;">
+        <div id="listeInactifs"></div>
+        <div class="vide" id="videListeInactifs" style="display:none;">Aucun produit inactif ne correspond.</div>
       </div>
       <div class="carte-tableau">
         <table>
@@ -797,6 +803,7 @@
   function rendreProduction() {
     document.getElementById('dateProduction').textContent = 'Soir du ' + AUJOURD_HUI;
     document.getElementById('ligneAjoutProduction').style.display = peutSaisirProduction() ? '' : 'none';
+    rendreListeInactifs();
     const q = (document.getElementById('filtreProduction').value || '').toLowerCase();
     const actifs = produits.filter(function (p) { return p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
     const corps = document.getElementById('corpsProduction');
@@ -916,6 +923,48 @@
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.ajouterProduitDepuisProduction = ajouterProduitDepuisProduction;
+
+  function basculerListeInactifs() {
+    const carte = document.getElementById('carteListeInactifs');
+    const ouvert = carte.style.display !== 'none';
+    carte.style.display = ouvert ? 'none' : '';
+    document.getElementById('boutonListeInactifs').textContent = ouvert ? 'Réactiver un produit inactif...' : 'Fermer la liste des inactifs';
+    if (!ouvert) rendreListeInactifs();
+  }
+  window.basculerListeInactifs = basculerListeInactifs;
+
+  function rendreListeInactifs() {
+    const carte = document.getElementById('carteListeInactifs');
+    if (!carte || carte.style.display === 'none') return;
+    const q = (document.getElementById('filtreInactifs').value || '').toLowerCase();
+    const inactifs = produits.filter(function (p) { return !p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
+    const conteneur = document.getElementById('listeInactifs');
+    conteneur.innerHTML = '';
+    document.getElementById('videListeInactifs').style.display = inactifs.length ? 'none' : 'block';
+
+    inactifs.sort(function (a, b) { return a.nom.localeCompare(b.nom); }).forEach(function (p) {
+      const ligne = document.createElement('div');
+      ligne.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid var(--line);';
+      const nom = document.createElement('span');
+      nom.textContent = p.nom + (p.famille ? ' — ' + p.famille : '');
+      const btn = document.createElement('button');
+      btn.className = 'bouton-secondaire';
+      btn.textContent = '+ Ajouter à la liste';
+      btn.onclick = function () { reactiverProduit(p); };
+      ligne.appendChild(nom);
+      ligne.appendChild(btn);
+      conteneur.appendChild(ligne);
+    });
+  }
+  window.rendreListeInactifs = rendreListeInactifs;
+
+  function reactiverProduit(p) {
+    if (!peutSaisirProduction()) return;
+    db.collection('produits').doc(p.id).update({ actif: true }).then(function () {
+      enregistrerTransaction('produit_actif', p.nom, 'Oui');
+      afficherToast(p.nom + ' ajouté à la liste active');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
 
   // ============================================================
   // COMMERCE

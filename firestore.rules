@@ -54,7 +54,8 @@ service cloud.firestore {
     // ---- Produits (un document par produit) ----
     // admin : tout (créer, tout modifier, supprimer).
     // production : peut CRÉER un nouveau produit (désignation minimale, depuis
-    // l'onglet Production) mais ne peut pas le modifier ensuite ni le supprimer.
+    // l'onglet Production), et modifier UNIQUEMENT le champ actif d'un produit
+    // existant (réactiver un produit inactif depuis la liste de l'onglet Production).
     // commerce : peut modifier UNIQUEMENT les champs actif, prixAchatDefaut et
     // reservations d'un produit existant (gestion commerciale au quotidien) — la
     // suppression et les champs famille/variete/conditionnement/suremballage/nom
@@ -64,7 +65,8 @@ service cloud.firestore {
       allow create: if estAdmin() || estProduction();
       allow delete: if estAdmin();
       allow update: if estAdmin() ||
-        (estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif', 'prixAchatDefaut', 'reservations']));
+        (estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif', 'prixAchatDefaut', 'reservations'])) ||
+        (estProduction() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif']));
     }
 
     // ---- Cache "dernier stock connu" par produit ----
