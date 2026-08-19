@@ -3,14 +3,15 @@ rules_version = '2';
 // ============================================================
 // Suivi Stock — La Légumière
 // Rôles (stockés dans users/{uid}.role) :
-//   admin      : tout, y compris gestion des comptes et des produits
-//   commerce   : ventes/réservations du jour, individuellement par commercial
-//                (collection "commerce", un document par produit+jour+commercial —
-//                chacun ne peut écrire QUE son propre document), achats/livraisons
-//                (collection "achats"), + actif/prixAchatDefaut d'un produit
-//                existant, + validation du stock du soir (champ "importe" de
-//                saisieStock) qui met à jour dernierStock (pas la création/
-//                suppression de produit, ni les valeurs saisies par la production)
+//   admin      : tout, y compris gestion des comptes
+//   commerce   : gestion complète des produits (collection "produits" — création,
+//                désignation, famille/variete/conditionnement/suremballage, prix
+//                d'achat/unité, actif, suppression), ventes/réservations du jour,
+//                individuellement par commercial (collection "commerce", un document
+//                par produit+jour+commercial — chacun ne peut écrire QUE son propre
+//                document), achats/livraisons (collection "achats"), + validation du
+//                stock du soir (champ "importe" de saisieStock) qui met à jour
+//                dernierStock (pas les valeurs saisies par la production)
 //   production : stock du soir (collection "saisieStock"), + réactivation d'un
 //                produit inactif existant (champ "actif" uniquement)
 //   viewer     : lecture seule partout
@@ -54,20 +55,17 @@ service cloud.firestore {
     }
 
     // ---- Produits (un document par produit) ----
-    // admin : tout (créer, tout modifier, supprimer).
+    // admin et commerce : gestion complète (créer, tout modifier, supprimer) depuis
+    // l'onglet Produits — désignation, famille/variete/conditionnement/suremballage,
+    // prix d'achat/unité, actif.
     // production : peut modifier UNIQUEMENT le champ actif d'un produit existant
     // (réactiver un produit inactif depuis la liste de l'onglet Production) — ne
     // peut pas créer de nouveau produit ni le supprimer.
-    // commerce : peut modifier UNIQUEMENT les champs actif, prixAchatDefaut et
-    // prixAchatUnite d'un produit existant (gestion commerciale au quotidien) — la
-    // suppression et les champs famille/variete/conditionnement/suremballage/nom
-    // restent réservés à l'admin, y compris en cas de manipulation technique.
     match /produits/{produitId} {
       allow read: if connecte();
-      allow create: if estAdmin();
-      allow delete: if estAdmin();
-      allow update: if estAdmin() ||
-        (estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif', 'prixAchatDefaut', 'prixAchatUnite'])) ||
+      allow create: if estCommerce();
+      allow delete: if estCommerce();
+      allow update: if estCommerce() ||
         (estProduction() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif']));
     }
 

@@ -273,6 +273,7 @@
     <button data-vue="production" onclick="allerA('production')">Production</button>
     <button data-vue="achats" onclick="allerA('achats')">Achats</button>
     <button data-vue="commerce" onclick="allerA('commerce')">Commerce</button>
+    <button data-vue="produits" onclick="allerA('produits')">Produits</button>
     <button data-vue="prixAchat" onclick="allerA('prixAchat')">Prix d'achat</button>
     <button data-vue="historique" onclick="allerA('historique')">Historique</button>
     <button data-vue="parametres" id="ongletParametres" onclick="allerA('parametres')" style="display:none;">Paramètres</button>
@@ -455,22 +456,21 @@
       </div>
     </div>
 
-    <!-- ---------------- PARAMETRES (admin) ---------------- -->
-    <div class="vue" id="vueParametres">
-      <h3 class="section-titre" style="margin-top:0;">Produits</h3>
-      <div style="margin-bottom:14px;">
+    <!-- ---------------- PRODUITS (admin + commerce) ---------------- -->
+    <div class="vue" id="vueProduits">
+      <div id="blocSupprimerTousProduits" style="margin-bottom:14px; display:none;">
         <button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerTousLesProduits()">Supprimer tous les produits</button>
       </div>
-      <div class="ligne-ajout">
-        <input type="text" id="nouveauProduit" placeholder="Désignation du produit...">
-        <select id="nouvelleFamille" onchange="basculerChampAutre('nouvelleFamille')"></select>
-        <input type="text" id="nouvelleFamilleAutre" placeholder="Nom de la nouvelle famille..." style="display:none;">
-        <select id="nouvelleVariete" onchange="basculerChampAutre('nouvelleVariete')"></select>
-        <input type="text" id="nouvelleVarieteAutre" placeholder="Nom de la nouvelle variété..." style="display:none;">
-        <select id="nouveauConditionnement" onchange="basculerChampAutre('nouveauConditionnement')"></select>
-        <input type="text" id="nouveauConditionnementAutre" placeholder="Nouveau conditionnement..." style="display:none;">
-        <select id="nouveauSuremballage" onchange="basculerChampAutre('nouveauSuremballage')"></select>
-        <input type="text" id="nouveauSuremballageAutre" placeholder="Nouveau suremballage..." style="display:none;">
+      <div class="ligne-ajout" id="ligneAjoutProduit" style="display:none;">
+        <input type="text" id="nouveauProduit" placeholder="Désignation (générée automatiquement, modifiable)...">
+        <select id="nouvelleFamille" onchange="basculerChampAutre('nouvelleFamille'); recalculerDesignationAuto();"></select>
+        <input type="text" id="nouvelleFamilleAutre" placeholder="Nom de la nouvelle famille..." style="display:none;" oninput="recalculerDesignationAuto()">
+        <select id="nouvelleVariete" onchange="basculerChampAutre('nouvelleVariete'); recalculerDesignationAuto();"></select>
+        <input type="text" id="nouvelleVarieteAutre" placeholder="Nom de la nouvelle variété..." style="display:none;" oninput="recalculerDesignationAuto()">
+        <select id="nouveauConditionnement" onchange="basculerChampAutre('nouveauConditionnement'); recalculerDesignationAuto();"></select>
+        <input type="text" id="nouveauConditionnementAutre" placeholder="Nouveau conditionnement..." style="display:none;" oninput="recalculerDesignationAuto()">
+        <select id="nouveauSuremballage" onchange="basculerChampAutre('nouveauSuremballage'); recalculerDesignationAuto();"></select>
+        <input type="text" id="nouveauSuremballageAutre" placeholder="Nouveau suremballage..." style="display:none;" oninput="recalculerDesignationAuto()">
         <button onclick="ajouterProduit()">Ajouter</button>
       </div>
       <div class="carte-tableau">
@@ -479,8 +479,11 @@
           <tbody id="corpsProduits"></tbody>
         </table>
       </div>
+    </div>
 
-      <h3 class="section-titre">Comptes</h3>
+    <!-- ---------------- PARAMETRES (admin) ---------------- -->
+    <div class="vue" id="vueParametres">
+      <h3 class="section-titre" style="margin-top:0;">Comptes</h3>
       <div class="carte-tableau">
         <table>
           <thead><tr><th>Email</th><th class="centre">Rôle</th></tr></thead>
@@ -821,6 +824,7 @@
     if (vue === 'production') rendreProduction();
     else if (vue === 'achats') { chargerAchatsSiBesoin(); rendreFormulaireAchat(); rendreAchats(); }
     else if (vue === 'commerce') rendreCommerce();
+    else if (vue === 'produits') rendreProduits();
     else if (vue === 'prixAchat') rendrePrixAchat();
     else if (vue === 'historique') { chargerHistoriqueSiBesoin(); rendreHistorique(); }
     else if (vue === 'parametres') rendreParametres();
@@ -830,6 +834,7 @@
   function rendreVueActive() {
     if (vueActive === 'production') rendreProduction();
     else if (vueActive === 'achats') rendreAchats();
+    else if (vueActive === 'produits') rendreProduits();
     else if (vueActive === 'commerce') rendreCommerce();
     else if (vueActive === 'prixAchat') rendrePrixAchat();
     else if (vueActive === 'parametres') rendreParametres();
@@ -1306,6 +1311,7 @@
     const q = (document.getElementById('filtrePrixAchat').value || '').toLowerCase();
     const filtres = produits.filter(function (p) { return p.nom.toLowerCase().indexOf(q) !== -1; });
     const corps = document.getElementById('corpsGestionProduits');
+    const saisieEnCours = capturerSaisieEnCours(corps);
     corps.innerHTML = '';
     document.getElementById('videGestionProduits').style.display = filtres.length ? 'none' : 'block';
 
@@ -1349,6 +1355,7 @@
       tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdActif);
       corps.appendChild(tr);
     });
+    restaurerSaisieEnCours(corps, saisieEnCours);
   }
   window.rendrePrixAchat = rendrePrixAchat;
 
@@ -1823,12 +1830,16 @@
   window.exporterSauvegardeExcel = exporterSauvegardeExcel;
 
   // ============================================================
-  // PARAMETRES (admin)
+  // PRODUITS (admin + commerce)
   // ============================================================
-  function rendreParametres() {
-    if (!estAdmin()) return;
-    rendreSelectsProduitsAdmin();
+  function rendreProduits() {
+    rendreSelectsProduits();
+    const peutGerer = peutGererCommerce();
+    document.getElementById('ligneAjoutProduit').style.display = peutGerer ? '' : 'none';
+    document.getElementById('blocSupprimerTousProduits').style.display = estAdmin() ? '' : 'none';
+
     const corpsProduits = document.getElementById('corpsProduits');
+    const saisieEnCours = capturerSaisieEnCours(corpsProduits);
     corpsProduits.innerHTML = '';
     produits.forEach(function (p) {
       const tr = document.createElement('tr');
@@ -1848,39 +1859,52 @@
       const tdSuremballage = document.createElement('td');
       tdSuremballage.textContent = p.suremballage || '';
 
-      const tdPrix = champPrixAchat(p, true);
-      const tdUnite = champUniteAchat(p, true);
+      const tdPrix = champPrixAchat(p, peutGerer);
+      const tdUnite = champUniteAchat(p, peutGerer);
 
       const tdActif = document.createElement('td');
       tdActif.className = 'centre';
       const span = document.createElement('span');
-      span.className = 'toggle ' + (p.actif ? 'oui' : 'non');
+      span.className = 'toggle ' + (p.actif ? 'oui' : 'non') + (peutGerer ? '' : ' lecture-seule');
       span.textContent = p.actif ? 'Actif' : 'Inactif';
-      span.onclick = function () {
-        modifierProduit(p.id, { actif: !p.actif });
-        enregistrerTransaction('produit_actif', p.nom, !p.actif ? 'Oui' : 'Non');
-      };
+      if (peutGerer) {
+        span.onclick = function () {
+          modifierProduit(p.id, { actif: !p.actif });
+          enregistrerTransaction('produit_actif', p.nom, !p.actif ? 'Oui' : 'Non');
+        };
+      }
       tdActif.appendChild(span);
 
       const tdSuppr = document.createElement('td');
       tdSuppr.className = 'centre';
-      const btnSuppr = document.createElement('button');
-      btnSuppr.className = 'bouton-secondaire';
-      btnSuppr.textContent = 'Suppr.';
-      btnSuppr.onclick = function () {
-        if (!confirm('Supprimer définitivement « ' + p.nom + ' » de la liste des produits ?')) return;
-        db.collection('produits').doc(p.id).delete().then(function () {
-          enregistrerTransaction('produit_supprime', p.nom, null);
-          afficherToast(p.nom + ' supprimé');
-        }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
-      };
-      tdSuppr.appendChild(btnSuppr);
+      if (peutGerer) {
+        const btnSuppr = document.createElement('button');
+        btnSuppr.className = 'bouton-secondaire';
+        btnSuppr.textContent = 'Suppr.';
+        btnSuppr.onclick = function () {
+          if (!confirm('Supprimer définitivement « ' + p.nom + ' » de la liste des produits ?')) return;
+          db.collection('produits').doc(p.id).delete().then(function () {
+            enregistrerTransaction('produit_supprime', p.nom, null);
+            afficherToast(p.nom + ' supprimé');
+          }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+        };
+        tdSuppr.appendChild(btnSuppr);
+      }
 
       tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete);
       tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
       tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdActif); tr.appendChild(tdSuppr);
       corpsProduits.appendChild(tr);
     });
+    restaurerSaisieEnCours(corpsProduits, saisieEnCours);
+  }
+  window.rendreProduits = rendreProduits;
+
+  // ============================================================
+  // PARAMETRES (admin)
+  // ============================================================
+  function rendreParametres() {
+    if (!estAdmin()) return;
 
     const corpsComptes = document.getElementById('corpsComptes');
     corpsComptes.innerHTML = '';
@@ -1913,6 +1937,35 @@
   }
   window.rendreParametres = rendreParametres;
 
+  // Préserve un champ (input ou select, identifié par data-produit/data-champ) en
+  // cours de saisie lors de la reconstruction d'un tableau — ces tableaux sont
+  // redéclenchés par les listeners Firestore, y compris pendant qu'un commercial ou
+  // un admin est en train de modifier une valeur ailleurs sur le même produit ou sur
+  // un autre (voir le même correctif sur l'onglet Commerce).
+  function capturerSaisieEnCours(conteneur) {
+    const el = document.activeElement;
+    if (!el || !conteneur.contains(el) || !el.dataset || !el.dataset.produit) return null;
+    return {
+      produit: el.dataset.produit, champ: el.dataset.champ, valeur: el.value,
+      debut: (typeof el.selectionStart === 'number') ? el.selectionStart : null,
+      fin: (typeof el.selectionEnd === 'number') ? el.selectionEnd : null
+    };
+  }
+
+  function restaurerSaisieEnCours(conteneur, saisie) {
+    if (!saisie) return;
+    const champs = conteneur.querySelectorAll('[data-produit][data-champ]');
+    for (let i = 0; i < champs.length; i++) {
+      const el = champs[i];
+      if (el.dataset.produit === saisie.produit && el.dataset.champ === saisie.champ) {
+        el.value = saisie.valeur;
+        el.focus();
+        if (saisie.debut !== null) el.setSelectionRange(saisie.debut, saisie.fin);
+        break;
+      }
+    }
+  }
+
   function libelleUnitePrix(unite) {
     if (unite === 'colis') return 'colis';
     if (unite === 'kilo') return 'kg';
@@ -1931,6 +1984,8 @@
     input.value = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '' : p.prixAchatDefaut;
     input.disabled = !peutEditer;
     input.style.cssText = 'width:80px;';
+    input.dataset.produit = p.id;
+    input.dataset.champ = 'prixAchatDefaut';
     if (peutEditer) {
       input.addEventListener('change', function () {
         modifierProduit(p.id, { prixAchatDefaut: input.value === '' ? null : Number(input.value) });
@@ -1957,6 +2012,8 @@
     });
     select.value = p.prixAchatUnite || '';
     select.disabled = !peutEditer;
+    select.dataset.produit = p.id;
+    select.dataset.champ = 'prixAchatUnite';
     if (peutEditer) {
       select.addEventListener('change', function () {
         modifierProduit(p.id, { prixAchatUnite: select.value || null });
@@ -1979,7 +2036,7 @@
     { idSelect: 'nouveauSuremballage', champ: 'suremballage', texteVide: 'Suremballage...', texteNouveau: '+ Nouveau suremballage...' }
   ];
 
-  function rendreSelectsProduitsAdmin() {
+  function rendreSelectsProduits() {
     CHAMPS_LISTES_PRODUIT.forEach(function (c) {
       const select = document.getElementById(c.idSelect);
       if (!select) return;
@@ -2022,6 +2079,16 @@
     const champAutre = document.getElementById(idSelect + 'Autre');
     return select.value === '__autre__' ? champAutre.value.trim() : select.value;
   }
+
+  function recalculerDesignationAuto() {
+    const famille = valeurChampListe('nouvelleFamille');
+    const variete = valeurChampListe('nouvelleVariete');
+    const conditionnement = valeurChampListe('nouveauConditionnement');
+    const suremballage = valeurChampListe('nouveauSuremballage');
+    const parties = [variete || famille, conditionnement, suremballage].filter(Boolean);
+    document.getElementById('nouveauProduit').value = parties.join(' ');
+  }
+  window.recalculerDesignationAuto = recalculerDesignationAuto;
 
   function ajouterProduit() {
     const input = document.getElementById('nouveauProduit');
