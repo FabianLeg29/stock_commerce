@@ -1104,8 +1104,20 @@
 
   function validerStock(entrees) {
     if (!entrees.length) { afficherToast('Rien à valider'); return; }
+    // Si plusieurs entrées non validées existent pour le même produit (dates différentes),
+    // ne garder que la plus récente pour le cache — l'ordre de la requête Firestore n'étant
+    // pas garanti, itérer entrees dans l'ordre reçu écraserait potentiellement une valeur
+    // récente par une plus ancienne.
+    const dernierParProduit = {};
+    entrees.forEach(function (s) {
+      const actuel = dernierParProduit[s.produit];
+      if (!actuel || s.date > actuel.date) dernierParProduit[s.produit] = s;
+    });
     const majCache = {};
-    entrees.forEach(function (s) { majCache[s.produit] = { valeur: s.stockSoir, date: s.date }; });
+    Object.keys(dernierParProduit).forEach(function (produit) {
+      const s = dernierParProduit[produit];
+      majCache[produit] = { valeur: s.stockSoir, date: s.date };
+    });
     const lot = db.batch();
     lot.set(db.collection('dernierStock').doc('main'), majCache, { merge: true });
     entrees.forEach(function (s) { lot.update(db.collection('saisieStock').doc(s.id), { importe: true }); });
