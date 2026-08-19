@@ -9,8 +9,8 @@ rules_version = '2';
 //                existant, + validation du stock du soir (champ "importe" de
 //                saisieStock) qui met à jour dernierStock (pas la création/
 //                suppression de produit, ni les valeurs saisies par la production)
-//   production : stock du soir (collection "saisieStock"), + création d'un
-//                nouveau produit (désignation minimale, pas sa modification)
+//   production : stock du soir (collection "saisieStock"), + réactivation d'un
+//                produit inactif existant (champ "actif" uniquement)
 //   viewer     : lecture seule partout
 //   aucun      : rôle par défaut au 1er login — aucun accès à l'application
 //                tant qu'un administrateur n'a pas attribué un rôle
@@ -53,16 +53,16 @@ service cloud.firestore {
 
     // ---- Produits (un document par produit) ----
     // admin : tout (créer, tout modifier, supprimer).
-    // production : peut CRÉER un nouveau produit (désignation minimale, depuis
-    // l'onglet Production), et modifier UNIQUEMENT le champ actif d'un produit
-    // existant (réactiver un produit inactif depuis la liste de l'onglet Production).
+    // production : peut modifier UNIQUEMENT le champ actif d'un produit existant
+    // (réactiver un produit inactif depuis la liste de l'onglet Production) — ne
+    // peut pas créer de nouveau produit ni le supprimer.
     // commerce : peut modifier UNIQUEMENT les champs actif, prixAchatDefaut et
     // reservations d'un produit existant (gestion commerciale au quotidien) — la
     // suppression et les champs famille/variete/conditionnement/suremballage/nom
     // restent réservés à l'admin, y compris en cas de manipulation technique.
     match /produits/{produitId} {
       allow read: if connecte();
-      allow create: if estAdmin() || estProduction();
+      allow create: if estAdmin();
       allow delete: if estAdmin();
       allow update: if estAdmin() ||
         (estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['actif', 'prixAchatDefaut', 'reservations'])) ||

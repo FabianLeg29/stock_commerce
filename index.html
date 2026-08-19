@@ -279,8 +279,6 @@
         <span class="date-du-jour" id="dateProduction"></span>
       </div>
       <div class="ligne-ajout" id="ligneAjoutProduction">
-        <input type="text" id="nouveauProduitProduction" placeholder="Nouveau produit (désignation)...">
-        <button onclick="ajouterProduitDepuisProduction()">Créer un nouveau produit</button>
         <button class="bouton-secondaire" onclick="basculerListeInactifs()" id="boutonListeInactifs">Réactiver un produit inactif...</button>
       </div>
       <div class="carte-tableau" id="carteListeInactifs" style="display:none; padding:16px; margin-bottom:14px;">
@@ -902,27 +900,6 @@
   function prochainOrdreProduit() {
     return produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0) + 1;
   }
-
-  function ajouterProduitDepuisProduction() {
-    if (!peutSaisirProduction()) return;
-    const input = document.getElementById('nouveauProduitProduction');
-    const nom = input.value.trim();
-    if (!nom) return;
-    const id = slugify(nom);
-    if (produits.some(function (p) { return p.id === id; })) {
-      afficherToast('Ce produit existe déjà');
-      return;
-    }
-    db.collection('produits').doc(id).set({
-      nom: nom, famille: '', variete: '', conditionnement: '', suremballage: '',
-      actif: true, prixAchatDefaut: null, reservations: 0, ordre: prochainOrdreProduit()
-    }).then(function () {
-      input.value = '';
-      enregistrerTransaction('produit_ajoute', nom, null);
-      afficherToast(nom + ' ajouté');
-    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
-  }
-  window.ajouterProduitDepuisProduction = ajouterProduitDepuisProduction;
 
   function basculerListeInactifs() {
     const carte = document.getElementById('carteListeInactifs');
