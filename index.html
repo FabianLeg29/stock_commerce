@@ -288,7 +288,7 @@
     <button data-vue="achats" onclick="allerA('achats')">Achats</button>
     <button data-vue="commerce" onclick="allerA('commerce')">Commerce</button>
     <button data-vue="produits" onclick="allerA('produits')">Produits</button>
-    <button data-vue="prixAchat" onclick="allerA('prixAchat')">Prix d'achat</button>
+    <button data-vue="prixAchat" id="ongletPrixAchat" onclick="allerA('prixAchat')">Prix d'achat</button>
     <button data-vue="historique" onclick="allerA('historique')">Historique</button>
     <button data-vue="parametres" id="ongletParametres" onclick="allerA('parametres')" style="display:none;">Paramètres</button>
   </nav>
@@ -457,7 +457,7 @@
       <div class="barre-outils">
         <input type="text" id="filtreHistorique" placeholder="Rechercher (produit, type, responsable)..." oninput="rendreHistorique()">
         <button class="bouton-secondaire" onclick="exporterHistoriqueCSV()">Exporter CSV</button>
-        <button class="bouton-secondaire" onclick="exporterSauvegardeExcel()">Exporter sauvegarde Excel (.xlsx)</button>
+        <button class="bouton-secondaire" id="btnExporterSauvegarde" onclick="exporterSauvegardeExcel()">Exporter sauvegarde Excel (.xlsx)</button>
       </div>
       <div class="carte-tableau">
         <table>
@@ -610,6 +610,7 @@
   function peutSaisirProduction() { return roleCourant === 'production' || roleCourant === 'admin'; }
   function peutGererCommerce() { return roleCourant === 'commerce' || roleCourant === 'admin'; }
   function estAdmin() { return roleCourant === 'admin'; }
+  function peutVoirPrix() { return roleCourant !== 'production'; }
 
   function libelleRole(r) {
     return { admin: 'Administrateur', commerce: 'Commerce', production: 'Production', viewer: 'Consultation', aucun: 'Non autorisé' }[r] || r;
@@ -660,6 +661,7 @@
         document.getElementById('emailUtilisateur').textContent = user.email;
         document.getElementById('badgeRole').textContent = libelleRole(role);
         document.getElementById('ongletParametres').style.display = estAdmin() ? '' : 'none';
+        document.getElementById('ongletPrixAchat').style.display = peutVoirPrix() ? '' : 'none';
         attacherListeners();
         allerA('production');
       });
@@ -1147,7 +1149,9 @@
 
       const tdPrix = document.createElement('td');
       tdPrix.className = 'centre mono';
-      if (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') {
+      if (!peutVoirPrix()) {
+        tdPrix.textContent = '—';
+      } else if (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') {
         tdPrix.textContent = '—';
       } else {
         const unite = libelleUnitePrix(p.prixAchatUnite);
@@ -1245,7 +1249,7 @@
           if (detailAchats.length) {
             html += '<ul style="margin:6px 0 12px 18px; padding:0;">' + detailAchats.map(function (d) {
               const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
-              const prix = (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
+              const prix = !peutVoirPrix() ? '—' : (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
               return '<li>' + d.quantite + ' — ' + d.fournisseur + ' — ' + prix + ' — ' + (d.heureDepart || '—') + ' — ' + transport + '</li>';
             }).join('') + '</ul>';
           } else {
@@ -1715,7 +1719,7 @@
       const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
       const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.textContent = l.quantite;
       const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono';
-      tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+      tdPrix.textContent = !peutVoirPrix() ? '—' : (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
       const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.textContent = l.heureDepart || '—';
       const tdTransport = document.createElement('td');
       tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
@@ -1754,6 +1758,7 @@
   // HISTORIQUE
   // ============================================================
   function rendreHistorique() {
+    document.getElementById('btnExporterSauvegarde').style.display = peutVoirPrix() ? '' : 'none';
     const q = (document.getElementById('filtreHistorique').value || '').toLowerCase();
     const filtres = historique.filter(function (h) {
       return !q || (h.produit || '').toLowerCase().indexOf(q) !== -1 ||
@@ -2033,6 +2038,7 @@
   function champPrixAchat(p, peutEditer) {
     const td = document.createElement('td');
     td.className = 'centre';
+    if (!peutVoirPrix()) { td.textContent = '—'; return td; }
     const enveloppe = document.createElement('div');
     enveloppe.style.cssText = 'display:flex; align-items:center; justify-content:center; gap:4px;';
     const input = document.createElement('input');
@@ -2061,6 +2067,7 @@
   function champUniteAchat(p, peutEditer) {
     const td = document.createElement('td');
     td.className = 'centre';
+    if (!peutVoirPrix()) { td.textContent = '—'; return td; }
     const select = document.createElement('select');
     [['', '— Choisir —'], ['colis', 'Colis'], ['kilo', 'Kilo']].forEach(function (opt) {
       const option = document.createElement('option');
