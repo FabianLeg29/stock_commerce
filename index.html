@@ -186,6 +186,15 @@
   .lien-supprimer:hover { color: var(--danger); }
   .bouton-nouveau-referentiel { display: block; width: 100%; margin-top: 10px; background: var(--copper); color: white; border: none; border-radius: 20px; padding: 9px 16px; font-weight: 600; font-size: 13px; cursor: pointer; }
 
+  .carte-familles { margin-bottom: 16px; }
+  .bloc-famille { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .bloc-famille:last-child { border-bottom: none; }
+  .ligne-famille .valeur-referentiel { font-weight: 700; }
+  .liste-varietes-famille { margin: 6px 0 6px 20px; }
+  .liste-varietes-famille .ligne-referentiel { padding: 5px 0; }
+  .liste-varietes-famille .valeur-referentiel { font-size: 12.5px; font-weight: 400; padding: 6px 10px; }
+  .bouton-nouvelle-variete { display: block; margin: 4px 0 0 20px; background: none; border: 1px dashed var(--line); color: var(--copper); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+
   .section-titre { font-size: 15px; margin: 26px 0 10px 0; color: var(--copper); }
 
   tr.entete-groupe td {
@@ -477,7 +486,7 @@
       </div>
       <div class="ligne-ajout" id="ligneAjoutProduit" style="display:none;">
         <input type="text" id="nouveauProduit" placeholder="Désignation (générée automatiquement, modifiable)...">
-        <select id="nouvelleFamille" onchange="recalculerDesignationAuto()"></select>
+        <select id="nouvelleFamille" onchange="rendreSelectVariete(); recalculerDesignationAuto();"></select>
         <select id="nouvelleVariete" onchange="recalculerDesignationAuto()"></select>
         <select id="nouveauConditionnement" onchange="recalculerDesignationAuto()"></select>
         <select id="nouveauSuremballage" onchange="recalculerDesignationAuto()"></select>
@@ -492,18 +501,13 @@
 
       <div id="blocListesReference" style="display:none;">
         <h3 class="section-titre">Listes de référence</h3>
-        <p class="sous-titre-section">Valeurs proposées dans les listes déroulantes Famille / Variété / Conditionnement / Suremballage ci-dessus.</p>
+        <p class="sous-titre-section">Valeurs proposées dans les listes déroulantes ci-dessus. Chaque variété est rattachée à une famille : le menu Variété de la fiche produit ne propose que les variétés de la famille choisie.</p>
+        <div class="carte-referentiel carte-familles">
+          <h4>Famille &amp; variétés</h4>
+          <div id="listeFamilles"></div>
+          <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('familles', 'listeFamilles')">+ Nouvelle famille</button>
+        </div>
         <div class="grille-referentiels">
-          <div class="carte-referentiel">
-            <h4>Famille</h4>
-            <div class="liste-referentiel" id="listeFamilles"></div>
-            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('familles', 'listeFamilles')">+ Nouvelle famille</button>
-          </div>
-          <div class="carte-referentiel">
-            <h4>Variété</h4>
-            <div class="liste-referentiel" id="listeVarietes"></div>
-            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('varietes', 'listeVarietes')">+ Nouvelle variété</button>
-          </div>
           <div class="carte-referentiel">
             <h4>Conditionnement</h4>
             <div class="liste-referentiel" id="listeConditionnements"></div>
@@ -702,7 +706,12 @@
         const d = snap.exists ? (snap.data() || {}) : {};
         referentiels = {
           familles: (d.familles || []).slice().sort(),
-          varietes: (d.varietes || []).slice().sort(),
+          // Chaque variété est rattachée à une famille : { nom, famille }. Les
+          // valeurs texte isolées d'un schéma antérieur (avant ce lien) sont
+          // normalisées ici sans famille, pour ne pas planter l'affichage.
+          varietes: (d.varietes || []).map(function (v) {
+            return (typeof v === 'string') ? { nom: v, famille: '' } : v;
+          }).sort(function (a, b) { return a.nom.localeCompare(b.nom); }),
           conditionnements: (d.conditionnements || []).slice().sort(),
           suremballages: (d.suremballages || []).slice().sort()
         };
@@ -1895,8 +1904,7 @@
     document.getElementById('blocSupprimerTousProduits').style.display = estAdmin() ? '' : 'none';
     document.getElementById('blocListesReference').style.display = peutGerer ? '' : 'none';
     if (peutGerer) {
-      rendreListeReferentiel('familles', 'listeFamilles');
-      rendreListeReferentiel('varietes', 'listeVarietes');
+      rendreListeFamilles();
       rendreListeReferentiel('conditionnements', 'listeConditionnements');
       rendreListeReferentiel('suremballages', 'listeSuremballages');
     }
@@ -2096,15 +2104,14 @@
 
   const CHAMPS_LISTES_PRODUIT = [
     { idSelect: 'nouvelleFamille', champ: 'famille', champReferentiel: 'familles', texteVide: 'Famille...' },
-    { idSelect: 'nouvelleVariete', champ: 'variete', champReferentiel: 'varietes', texteVide: 'Variété...' },
     { idSelect: 'nouveauConditionnement', champ: 'conditionnement', champReferentiel: 'conditionnements', texteVide: 'Conditionnement...' },
     { idSelect: 'nouveauSuremballage', champ: 'suremballage', champReferentiel: 'suremballages', texteVide: 'Suremballage...' }
   ];
 
   // Les listes déroulantes de la fiche produit ne proposent QUE des valeurs déjà
-  // déclarées dans les référentiels (Paramètres) ou déjà utilisées par un produit
-  // existant — il n'est plus possible de créer une nouvelle valeur depuis l'onglet
-  // Produits : cette création est réservée à l'onglet Paramètres (admin).
+  // déclarées dans les référentiels (section Listes de référence) ou déjà utilisées
+  // par un produit existant — il n'est plus possible de créer une nouvelle valeur
+  // depuis le formulaire de création de produit lui-même.
   function rendreSelectsProduits() {
     CHAMPS_LISTES_PRODUIT.forEach(function (c) {
       const select = document.getElementById(c.idSelect);
@@ -2126,7 +2133,37 @@
       });
       if (valeurs.indexOf(valeurActuelle) !== -1) select.value = valeurActuelle;
     });
+    rendreSelectVariete();
   }
+
+  // Variété dépend de la famille choisie : ne propose que les variétés rattachées
+  // à cette famille dans les référentiels, plus celles déjà utilisées par un produit
+  // existant de cette même famille (compatibilité avec l'historique antérieur au lien
+  // famille/variété). Recalculé chaque fois que la famille change.
+  function rendreSelectVariete() {
+    const select = document.getElementById('nouvelleVariete');
+    if (!select) return;
+    const familleChoisie = document.getElementById('nouvelleFamille').value;
+    const valeurActuelle = select.value;
+    const depuisProduits = produits.filter(function (p) { return p.famille === familleChoisie; })
+      .map(function (p) { return p.variete; }).filter(Boolean);
+    const depuisReferentiels = (referentiels.varietes || []).filter(function (v) { return v.famille === familleChoisie; })
+      .map(function (v) { return v.nom; });
+    const valeurs = Array.from(new Set(depuisProduits.concat(depuisReferentiels))).sort();
+    select.innerHTML = '';
+    const optVide = document.createElement('option');
+    optVide.value = '';
+    optVide.textContent = familleChoisie ? 'Variété...' : 'Choisir une famille d\'abord...';
+    select.appendChild(optVide);
+    valeurs.forEach(function (v) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      select.appendChild(opt);
+    });
+    if (valeurs.indexOf(valeurActuelle) !== -1) select.value = valeurActuelle;
+  }
+  window.rendreSelectVariete = rendreSelectVariete;
 
   function recalculerDesignationAuto() {
     const variete = document.getElementById('nouvelleVariete').value;
@@ -2161,6 +2198,7 @@
       CHAMPS_LISTES_PRODUIT.forEach(function (c) {
         document.getElementById(c.idSelect).value = '';
       });
+      rendreSelectVariete();
       enregistrerTransaction('produit_ajoute', nom, null);
       afficherToast(nom + ' ajouté');
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
@@ -2229,6 +2267,120 @@
     input.focus();
   }
   window.ajouterLigneReferentielVide = ajouterLigneReferentielVide;
+
+  // Supprime une famille ET les variétés qui lui sont rattachées (sinon elles
+  // resteraient orphelines, invisibles dans le menu Variété puisque plus aucune
+  // famille ne correspondrait à leur champ "famille").
+  function supprimerFamille(nomFamille) {
+    const varietesLiees = (referentiels.varietes || []).filter(function (v) { return v.famille === nomFamille; });
+    const message = varietesLiees.length
+      ? 'Retirer « ' + nomFamille + ' » et ses ' + varietesLiees.length + ' variété(s) associée(s) ?'
+      : 'Retirer « ' + nomFamille + ' » de cette liste ?';
+    if (!confirm(message)) return;
+    const varietesRestantes = (referentiels.varietes || []).filter(function (v) { return v.famille !== nomFamille; });
+    db.collection('referentiels').doc('main').update({
+      familles: firebase.firestore.FieldValue.arrayRemove(nomFamille),
+      varietes: varietesRestantes
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+
+  function ajouterVariete(nomFamille, nomVariete) {
+    const existe = (referentiels.varietes || []).some(function (v) { return v.nom === nomVariete && v.famille === nomFamille; });
+    if (existe) {
+      afficherToast('Cette variété existe déjà pour cette famille');
+      return;
+    }
+    db.collection('referentiels').doc('main').set(
+      { varietes: firebase.firestore.FieldValue.arrayUnion({ nom: nomVariete, famille: nomFamille }) }, { merge: true }
+    ).then(function () {
+      afficherToast('Ajouté');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+
+  function supprimerVariete(nomFamille, nomVariete) {
+    if (!confirm('Retirer « ' + nomVariete + ' » de cette liste ?')) return;
+    db.collection('referentiels').doc('main').update(
+      { varietes: firebase.firestore.FieldValue.arrayRemove({ nom: nomVariete, famille: nomFamille }) }
+    ).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+
+  // Même principe que ajouterLigneReferentielVide, mais la variété créée est
+  // directement rattachée à la famille sous laquelle le bouton "+ Nouvelle
+  // variété" a été cliqué.
+  function ajouterVarieteVide(nomFamille, idConteneur) {
+    const conteneur = document.getElementById(idConteneur);
+    if (conteneur.querySelector('.ligne-referentiel-nouvelle')) return;
+    const ligne = document.createElement('div');
+    ligne.className = 'ligne-referentiel ligne-referentiel-nouvelle';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'champ-valeur';
+    input.placeholder = 'Nouvelle variété...';
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') input.blur();
+    });
+    input.addEventListener('blur', function () {
+      const v = input.value.trim();
+      ligne.remove();
+      if (v) ajouterVariete(nomFamille, v);
+    });
+    ligne.appendChild(input);
+    conteneur.appendChild(ligne);
+    input.focus();
+  }
+  window.ajouterVarieteVide = ajouterVarieteVide;
+
+  function rendreListeFamilles() {
+    const conteneur = document.getElementById('listeFamilles');
+    conteneur.innerHTML = '';
+    referentiels.familles.forEach(function (nomFamille) {
+      const bloc = document.createElement('div');
+      bloc.className = 'bloc-famille';
+
+      const ligneFamille = document.createElement('div');
+      ligneFamille.className = 'ligne-referentiel ligne-famille';
+      const spanFamille = document.createElement('span');
+      spanFamille.className = 'valeur-referentiel';
+      spanFamille.textContent = nomFamille;
+      const lienSupprFamille = document.createElement('a');
+      lienSupprFamille.className = 'lien-supprimer';
+      lienSupprFamille.textContent = 'supprimer';
+      lienSupprFamille.onclick = function () { supprimerFamille(nomFamille); };
+      ligneFamille.appendChild(spanFamille);
+      ligneFamille.appendChild(lienSupprFamille);
+      bloc.appendChild(ligneFamille);
+
+      const idListeVarietes = 'varietesDe__' + slugify(nomFamille);
+      const listeVarietes = document.createElement('div');
+      listeVarietes.className = 'liste-varietes-famille';
+      listeVarietes.id = idListeVarietes;
+      bloc.appendChild(listeVarietes);
+
+      (referentiels.varietes || []).filter(function (v) { return v.famille === nomFamille; })
+        .forEach(function (v) {
+          const ligneVariete = document.createElement('div');
+          ligneVariete.className = 'ligne-referentiel';
+          const spanVariete = document.createElement('span');
+          spanVariete.className = 'valeur-referentiel';
+          spanVariete.textContent = v.nom;
+          const lienSupprVariete = document.createElement('a');
+          lienSupprVariete.className = 'lien-supprimer';
+          lienSupprVariete.textContent = 'supprimer';
+          lienSupprVariete.onclick = function () { supprimerVariete(nomFamille, v.nom); };
+          ligneVariete.appendChild(spanVariete);
+          ligneVariete.appendChild(lienSupprVariete);
+          listeVarietes.appendChild(ligneVariete);
+        });
+
+      const btnNouvelleVariete = document.createElement('button');
+      btnNouvelleVariete.className = 'bouton-nouvelle-variete';
+      btnNouvelleVariete.textContent = '+ Nouvelle variété';
+      btnNouvelleVariete.onclick = function () { ajouterVarieteVide(nomFamille, idListeVarietes); };
+      bloc.appendChild(btnNouvelleVariete);
+
+      conteneur.appendChild(bloc);
+    });
+  }
 
   function supprimerTousLesProduits() {
     if (!produits.length) {
