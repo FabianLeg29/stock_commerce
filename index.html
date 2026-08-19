@@ -574,7 +574,7 @@
   }
 
   function libelleCommercial(email) {
-    if (!email) return '';
+    if (!email) return 'Non attribué';
     const prefixe = email.split('@')[0];
     return prefixe.split(/[._-]+/).map(function (mot) {
       return mot ? mot.charAt(0).toUpperCase() + mot.slice(1) : mot;
