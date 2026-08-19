@@ -372,7 +372,8 @@
           <thead>
             <tr>
               <th>Produit</th>
-              <th class="centre">Dernier stock connu</th>
+              <th class="centre">Prix d'achat</th>
+              <th class="centre">Stock initial</th>
               <th class="centre">Achats</th>
               <th class="centre" id="entierVentesLabel">Ventes</th>
               <th class="centre" id="entierReservationsLabel">Réservations</th>
@@ -1087,9 +1088,21 @@
       tdNom.className = 'produit';
       tdNom.textContent = p.nom;
 
+      const tdPrix = document.createElement('td');
+      tdPrix.className = 'centre mono';
+      tdPrix.textContent = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '—' : p.prixAchatDefaut;
+
       const tdVeille = document.createElement('td');
       tdVeille.className = 'centre mono';
-      tdVeille.textContent = stockVeille + (cache.date ? ' (' + cache.date + ')' : '');
+      const spanValeurVeille = document.createElement('span');
+      spanValeurVeille.textContent = stockVeille;
+      tdVeille.appendChild(spanValeurVeille);
+      if (cache.date) {
+        const spanDateVeille = document.createElement('span');
+        spanDateVeille.style.cssText = 'display:block; font-size:11px; color:#a49a89; margin-top:2px;';
+        spanDateVeille.textContent = cache.date;
+        tdVeille.appendChild(spanDateVeille);
+      }
 
       const tdAchats = document.createElement('td');
       tdAchats.className = 'centre mono';
@@ -1156,7 +1169,7 @@
       const trDetail = document.createElement('tr');
       trDetail.style.display = 'none';
       const tdDetailContenu = document.createElement('td');
-      tdDetailContenu.colSpan = 8;
+      tdDetailContenu.colSpan = 9;
       tdDetailContenu.style.cssText = 'background:var(--bg); font-size:13px; padding:14px 20px;';
       trDetail.appendChild(tdDetailContenu);
 
@@ -1187,6 +1200,7 @@
       };
 
       tr.appendChild(tdNom);
+      tr.appendChild(tdPrix);
       tr.appendChild(tdVeille);
       tr.appendChild(tdAchats);
       tr.appendChild(tdVentes);
