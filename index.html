@@ -279,7 +279,7 @@
         <span class="date-du-jour" id="dateProduction"></span>
       </div>
       <div class="ligne-ajout" id="ligneAjoutProduction">
-        <button class="bouton-secondaire" onclick="basculerListeInactifs()" id="boutonListeInactifs">Réactiver un produit inactif...</button>
+        <button onclick="basculerListeInactifs()" id="boutonListeInactifs">Ajouter</button>
       </div>
       <div class="carte-tableau" id="carteListeInactifs" style="display:none; padding:16px; margin-bottom:14px;">
         <input type="text" id="filtreInactifs" placeholder="Rechercher un produit inactif..." oninput="rendreListeInactifs()" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; margin-bottom:10px;">
@@ -905,7 +905,7 @@
     const carte = document.getElementById('carteListeInactifs');
     const ouvert = carte.style.display !== 'none';
     carte.style.display = ouvert ? 'none' : '';
-    document.getElementById('boutonListeInactifs').textContent = ouvert ? 'Réactiver un produit inactif...' : 'Fermer la liste des inactifs';
+    document.getElementById('boutonListeInactifs').textContent = ouvert ? 'Ajouter' : 'Fermer';
     if (!ouvert) rendreListeInactifs();
   }
   window.basculerListeInactifs = basculerListeInactifs;
