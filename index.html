@@ -448,6 +448,7 @@
               <th>Produit</th>
               <th>Famille</th>
               <th>Variété</th>
+              <th>Origine</th>
               <th>Conditionnement</th>
               <th>Suremballage</th>
               <th class="centre">Prix d'achat par défaut</th>
@@ -488,13 +489,14 @@
         <input type="text" id="nouveauProduit" placeholder="Désignation (générée automatiquement, modifiable)...">
         <select id="nouvelleFamille" onchange="rendreSelectVariete(); recalculerDesignationAuto();"></select>
         <select id="nouvelleVariete" onchange="recalculerDesignationAuto()"></select>
+        <select id="nouvelleOrigine"></select>
         <select id="nouveauConditionnement" onchange="recalculerDesignationAuto()"></select>
         <select id="nouveauSuremballage" onchange="recalculerDesignationAuto()"></select>
         <button onclick="ajouterProduit()">Ajouter</button>
       </div>
       <div class="carte-tableau">
         <table>
-          <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Prix d'achat par défaut</th><th class="centre">Unité</th><th class="centre">Actif</th><th style="width:70px;"></th></tr></thead>
+          <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Origine</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Actif</th><th style="width:70px;"></th></tr></thead>
           <tbody id="corpsProduits"></tbody>
         </table>
       </div>
@@ -508,6 +510,11 @@
           <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('familles', 'listeFamilles')">+ Nouvelle famille</button>
         </div>
         <div class="grille-referentiels">
+          <div class="carte-referentiel">
+            <h4>Origine</h4>
+            <div class="liste-referentiel" id="listeOrigines"></div>
+            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('origines', 'listeOrigines')">+ Nouvelle origine</button>
+          </div>
           <div class="carte-referentiel">
             <h4>Conditionnement</h4>
             <div class="liste-referentiel" id="listeConditionnements"></div>
@@ -566,7 +573,7 @@
   let utilisateurCourant = null;   // { uid, email }
   let roleCourant = 'aucun';       // 'admin' | 'commerce' | 'production' | 'viewer' | 'aucun'
   let produits = [];               // [{ nom, actif, prixAchatDefaut, prixAchatUnite, ordre }]
-  let referentiels = { familles: [], varietes: [], conditionnements: [], suremballages: [] }; // listes gérées depuis Paramètres (admin)
+  let referentiels = { familles: [], varietes: [], origines: [], conditionnements: [], suremballages: [] }; // listes gérées depuis l'onglet Produits (admin + commerce)
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
@@ -712,6 +719,7 @@
           varietes: (d.varietes || []).map(function (v) {
             return (typeof v === 'string') ? { nom: v, famille: '' } : v;
           }).sort(function (a, b) { return a.nom.localeCompare(b.nom); }),
+          origines: (d.origines || []).slice().sort(),
           conditionnements: (d.conditionnements || []).slice().sort(),
           suremballages: (d.suremballages || []).slice().sort()
         };
@@ -1391,6 +1399,9 @@
       const tdVariete = document.createElement('td');
       tdVariete.textContent = p.variete || '';
 
+      const tdOrigine = document.createElement('td');
+      tdOrigine.textContent = p.origine || '';
+
       const tdConditionnement = document.createElement('td');
       tdConditionnement.textContent = p.conditionnement || '';
 
@@ -1414,7 +1425,7 @@
       }
       tdActif.appendChild(span);
 
-      tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete);
+      tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete); tr.appendChild(tdOrigine);
       tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
       tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdActif);
       corps.appendChild(tr);
@@ -1848,9 +1859,9 @@
     ]).then(function (resultats) {
       const saisieSnap = resultats[0], commerceSnap = resultats[1], achatsSnap = resultats[2], transactionsSnap = resultats[3];
 
-      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Conditionnement', 'Suremballage', 'Actif', "Prix d'achat par défaut", 'Unité', 'Ordre']];
+      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Origine', 'Conditionnement', 'Suremballage', 'Actif', "Prix d'achat par défaut", 'Unité', 'Ordre']];
       produits.slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
-        feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, libelleUnitePrix(p.prixAchatUnite), p.ordre || '']);
+        feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.origine || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, libelleUnitePrix(p.prixAchatUnite), p.ordre || '']);
       });
 
       const feuilleStock = [['Date', 'Produit', 'Haut', 'Bas', 'Total', 'Importé', 'Responsable']];
@@ -1905,12 +1916,12 @@
     document.getElementById('blocListesReference').style.display = peutGerer ? '' : 'none';
     if (peutGerer) {
       rendreListeFamilles();
+      rendreListeReferentiel('origines', 'listeOrigines');
       rendreListeReferentiel('conditionnements', 'listeConditionnements');
       rendreListeReferentiel('suremballages', 'listeSuremballages');
     }
 
     const corpsProduits = document.getElementById('corpsProduits');
-    const saisieEnCours = capturerSaisieEnCours(corpsProduits);
     corpsProduits.innerHTML = '';
     produits.forEach(function (p) {
       const tr = document.createElement('tr');
@@ -1924,14 +1935,14 @@
       const tdVariete = document.createElement('td');
       tdVariete.textContent = p.variete || '';
 
+      const tdOrigine = document.createElement('td');
+      tdOrigine.textContent = p.origine || '';
+
       const tdConditionnement = document.createElement('td');
       tdConditionnement.textContent = p.conditionnement || '';
 
       const tdSuremballage = document.createElement('td');
       tdSuremballage.textContent = p.suremballage || '';
-
-      const tdPrix = champPrixAchat(p, peutGerer);
-      const tdUnite = champUniteAchat(p, peutGerer);
 
       const tdActif = document.createElement('td');
       tdActif.className = 'centre';
@@ -1962,12 +1973,11 @@
         tdSuppr.appendChild(btnSuppr);
       }
 
-      tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete);
+      tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete); tr.appendChild(tdOrigine);
       tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
-      tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdActif); tr.appendChild(tdSuppr);
+      tr.appendChild(tdActif); tr.appendChild(tdSuppr);
       corpsProduits.appendChild(tr);
     });
-    restaurerSaisieEnCours(corpsProduits, saisieEnCours);
   }
   window.rendreProduits = rendreProduits;
 
@@ -2104,6 +2114,7 @@
 
   const CHAMPS_LISTES_PRODUIT = [
     { idSelect: 'nouvelleFamille', champ: 'famille', champReferentiel: 'familles', texteVide: 'Famille...' },
+    { idSelect: 'nouvelleOrigine', champ: 'origine', champReferentiel: 'origines', texteVide: 'Origine...' },
     { idSelect: 'nouveauConditionnement', champ: 'conditionnement', champReferentiel: 'conditionnements', texteVide: 'Conditionnement...' },
     { idSelect: 'nouveauSuremballage', champ: 'suremballage', champReferentiel: 'suremballages', texteVide: 'Suremballage...' }
   ];
@@ -2187,6 +2198,7 @@
       nom: nom,
       famille: document.getElementById('nouvelleFamille').value,
       variete: document.getElementById('nouvelleVariete').value,
+      origine: document.getElementById('nouvelleOrigine').value,
       conditionnement: document.getElementById('nouveauConditionnement').value,
       suremballage: document.getElementById('nouveauSuremballage').value,
       actif: true,
