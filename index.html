@@ -496,7 +496,7 @@
       </div>
       <div class="carte-tableau">
         <table>
-          <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Origine</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Actif</th><th style="width:70px;"></th></tr></thead>
+          <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Origine</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Actif</th><th style="width:170px;"></th></tr></thead>
           <tbody id="corpsProduits"></tbody>
         </table>
       </div>
@@ -574,6 +574,7 @@
   let roleCourant = 'aucun';       // 'admin' | 'commerce' | 'production' | 'viewer' | 'aucun'
   let produits = [];               // [{ nom, actif, prixAchatDefaut, prixAchatUnite, ordre }]
   let referentiels = { familles: [], varietes: [], origines: [], conditionnements: [], suremballages: [] }; // listes gérées depuis l'onglet Produits (admin + commerce)
+  let produitEnEdition = null; // id du produit dont la ligne est actuellement en édition dans l'onglet Produits
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
@@ -1929,11 +1930,26 @@
       tdNom.className = 'produit';
       tdNom.textContent = p.nom;
 
-      const tdFamille = champTaxonomieProduit(p, 'famille', 'familles', peutGerer);
-      const tdVariete = champVarieteProduit(p, peutGerer);
-      const tdOrigine = champTaxonomieProduit(p, 'origine', 'origines', peutGerer);
-      const tdConditionnement = champTaxonomieProduit(p, 'conditionnement', 'conditionnements', peutGerer);
-      const tdSuremballage = champTaxonomieProduit(p, 'suremballage', 'suremballages', peutGerer);
+      // Les 5 champs de taxonomie s'affichent en texte simple (plus lisible) tant que
+      // la ligne n'est pas explicitement passée en édition via le bouton "Modifier" —
+      // en édition, ce sont des listes déroulantes dont la valeur n'est écrite qu'au
+      // clic sur "Enregistrer" (jamais au simple changement de sélection).
+      const enEdition = peutGerer && produitEnEdition === p.id;
+      const prefixeId = 'editionProduit__' + p.id + '__';
+      let tdFamille, tdVariete, tdOrigine, tdConditionnement, tdSuremballage;
+      if (enEdition) {
+        tdFamille = champTaxonomieEditable(p, 'famille', 'familles', prefixeId + 'famille');
+        tdVariete = champVarieteEditable(p, prefixeId + 'variete');
+        tdOrigine = champTaxonomieEditable(p, 'origine', 'origines', prefixeId + 'origine');
+        tdConditionnement = champTaxonomieEditable(p, 'conditionnement', 'conditionnements', prefixeId + 'conditionnement');
+        tdSuremballage = champTaxonomieEditable(p, 'suremballage', 'suremballages', prefixeId + 'suremballage');
+      } else {
+        tdFamille = document.createElement('td'); tdFamille.textContent = p.famille || '';
+        tdVariete = document.createElement('td'); tdVariete.textContent = p.variete || '';
+        tdOrigine = document.createElement('td'); tdOrigine.textContent = p.origine || '';
+        tdConditionnement = document.createElement('td'); tdConditionnement.textContent = p.conditionnement || '';
+        tdSuremballage = document.createElement('td'); tdSuremballage.textContent = p.suremballage || '';
+      }
 
       const tdActif = document.createElement('td');
       tdActif.className = 'centre';
@@ -1948,25 +1964,64 @@
       }
       tdActif.appendChild(span);
 
-      const tdSuppr = document.createElement('td');
-      tdSuppr.className = 'centre';
+      const tdAction = document.createElement('td');
+      tdAction.className = 'centre';
       if (peutGerer) {
-        const btnSuppr = document.createElement('button');
-        btnSuppr.className = 'bouton-secondaire';
-        btnSuppr.textContent = 'Suppr.';
-        btnSuppr.onclick = function () {
-          if (!confirm('Supprimer définitivement « ' + p.nom + ' » de la liste des produits ?')) return;
-          db.collection('produits').doc(p.id).delete().then(function () {
-            enregistrerTransaction('produit_supprime', p.nom, null);
-            afficherToast(p.nom + ' supprimé');
-          }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
-        };
-        tdSuppr.appendChild(btnSuppr);
+        if (enEdition) {
+          const btnEnregistrer = document.createElement('button');
+          btnEnregistrer.className = 'bouton-secondaire';
+          btnEnregistrer.textContent = 'Enregistrer';
+          btnEnregistrer.style.marginRight = '6px';
+          btnEnregistrer.onclick = function () {
+            const champs = {
+              famille: document.getElementById(prefixeId + 'famille').value,
+              variete: document.getElementById(prefixeId + 'variete').value,
+              origine: document.getElementById(prefixeId + 'origine').value,
+              conditionnement: document.getElementById(prefixeId + 'conditionnement').value,
+              suremballage: document.getElementById(prefixeId + 'suremballage').value
+            };
+            db.collection('produits').doc(p.id).update(champs).then(function () {
+              produitEnEdition = null;
+              rendreProduits();
+              afficherToast(p.nom + ' mis à jour');
+            }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+          };
+          const btnAnnuler = document.createElement('button');
+          btnAnnuler.className = 'bouton-secondaire';
+          btnAnnuler.textContent = 'Annuler';
+          btnAnnuler.onclick = function () {
+            produitEnEdition = null;
+            rendreProduits();
+          };
+          tdAction.appendChild(btnEnregistrer);
+          tdAction.appendChild(btnAnnuler);
+        } else {
+          const btnModifier = document.createElement('button');
+          btnModifier.className = 'bouton-secondaire';
+          btnModifier.textContent = 'Modifier';
+          btnModifier.style.marginRight = '6px';
+          btnModifier.onclick = function () {
+            produitEnEdition = p.id;
+            rendreProduits();
+          };
+          const btnSuppr = document.createElement('button');
+          btnSuppr.className = 'bouton-secondaire';
+          btnSuppr.textContent = 'Suppr.';
+          btnSuppr.onclick = function () {
+            if (!confirm('Supprimer définitivement « ' + p.nom + ' » de la liste des produits ?')) return;
+            db.collection('produits').doc(p.id).delete().then(function () {
+              enregistrerTransaction('produit_supprime', p.nom, null);
+              afficherToast(p.nom + ' supprimé');
+            }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+          };
+          tdAction.appendChild(btnModifier);
+          tdAction.appendChild(btnSuppr);
+        }
       }
 
       tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete); tr.appendChild(tdOrigine);
       tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
-      tr.appendChild(tdActif); tr.appendChild(tdSuppr);
+      tr.appendChild(tdActif); tr.appendChild(tdAction);
       corpsProduits.appendChild(tr);
     });
   }
@@ -2044,14 +2099,15 @@
     return '';
   }
 
-  // Édition en ligne d'un champ de taxonomie à plat (famille, origine, conditionnement,
-  // suremballage) depuis le tableau de l'onglet Produits — permet de corriger une erreur
-  // de saisie après coup, sans devoir supprimer/recréer le produit.
-  function champTaxonomieProduit(p, champ, champReferentiel, peutEditer) {
+  // Champ de taxonomie à plat (famille, origine, conditionnement, suremballage) en mode
+  // édition — pas d'enregistrement au changement : la valeur n'est écrite que lorsque le
+  // bouton "Enregistrer" de la ligne est cliqué (voir rendreProduits), pour forcer une
+  // validation explicite plutôt qu'un enregistrement discret à chaque sélection.
+  function champTaxonomieEditable(p, champ, champReferentiel, idSelect) {
     const td = document.createElement('td');
     const select = document.createElement('select');
+    select.id = idSelect;
     select.style.cssText = 'width:100%; padding:6px 8px; border-radius:6px; border:1.5px solid var(--line); font-size:13px; background:white;';
-    select.disabled = !peutEditer;
     const depuisProduits = produits.map(function (pp) { return pp[champ]; }).filter(Boolean);
     const depuisReferentiels = referentiels[champReferentiel] || [];
     const valeurs = Array.from(new Set(depuisProduits.concat(depuisReferentiels))).sort();
@@ -2066,23 +2122,19 @@
       select.appendChild(opt);
     });
     select.value = p[champ] || '';
-    if (peutEditer) {
-      select.addEventListener('change', function () {
-        modifierProduit(p.id, { [champ]: select.value });
-      });
-    }
     td.appendChild(select);
     return td;
   }
 
-  // Variété dépend de la famille ACTUELLE du produit (celle déjà enregistrée) : ne
-  // propose que les variétés rattachées à cette famille. Un changement de famille se
-  // répercute ici au prochain rendu (déclenché par le listener Firestore sur produits).
-  function champVarieteProduit(p, peutEditer) {
+  // Variété dépend de la famille ACTUELLE du produit (celle déjà enregistrée, pas celle
+  // en cours de sélection dans le select Famille voisin — un changement de famille se
+  // répercute sur ses variétés proposées au prochain passage en édition, une fois
+  // enregistré). Même principe de non-enregistrement immédiat que champTaxonomieEditable.
+  function champVarieteEditable(p, idSelect) {
     const td = document.createElement('td');
     const select = document.createElement('select');
+    select.id = idSelect;
     select.style.cssText = 'width:100%; padding:6px 8px; border-radius:6px; border:1.5px solid var(--line); font-size:13px; background:white;';
-    select.disabled = !peutEditer;
     const depuisProduits = produits.filter(function (pp) { return pp.famille === p.famille; })
       .map(function (pp) { return pp.variete; }).filter(Boolean);
     const depuisReferentiels = (referentiels.varietes || []).filter(function (v) { return v.famille === p.famille; })
@@ -2099,11 +2151,6 @@
       select.appendChild(opt);
     });
     select.value = p.variete || '';
-    if (peutEditer) {
-      select.addEventListener('change', function () {
-        modifierProduit(p.id, { variete: select.value });
-      });
-    }
     td.appendChild(select);
     return td;
   }
