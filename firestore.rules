@@ -3,16 +3,15 @@ rules_version = '2';
 // ============================================================
 // Suivi Stock — La Légumière
 // Rôles (stockés dans users/{uid}.role) :
-//   admin      : tout, y compris gestion des comptes et des listes de référence
-//                (familles/variétés/conditionnements/suremballages, collection
-//                "referentiels" — l'onglet Produits ne fait que les lire)
+//   admin      : tout, y compris gestion des comptes
 //   commerce   : gestion complète des produits (collection "produits" — création,
 //                désignation, famille/variete/conditionnement/suremballage, prix
-//                d'achat/unité, actif, suppression), ventes/réservations du jour,
-//                individuellement par commercial (collection "commerce", un document
-//                par produit+jour+commercial — chacun ne peut écrire QUE son propre
-//                document), achats/livraisons (collection "achats"), + validation du
-//                stock du soir (champ "importe" de saisieStock) qui met à jour
+//                d'achat/unité, actif, suppression) et des listes de référence dont
+//                ces champs sont issus (collection "referentiels"), ventes/réservations
+//                du jour individuellement par commercial (collection "commerce", un
+//                document par produit+jour+commercial — chacun ne peut écrire QUE son
+//                propre document), achats/livraisons (collection "achats"), + validation
+//                du stock du soir (champ "importe" de saisieStock) qui met à jour
 //                dernierStock (pas les valeurs saisies par la production)
 //   production : stock du soir (collection "saisieStock"), + réactivation d'un
 //                produit inactif existant (champ "actif" uniquement)
@@ -72,12 +71,11 @@ service cloud.firestore {
     }
 
     // ---- Listes de référence (Famille / Variété / Conditionnement / Suremballage) ----
-    // Un seul document, un tableau de valeurs par catégorie. Gérées UNIQUEMENT depuis
-    // l'onglet Paramètres (admin) — l'onglet Produits ne fait que lire ces listes pour
-    // peupler ses listes déroulantes, il ne peut plus y ajouter de nouvelle valeur.
+    // Un seul document, un tableau de valeurs par catégorie. Gérées depuis l'onglet
+    // Produits par l'admin et le rôle commerce (comme le reste de cet onglet).
     match /referentiels/{docId} {
       allow read: if connecte();
-      allow write: if estAdmin();
+      allow write: if estCommerce();
     }
 
     // ---- Cache "dernier stock connu" par produit ----

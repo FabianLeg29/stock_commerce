@@ -172,16 +172,19 @@
   .ligne-ajout input, .ligne-ajout select { flex: 1 1 160px; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line); font-size: 14px; background: white; }
   .ligne-ajout button { background: var(--copper); color: white; border: none; border-radius: 10px; padding: 0 20px; font-weight: 600; cursor: pointer; }
 
+  .sous-titre-section { font-size: 13px; color: #8a8072; margin: -4px 0 14px 0; }
+
   .grille-referentiels { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
-  .carte-referentiel { background: white; border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; }
+  .carte-referentiel { background: white; border: 1.5px solid var(--line); border-radius: 12px; padding: 16px; }
   .carte-referentiel h4 { margin: 0 0 10px 0; font-size: 12px; color: var(--copper); text-transform: uppercase; letter-spacing: .04em; }
-  .ligne-ajout-referentiel { display: flex; gap: 6px; margin-bottom: 10px; }
-  .ligne-ajout-referentiel input { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 13px; }
-  .ligne-ajout-referentiel button { background: var(--copper); color: white; border: none; border-radius: 8px; padding: 0 14px; font-weight: 600; cursor: pointer; font-size: 13px; }
-  .liste-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { display: flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 4px 6px 4px 10px; font-size: 12.5px; }
-  .chip button { border: none; background: none; color: #a49a89; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
-  .chip button:hover { color: var(--danger); }
+  .liste-referentiel { display: flex; flex-direction: column; }
+  .ligne-referentiel { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .ligne-referentiel:last-child { border-bottom: none; }
+  .valeur-referentiel { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 13px; background: var(--bg); color: #4a4438; }
+  .ligne-referentiel input.champ-valeur { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 13px; }
+  .lien-supprimer { font-size: 12.5px; color: #8a8072; text-decoration: underline; cursor: pointer; white-space: nowrap; }
+  .lien-supprimer:hover { color: var(--danger); }
+  .bouton-nouveau-referentiel { display: block; width: 100%; margin-top: 10px; background: var(--copper); color: white; border: none; border-radius: 20px; padding: 9px 16px; font-weight: 600; font-size: 13px; cursor: pointer; }
 
   .section-titre { font-size: 15px; margin: 26px 0 10px 0; color: var(--copper); }
 
@@ -486,47 +489,38 @@
           <tbody id="corpsProduits"></tbody>
         </table>
       </div>
+
+      <div id="blocListesReference" style="display:none;">
+        <h3 class="section-titre">Listes de référence</h3>
+        <p class="sous-titre-section">Valeurs proposées dans les listes déroulantes Famille / Variété / Conditionnement / Suremballage ci-dessus.</p>
+        <div class="grille-referentiels">
+          <div class="carte-referentiel">
+            <h4>Famille</h4>
+            <div class="liste-referentiel" id="listeFamilles"></div>
+            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('familles', 'listeFamilles')">+ Nouvelle famille</button>
+          </div>
+          <div class="carte-referentiel">
+            <h4>Variété</h4>
+            <div class="liste-referentiel" id="listeVarietes"></div>
+            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('varietes', 'listeVarietes')">+ Nouvelle variété</button>
+          </div>
+          <div class="carte-referentiel">
+            <h4>Conditionnement</h4>
+            <div class="liste-referentiel" id="listeConditionnements"></div>
+            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('conditionnements', 'listeConditionnements')">+ Nouveau conditionnement</button>
+          </div>
+          <div class="carte-referentiel">
+            <h4>Suremballage</h4>
+            <div class="liste-referentiel" id="listeSuremballages"></div>
+            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('suremballages', 'listeSuremballages')">+ Nouveau suremballage</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ---------------- PARAMETRES (admin) ---------------- -->
     <div class="vue" id="vueParametres">
-      <h3 class="section-titre" style="margin-top:0;">Listes de référence</h3>
-      <div class="grille-referentiels">
-        <div class="carte-referentiel">
-          <h4>Famille</h4>
-          <div class="ligne-ajout-referentiel">
-            <input type="text" id="nouvelleValeurFamilles" placeholder="Nouvelle famille...">
-            <button onclick="ajouterValeurReferentiel('familles', 'nouvelleValeurFamilles')">Ajouter</button>
-          </div>
-          <div class="liste-chips" id="listeFamilles"></div>
-        </div>
-        <div class="carte-referentiel">
-          <h4>Variété</h4>
-          <div class="ligne-ajout-referentiel">
-            <input type="text" id="nouvelleValeurVarietes" placeholder="Nouvelle variété...">
-            <button onclick="ajouterValeurReferentiel('varietes', 'nouvelleValeurVarietes')">Ajouter</button>
-          </div>
-          <div class="liste-chips" id="listeVarietes"></div>
-        </div>
-        <div class="carte-referentiel">
-          <h4>Conditionnement</h4>
-          <div class="ligne-ajout-referentiel">
-            <input type="text" id="nouvelleValeurConditionnements" placeholder="Nouveau conditionnement...">
-            <button onclick="ajouterValeurReferentiel('conditionnements', 'nouvelleValeurConditionnements')">Ajouter</button>
-          </div>
-          <div class="liste-chips" id="listeConditionnements"></div>
-        </div>
-        <div class="carte-referentiel">
-          <h4>Suremballage</h4>
-          <div class="ligne-ajout-referentiel">
-            <input type="text" id="nouvelleValeurSuremballages" placeholder="Nouveau suremballage...">
-            <button onclick="ajouterValeurReferentiel('suremballages', 'nouvelleValeurSuremballages')">Ajouter</button>
-          </div>
-          <div class="liste-chips" id="listeSuremballages"></div>
-        </div>
-      </div>
-
-      <h3 class="section-titre">Comptes</h3>
+      <h3 class="section-titre" style="margin-top:0;">Comptes</h3>
       <div class="carte-tableau">
         <table>
           <thead><tr><th>Email</th><th class="centre">Rôle</th></tr></thead>
@@ -1894,6 +1888,13 @@
     const peutGerer = peutGererCommerce();
     document.getElementById('ligneAjoutProduit').style.display = peutGerer ? '' : 'none';
     document.getElementById('blocSupprimerTousProduits').style.display = estAdmin() ? '' : 'none';
+    document.getElementById('blocListesReference').style.display = peutGerer ? '' : 'none';
+    if (peutGerer) {
+      rendreListeReferentiel('familles', 'listeFamilles');
+      rendreListeReferentiel('varietes', 'listeVarietes');
+      rendreListeReferentiel('conditionnements', 'listeConditionnements');
+      rendreListeReferentiel('suremballages', 'listeSuremballages');
+    }
 
     const corpsProduits = document.getElementById('corpsProduits');
     const saisieEnCours = capturerSaisieEnCours(corpsProduits);
@@ -1962,11 +1963,6 @@
   // ============================================================
   function rendreParametres() {
     if (!estAdmin()) return;
-
-    rendreListeReferentiel('familles', 'listeFamilles');
-    rendreListeReferentiel('varietes', 'listeVarietes');
-    rendreListeReferentiel('conditionnements', 'listeConditionnements');
-    rendreListeReferentiel('suremballages', 'listeSuremballages');
 
     const corpsComptes = document.getElementById('corpsComptes');
     corpsComptes.innerHTML = '';
@@ -2164,10 +2160,7 @@
   }
   window.ajouterProduit = ajouterProduit;
 
-  function ajouterValeurReferentiel(categorie, idInput) {
-    const input = document.getElementById(idInput);
-    const valeur = input.value.trim();
-    if (!valeur) return;
+  function ajouterValeurReferentiel(categorie, valeur) {
     if ((referentiels[categorie] || []).indexOf(valeur) !== -1) {
       afficherToast('Cette valeur existe déjà');
       return;
@@ -2175,11 +2168,9 @@
     db.collection('referentiels').doc('main').set(
       { [categorie]: firebase.firestore.FieldValue.arrayUnion(valeur) }, { merge: true }
     ).then(function () {
-      input.value = '';
       afficherToast('Ajouté');
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
-  window.ajouterValeurReferentiel = ajouterValeurReferentiel;
 
   function supprimerValeurReferentiel(categorie, valeur) {
     if (!confirm('Retirer « ' + valeur + ' » de cette liste ?')) return;
@@ -2187,25 +2178,50 @@
       { [categorie]: firebase.firestore.FieldValue.arrayRemove(valeur) }
     ).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
-  window.supprimerValeurReferentiel = supprimerValeurReferentiel;
 
   function rendreListeReferentiel(categorie, idConteneur) {
     const conteneur = document.getElementById(idConteneur);
     conteneur.innerHTML = '';
     (referentiels[categorie] || []).forEach(function (v) {
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      const texte = document.createElement('span');
-      texte.textContent = v;
-      const btn = document.createElement('button');
-      btn.textContent = '×';
-      btn.title = 'Retirer';
-      btn.onclick = function () { supprimerValeurReferentiel(categorie, v); };
-      chip.appendChild(texte);
-      chip.appendChild(btn);
-      conteneur.appendChild(chip);
+      const ligne = document.createElement('div');
+      ligne.className = 'ligne-referentiel';
+      const valeur = document.createElement('span');
+      valeur.className = 'valeur-referentiel';
+      valeur.textContent = v;
+      const lien = document.createElement('a');
+      lien.className = 'lien-supprimer';
+      lien.textContent = 'supprimer';
+      lien.onclick = function () { supprimerValeurReferentiel(categorie, v); };
+      ligne.appendChild(valeur);
+      ligne.appendChild(lien);
+      conteneur.appendChild(ligne);
     });
   }
+
+  // Ajoute une ligne vide éditable en bas de la liste (bouton "+ Nouvelle...") : se
+  // confirme (écriture Firestore) au blur si non vide, sinon disparaît sans rien créer.
+  function ajouterLigneReferentielVide(categorie, idConteneur) {
+    const conteneur = document.getElementById(idConteneur);
+    if (conteneur.querySelector('.ligne-referentiel-nouvelle')) return;
+    const ligne = document.createElement('div');
+    ligne.className = 'ligne-referentiel ligne-referentiel-nouvelle';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'champ-valeur';
+    input.placeholder = 'Nouvelle valeur...';
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') input.blur();
+    });
+    input.addEventListener('blur', function () {
+      const v = input.value.trim();
+      ligne.remove();
+      if (v) ajouterValeurReferentiel(categorie, v);
+    });
+    ligne.appendChild(input);
+    conteneur.appendChild(ligne);
+    input.focus();
+  }
+  window.ajouterLigneReferentielVide = ajouterLigneReferentielVide;
 
   function supprimerTousLesProduits() {
     if (!produits.length) {
