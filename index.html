@@ -1037,9 +1037,17 @@
     const champHeure = cote === 'haut' ? 'stockHautHeure' : 'stockBasHeure';
     const champAutreValeur = cote === 'haut' ? 'stockBas' : 'stockHaut';
 
+    // Toute la session porte sur l'ensemble des produits actifs : un produit non
+    // renseigné dans cet inventaire est considéré comme absent (valeur 0), pas
+    // comme "inchangé" — sinon une valeur d'une session précédente du même jour
+    // resterait affichée alors qu'elle ne correspond plus à l'inventaire en cours.
+    const produitsActifs = produits.filter(function (p) { return p.actif; });
+
     const lot = db.batch();
-    entrees.forEach(function (nom) {
-      const valeur = sommerExpression(saisieSessionEnCours[nom]);
+    produitsActifs.forEach(function (p) {
+      const nom = p.nom;
+      const saisie = saisieSessionEnCours.hasOwnProperty(nom) ? saisieSessionEnCours[nom] : '';
+      const valeur = saisie === '' ? 0 : sommerExpression(saisie);
       const saisieExistante = saisieDuJour[nom] || {};
       const autre = (typeof saisieExistante[champAutreValeur] === 'number') ? saisieExistante[champAutreValeur] : 0;
       const donnees = {
@@ -1059,7 +1067,7 @@
       entrees.forEach(function (nom) {
         enregistrerTransaction('stock_soir', nom, sommerExpression(saisieSessionEnCours[nom]));
       });
-      afficherToast(entrees.length + ' produit(s) enregistré(s) — ' + sessionStockSoir.operateur +
+      afficherToast(produitsActifs.length + ' produit(s) enregistré(s) — ' + sessionStockSoir.operateur +
         ' (' + (cote === 'haut' ? 'Stock Haut' : 'Stock Bas') + ')');
       sessionStockSoir = null;
       saisieSessionEnCours = {};
