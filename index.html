@@ -332,6 +332,7 @@
           <button onclick="demarrerStockSoir()" id="boutonDemarrerStockSoir">Démarrer</button>
         </div>
         <div class="vide" id="videOperateurs" style="display:none;">Aucun opérateur déclaré — un administrateur doit d'abord en ajouter un depuis l'onglet Paramètres.</div>
+        <div id="resumeStocksEnregistres" style="margin-top:14px;"></div>
       </div>
 
       <div id="blocSessionStockSoir" style="display:none;">
@@ -1081,6 +1082,56 @@
   }
   window.terminerStockSoir = terminerStockSoir;
 
+  // Renvoie { operateur, heure } du dernier enregistrement du jour pour ce côté
+  // (haut ou bas), déduit des saisieStock du jour — ou null si rien n'a encore
+  // été enregistré aujourd'hui pour ce côté.
+  function saisieExistanteCote(cote) {
+    const champOperateur = cote === 'haut' ? 'stockHautOperateur' : 'stockBasOperateur';
+    const champHeure = cote === 'haut' ? 'stockHautHeure' : 'stockBasHeure';
+    for (const nom in saisieDuJour) {
+      const s = saisieDuJour[nom];
+      if (s && s[champOperateur]) {
+        return { operateur: s[champOperateur], heure: s[champHeure] || '' };
+      }
+    }
+    return null;
+  }
+
+  function modifierStockSoir(cote) {
+    if (!peutSaisirProduction()) return;
+    const existant = saisieExistanteCote(cote);
+    if (!existant) return;
+    const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
+    sessionStockSoir = { date: AUJOURD_HUI, heure: existant.heure, cote: cote, operateur: existant.operateur };
+    saisieSessionEnCours = {};
+    produits.filter(function (p) { return p.actif; }).forEach(function (p) {
+      const s = saisieDuJour[p.nom];
+      if (s && typeof s[champValeur] === 'number') {
+        saisieSessionEnCours[p.nom] = String(s[champValeur]);
+      }
+    });
+    rendreProduction();
+  }
+  window.modifierStockSoir = modifierStockSoir;
+
+  function rendreResumeStocksEnregistres() {
+    const conteneur = document.getElementById('resumeStocksEnregistres');
+    const peutModifier = peutSaisirProduction();
+    conteneur.innerHTML = [{ cote: 'haut', libelle: 'Stock Haut' }, { cote: 'bas', libelle: 'Stock Bas' }]
+      .map(function (info) {
+        const existant = saisieExistanteCote(info.cote);
+        const etat = existant
+          ? 'Enregistré à ' + existant.heure + ' par ' + existant.operateur
+          : 'Pas encore enregistré aujourd\'hui';
+        const bouton = (existant && peutModifier)
+          ? '<button class="bouton-secondaire" onclick="modifierStockSoir(\'' + info.cote + '\')">Modifier le stock enregistré</button>'
+          : '';
+        return '<div class="ligne-ajout" style="margin-top:8px;">' +
+          '<span class="date-du-jour" style="min-width:90px;">' + info.libelle + '</span>' +
+          '<span class="date-du-jour">' + etat + '</span>' + bouton + '</div>';
+      }).join('');
+  }
+
   function rendreProduction() {
     document.getElementById('dateProduction').textContent = 'Soir du ' + AUJOURD_HUI;
     document.getElementById('ligneAjoutProduction').style.display = peutSaisirProduction() ? '' : 'none';
@@ -1101,6 +1152,7 @@
       document.getElementById('operateurDemarrerStockSoir').disabled = !peutDemarrer;
       document.getElementById('boutonDemarrerStockSoir').disabled = !peutDemarrer;
       rendreSelectOperateurs();
+      rendreResumeStocksEnregistres();
     } else {
       document.getElementById('blocDemarrerStockSoir').style.display = 'none';
       document.getElementById('blocSessionStockSoir').style.display = '';
