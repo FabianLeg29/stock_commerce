@@ -107,6 +107,15 @@ service cloud.firestore {
       allow update: if estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['importe']);
     }
 
+    // ---- Brouillons de session de stock du soir (persistés pendant la saisie) ----
+    // Un document par jour + côté + opérateur, écrit/effacé uniquement par le rôle
+    // production (comme saisieStock) — permet de reprendre une session interrompue
+    // et de voir les sessions en cours démarrées par d'autres opérateurs.
+    match /brouillonsStockSoir/{docId} {
+      allow read: if connecte();
+      allow write: if estProduction();
+    }
+
     // ---- Ventes/réservations du jour, par commercial ----
     // Un document par produit + jour + commercial (id = ${date}__${slug(produit)}__${slug(email)}).
     // Un compte commerce ne peut écrire QUE le document dont le champ "commercial"

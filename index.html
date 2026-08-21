@@ -319,6 +319,18 @@
         <div class="vide" id="videListeInactifs" style="display:none;">Aucun produit inactif ne correspond.</div>
       </div>
 
+      <div id="carteBrouillonsStockSoir" style="display:none; margin-bottom:14px;">
+        <h3 class="section-titre" style="margin-top:0;">Stock en cours</h3>
+        <div class="carte-tableau">
+          <table>
+            <thead>
+              <tr><th>Session</th><th class="centre" style="width:120px;">Statut</th><th style="width:170px;"></th></tr>
+            </thead>
+            <tbody id="corpsBrouillonsStockSoir"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div id="blocDemarrerStockSoir">
         <h3 class="section-titre" style="margin-top:0;">Démarrer un stock du soir</h3>
         <div class="ligne-ajout">
@@ -611,6 +623,9 @@
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: valeurTexte } — comptage local de la session, écrit en une fois à la fin
   let terminaisonEnCours = false; // true pendant l'écriture Firestore de "Terminer et enregistrer" (anti double-clic)
+  let brouillonsStockSoir = {};   // { docId: { date, cote, operateur, heure, valeurs } } — sessions en cours (persistées), tous opérateurs, pour le jour
+  let idBrouillonActuel = null;   // docId du brouillon Firestore de la session en cours (pour l'auto-sauvegarde et le nettoyage)
+  let minuteurBrouillon = null;   // debounce de l'auto-sauvegarde du brouillon pendant la saisie
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
@@ -830,6 +845,15 @@
     );
 
     desabonnements.push(
+      db.collection('brouillonsStockSoir').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
+        const out = {};
+        qs.forEach(function (doc) { out[doc.id] = doc.data(); });
+        brouillonsStockSoir = out;
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
       db.collection('commerce').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
         const sommes = {};
         const details = {};
@@ -999,23 +1023,97 @@
     document.getElementById('videOperateurs').style.display = operateurs.length ? 'none' : 'block';
   }
 
+  function idBrouillonStockSoir(date, cote, operateur) {
+    return date + '__' + cote + '__' + slugify(operateur);
+  }
+
+  // Démarre (ou reprend depuis un point de départ donné) une session de comptage,
+  // et persiste immédiatement un brouillon Firestore — pour que la session survive
+  // à la fermeture de l'onglet et que d'autres opérateurs voient qu'elle est "en cours".
+  function demarrerSessionStockSoir(cote, operateur, heure, valeursInitiales) {
+    sessionStockSoir = { date: AUJOURD_HUI, heure: heure, cote: cote, operateur: operateur };
+    saisieSessionEnCours = Object.assign({}, valeursInitiales || {});
+    idBrouillonActuel = idBrouillonStockSoir(AUJOURD_HUI, cote, operateur);
+    db.collection('brouillonsStockSoir').doc(idBrouillonActuel).set({
+      date: AUJOURD_HUI, cote: cote, operateur: operateur, heure: heure,
+      valeurs: saisieSessionEnCours,
+      miseAJour: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(function (e) { afficherToast('Erreur (brouillon) : ' + e.message); });
+    rendreProduction();
+  }
+
+  function sauvegarderBrouillon() {
+    if (!idBrouillonActuel || !sessionStockSoir) return;
+    clearTimeout(minuteurBrouillon);
+    minuteurBrouillon = setTimeout(function () {
+      db.collection('brouillonsStockSoir').doc(idBrouillonActuel).set({
+        date: sessionStockSoir.date, cote: sessionStockSoir.cote, operateur: sessionStockSoir.operateur,
+        heure: sessionStockSoir.heure, valeurs: saisieSessionEnCours,
+        miseAJour: firebase.firestore.FieldValue.serverTimestamp()
+      }).catch(function (e) { console.error(e); });
+    }, 800);
+  }
+
   function demarrerStockSoir() {
     const heure = document.getElementById('heureDemarrerStockSoir').value;
     const cote = document.getElementById('coteDemarrerStockSoir').value;
     const operateur = document.getElementById('operateurDemarrerStockSoir').value;
     if (!operateur) { afficherToast('Choisissez un opérateur'); return; }
     if (!heure) { afficherToast("Renseignez l'heure du contrôle"); return; }
-    sessionStockSoir = { date: AUJOURD_HUI, heure: heure, cote: cote, operateur: operateur };
-    saisieSessionEnCours = {};
-    rendreProduction();
+    demarrerSessionStockSoir(cote, operateur, heure, {});
   }
   window.demarrerStockSoir = demarrerStockSoir;
+
+  function reprendreStockEnCours(docId) {
+    if (!peutSaisirProduction()) return;
+    const brouillon = brouillonsStockSoir[docId];
+    if (!brouillon) return;
+    sessionStockSoir = { date: brouillon.date, heure: brouillon.heure, cote: brouillon.cote, operateur: brouillon.operateur };
+    saisieSessionEnCours = Object.assign({}, brouillon.valeurs || {});
+    idBrouillonActuel = docId;
+    rendreProduction();
+  }
+  window.reprendreStockEnCours = reprendreStockEnCours;
+
+  function rendreBrouillonsStockSoir() {
+    const carte = document.getElementById('carteBrouillonsStockSoir');
+    const corps = document.getElementById('corpsBrouillonsStockSoir');
+    const ids = Object.keys(brouillonsStockSoir).sort();
+    carte.style.display = ids.length ? '' : 'none';
+    corps.innerHTML = '';
+    ids.forEach(function (docId) {
+      const b = brouillonsStockSoir[docId];
+      const libelleCote = b.cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
+      const tr = document.createElement('tr');
+      const tdSession = document.createElement('td');
+      tdSession.textContent = b.date + ' — ' + libelleCote + ' (' + b.operateur + ')';
+      const tdStatut = document.createElement('td');
+      tdStatut.className = 'centre';
+      tdStatut.textContent = 'En cours';
+      const tdAction = document.createElement('td');
+      const bouton = document.createElement('button');
+      bouton.className = 'bouton-secondaire';
+      bouton.textContent = 'Reprendre le stock en cours';
+      bouton.disabled = !peutSaisirProduction();
+      bouton.onclick = function () { reprendreStockEnCours(docId); };
+      tdAction.appendChild(bouton);
+      tr.appendChild(tdSession);
+      tr.appendChild(tdStatut);
+      tr.appendChild(tdAction);
+      corps.appendChild(tr);
+    });
+  }
 
   function annulerStockSoir() {
     if (terminaisonEnCours) return;
     if (Object.keys(saisieSessionEnCours).length && !confirm('Abandonner cette saisie sans l\'enregistrer ?')) return;
+    clearTimeout(minuteurBrouillon);
+    if (idBrouillonActuel) {
+      db.collection('brouillonsStockSoir').doc(idBrouillonActuel).delete().catch(function (e) { console.error(e); });
+    }
     sessionStockSoir = null;
     saisieSessionEnCours = {};
+    idBrouillonActuel = null;
     rendreProduction();
   }
   window.annulerStockSoir = annulerStockSoir;
@@ -1030,8 +1128,10 @@
       return;
     }
     terminaisonEnCours = true;
+    clearTimeout(minuteurBrouillon);
     rendreProduction();
 
+    const brouillonId = idBrouillonActuel;
     const cote = sessionStockSoir.cote;
     const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
     const champOperateur = cote === 'haut' ? 'stockHautOperateur' : 'stockBasOperateur';
@@ -1072,8 +1172,12 @@
         ' (' + (cote === 'haut' ? 'Stock Haut' : 'Stock Bas') + ')');
       sessionStockSoir = null;
       saisieSessionEnCours = {};
+      idBrouillonActuel = null;
       terminaisonEnCours = false;
       rendreProduction();
+      if (brouillonId) {
+        db.collection('brouillonsStockSoir').doc(brouillonId).delete().catch(function (e) { console.error(e); });
+      }
     }).catch(function (e) {
       afficherToast('Erreur : ' + e.message);
       terminaisonEnCours = false;
@@ -1102,15 +1206,14 @@
     const existant = saisieExistanteCote(cote);
     if (!existant) return;
     const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
-    sessionStockSoir = { date: AUJOURD_HUI, heure: existant.heure, cote: cote, operateur: existant.operateur };
-    saisieSessionEnCours = {};
+    const valeurs = {};
     produits.filter(function (p) { return p.actif; }).forEach(function (p) {
       const s = saisieDuJour[p.nom];
       if (s && typeof s[champValeur] === 'number') {
-        saisieSessionEnCours[p.nom] = String(s[champValeur]);
+        valeurs[p.nom] = String(s[champValeur]);
       }
     });
-    rendreProduction();
+    demarrerSessionStockSoir(cote, existant.operateur, existant.heure, valeurs);
   }
   window.modifierStockSoir = modifierStockSoir;
 
@@ -1153,8 +1256,10 @@
       document.getElementById('boutonDemarrerStockSoir').disabled = !peutDemarrer;
       rendreSelectOperateurs();
       rendreResumeStocksEnregistres();
+      rendreBrouillonsStockSoir();
     } else {
       document.getElementById('blocDemarrerStockSoir').style.display = 'none';
+      document.getElementById('carteBrouillonsStockSoir').style.display = 'none';
       document.getElementById('blocSessionStockSoir').style.display = '';
       const libelleCote = sessionStockSoir.cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
       document.getElementById('resumeSessionStockSoir').textContent =
@@ -1221,6 +1326,7 @@
           input.addEventListener('input', function () {
             saisieSessionEnCours[p.nom] = input.value;
             majTotal();
+            sauvegarderBrouillon();
           });
           td.appendChild(input);
           return { td: td, input: input };
