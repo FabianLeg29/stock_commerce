@@ -929,7 +929,8 @@
             details[ligne.produit].push({
               achatId: doc.id, fournisseur: d.fournisseur, quantite: ligne.quantite,
               prixAchat: ligne.prixAchat, heureDepart: ligne.heureDepart,
-              transportType: ligne.transportType, transporteurNom: ligne.transporteurNom
+              transportType: ligne.transportType, transporteurNom: ligne.transporteurNom,
+              responsable: d.responsable
             });
           });
         });
@@ -1664,6 +1665,7 @@
               (avecPrix ? '<th style="' + styleTh + '">Prix d\'achat</th>' : '') +
               '<th style="' + styleTh + '">Heure de départ</th>' +
               '<th style="' + styleTh + '">Transport</th>' +
+              '<th style="' + styleTh + '">Commercial</th>' +
               '</tr></thead><tbody>' + detailAchats.map(function (d) {
                 const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
                 const prix = (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
@@ -1671,7 +1673,8 @@
                   '<td style="' + styleTd + '">' + d.fournisseur + '</td>' +
                   (avecPrix ? '<td style="' + styleTd + '">' + prix + '</td>' : '') +
                   '<td style="' + styleTd + '">' + (d.heureDepart || '—') + '</td>' +
-                  '<td style="' + styleTd + '">' + transport + '</td></tr>';
+                  '<td style="' + styleTd + '">' + transport + '</td>' +
+                  '<td style="' + styleTd + '">' + libelleCommercial(d.responsable) + '</td></tr>';
               }).join('') + '</tbody></table>';
           } else {
             html += '<div style="margin:6px 0 14px 0; color:#a49a89;">Aucun achat aujourd\'hui.</div>';
