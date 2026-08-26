@@ -220,6 +220,29 @@
     font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer;
   }
 
+  .bouton-mini {
+    background: white; border: 1.5px solid var(--line); border-radius: 6px; padding: 2px 9px;
+    font-size: 13px; font-weight: 700; color: var(--copper); cursor: pointer; margin-left: 8px;
+  }
+
+  .modal-fond {
+    position: fixed; inset: 0; background: rgba(43,38,32,0.45);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 30px 16px; overflow-y: auto; z-index: 60;
+  }
+  .modal-boite {
+    background: var(--panel); border-radius: 14px; padding: 20px; max-width: 800px; width: 100%;
+    box-shadow: 0 10px 40px rgba(43,38,32,0.25);
+  }
+
+  .impression-seule { display: none; }
+  @media print {
+    body > *:not(.impression-seule) { display: none !important; }
+    .impression-seule { display: block !important; }
+    .impression-seule table { width: 100%; border-collapse: collapse; }
+    .impression-seule th, .impression-seule td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; text-align: left; }
+  }
+
   @media (max-width: 640px) {
     main { padding: 12px; }
     th, td { padding: 9px 10px; font-size: 13px; }
@@ -371,34 +394,12 @@
       </div>
     </div>
 
-    <!-- ---------------- ACHATS ---------------- -->
+    <!-- ---------------- ACHATS (consultation) ---------------- -->
     <div class="vue" id="vueAchats">
-      <div id="carteNouvelAchat">
-      <h3 class="section-titre" style="margin-top:0;">Nouvel achat</h3>
-      <div class="carte-tableau" style="padding:16px; margin-bottom:14px;">
-        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-          <div style="flex:1 1 220px;">
-            <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Fournisseur</label>
-            <select id="achatFournisseur" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; background:white;"></select>
-            <input type="text" id="achatFournisseurAutre" placeholder="Nom du nouveau fournisseur..." style="display:none; width:100%; margin-top:6px; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
-          </div>
-          <div style="flex:1 1 160px;">
-            <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Date</label>
-            <input type="date" id="achatDate" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
-          </div>
-        </div>
-        <div id="corpsLignesAchat"></div>
-        <button class="bouton-secondaire" style="margin-top:6px;" onclick="ajouterLigneAchat()">+ Ajouter une ligne produit</button>
-        <div style="margin-top:14px; display:flex; gap:8px;">
-          <button onclick="enregistrerAchat()" id="boutonEnregistrerAchat">Enregistrer l'achat</button>
-          <button class="bouton-secondaire" id="boutonAnnulerAchat" style="display:none;" onclick="annulerEditionAchat()">Annuler la modification</button>
-        </div>
-      </div>
-      </div>
-
-      <h3 class="section-titre">Récapitulatif des achats</h3>
+      <p class="sous-titre-section">Consultation des achats enregistrés. La saisie d'un nouvel achat se fait depuis le bouton « + » de la colonne Achats, dans l'onglet Commerce.</p>
       <div class="barre-outils">
         <input type="text" id="filtreAchats" placeholder="Rechercher (fournisseur, produit, transporteur, responsable)..." oninput="rendreAchats()">
+        <button class="bouton-secondaire" onclick="exporterAchatsPDF()">Générer PDF récapitulatif</button>
       </div>
       <div class="carte-tableau">
         <table>
@@ -420,6 +421,33 @@
         <div class="vide" id="videRecapAchats" style="display:none;">Aucun achat enregistré pour le moment.</div>
       </div>
     </div>
+
+    <!-- ---------------- MODALE ACHAT (saisie/édition, ouverte depuis Commerce ou Achats) ---------------- -->
+    <div id="modalAchat" class="modal-fond" style="display:none;">
+      <div class="modal-boite">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3 class="section-titre" style="margin:0;">Nouvel achat</h3>
+          <a class="lien-supprimer" onclick="fermerModalAchat()">Fermer</a>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+          <div style="flex:1 1 220px;">
+            <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Fournisseur</label>
+            <select id="achatFournisseur" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; background:white;"></select>
+          </div>
+          <div style="flex:1 1 160px;">
+            <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Date</label>
+            <input type="date" id="achatDate" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
+          </div>
+        </div>
+        <div id="corpsLignesAchat"></div>
+        <button class="bouton-secondaire" style="margin-top:6px;" onclick="ajouterLigneAchat()">+ Ajouter une ligne produit</button>
+        <div style="margin-top:14px; display:flex; gap:8px;">
+          <button onclick="enregistrerAchat()" id="boutonEnregistrerAchat">Enregistrer l'achat</button>
+          <button class="bouton-secondaire" id="boutonAnnulerAchat" style="display:none;" onclick="annulerEditionAchat()">Annuler la modification</button>
+        </div>
+      </div>
+    </div>
+
 
     <!-- ---------------- COMMERCE ---------------- -->
     <div class="vue" id="vueCommerce">
@@ -562,6 +590,11 @@
             <div class="liste-referentiel" id="listeSuremballages"></div>
             <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('suremballages', 'listeSuremballages')">+ Nouveau suremballage</button>
           </div>
+          <div class="carte-referentiel">
+            <h4>Fournisseur</h4>
+            <div class="liste-referentiel" id="listeFournisseurs"></div>
+            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('fournisseurs', 'listeFournisseurs')">+ Nouveau fournisseur</button>
+          </div>
         </div>
       </div>
     </div>
@@ -587,6 +620,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<div id="zoneImpressionAchats" class="impression-seule"></div>
 
 <script>
 (function () {
@@ -789,7 +823,8 @@
           }).sort(function (a, b) { return a.nom.localeCompare(b.nom); }),
           origines: (d.origines || []).slice().sort(),
           conditionnements: (d.conditionnements || []).slice().sort(),
-          suremballages: (d.suremballages || []).slice().sort()
+          suremballages: (d.suremballages || []).slice().sort(),
+          fournisseurs: (d.fournisseurs || []).slice().sort()
         };
         rendreVueActive();
       })
@@ -1533,7 +1568,17 @@
 
       const tdAchats = document.createElement('td');
       tdAchats.className = 'centre mono';
-      tdAchats.textContent = achatsAujourdhui;
+      const spanAchats = document.createElement('span');
+      spanAchats.textContent = achatsAujourdhui;
+      tdAchats.appendChild(spanAchats);
+      if (peutGererCommerce()) {
+        const btnAjouterAchat = document.createElement('button');
+        btnAjouterAchat.className = 'bouton-mini';
+        btnAjouterAchat.textContent = '+';
+        btnAjouterAchat.title = 'Ajouter un achat pour ' + p.nom;
+        btnAjouterAchat.onclick = function () { ouvrirModalAchat(p.nom); };
+        tdAchats.appendChild(btnAjouterAchat);
+      }
 
       const tdReel = document.createElement('td');
       tdReel.className = 'centre pastille-stock ' + (stockReel < 0 ? 'negatif' : 'positif');
@@ -1799,6 +1844,11 @@
     rendreFormulaireAchat();
   }
 
+  function fermerModalAchat() {
+    document.getElementById('modalAchat').style.display = 'none';
+  }
+  window.fermerModalAchat = fermerModalAchat;
+
   function annulerEditionAchat() {
     achatEnEditionId = null;
     lignesAchatEnCours = [ligneAchatVide()];
@@ -1806,11 +1856,27 @@
     document.getElementById('boutonAnnulerAchat').style.display = 'none';
     document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
     document.getElementById('achatFournisseur').value = '';
-    document.getElementById('achatFournisseurAutre').value = '';
-    document.getElementById('achatFournisseurAutre').style.display = 'none';
     rendreFormulaireAchat();
+    fermerModalAchat();
   }
   window.annulerEditionAchat = annulerEditionAchat;
+
+  // Ouvre la modale pour un nouvel achat — appelée depuis le bouton « + » de la
+  // colonne Achats de l'onglet Commerce, avec le produit de la ligne cliquée
+  // préselectionné sur la première ligne (l'utilisateur peut en ajouter d'autres).
+  function ouvrirModalAchat(produitPreselectionne) {
+    if (!peutGererCommerce()) return;
+    achatEnEditionId = null;
+    lignesAchatEnCours = [ligneAchatVide()];
+    if (produitPreselectionne) lignesAchatEnCours[0].produit = produitPreselectionne;
+    document.getElementById('achatDate').value = AUJOURD_HUI;
+    document.getElementById('boutonAnnulerAchat').style.display = 'none';
+    document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
+    document.getElementById('achatFournisseur').value = '';
+    rendreFormulaireAchat();
+    document.getElementById('modalAchat').style.display = 'flex';
+  }
+  window.ouvrirModalAchat = ouvrirModalAchat;
 
   function chargerAchatPourEdition(a) {
     achatEnEditionId = a.id;
@@ -1827,25 +1893,24 @@
     document.getElementById('boutonEnregistrerAchat').textContent = 'Enregistrer les modifications';
     rendreFormulaireAchat();
     const selectFournisseur = document.getElementById('achatFournisseur');
-    if (Array.from(selectFournisseur.options).some(function (o) { return o.value === a.fournisseur; })) {
-      selectFournisseur.value = a.fournisseur;
-      document.getElementById('achatFournisseurAutre').style.display = 'none';
-    } else {
-      selectFournisseur.value = '__autre__';
-      document.getElementById('achatFournisseurAutre').style.display = '';
-      document.getElementById('achatFournisseurAutre').value = a.fournisseur;
+    if (!Array.from(selectFournisseur.options).some(function (o) { return o.value === a.fournisseur; })) {
+      // Fournisseur d'un achat antérieur à la liste de référence (ou retiré depuis) :
+      // on l'ajoute temporairement pour ne pas perdre la valeur existante à l'édition.
+      const opt = document.createElement('option');
+      opt.value = a.fournisseur; opt.textContent = a.fournisseur;
+      selectFournisseur.appendChild(opt);
     }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    selectFournisseur.value = a.fournisseur;
+    document.getElementById('modalAchat').style.display = 'flex';
   }
 
   function enregistrerAchat() {
     if (!peutGererCommerce()) return;
     const selectFournisseur = document.getElementById('achatFournisseur');
-    const champFournisseurAutre = document.getElementById('achatFournisseurAutre');
-    const fournisseur = selectFournisseur.value === '__autre__' ? champFournisseurAutre.value.trim() : selectFournisseur.value;
+    const fournisseur = selectFournisseur.value;
     const date = document.getElementById('achatDate').value || AUJOURD_HUI;
     if (!fournisseur) {
-      afficherToast('Choisissez ou saisissez un fournisseur');
+      afficherToast('Choisissez un fournisseur');
       return;
     }
     const lignesValides = lignesAchatEnCours.filter(function (l) { return l.produit && l.quantite !== '' && l.quantite !== null && typeof l.quantite !== 'undefined'; });
@@ -1888,14 +1953,16 @@
   window.enregistrerAchat = enregistrerAchat;
 
   function rendreFormulaireAchat() {
-    const carte = document.getElementById('carteNouvelAchat');
-    if (carte) carte.style.display = peutGererCommerce() ? '' : 'none';
     if (!peutGererCommerce()) return;
 
     const selectFournisseur = document.getElementById('achatFournisseur');
-    const champFournisseurAutre = document.getElementById('achatFournisseurAutre');
     const valeurFournisseurActuelle = selectFournisseur.value;
-    const fournisseurs = Array.from(new Set(achats.map(function (a) { return a.fournisseur; }).filter(Boolean))).sort();
+    // Union de la liste de référence (Produits > Listes de référence > Fournisseur)
+    // et des fournisseurs déjà utilisés dans l'historique des achats, pour ne rien
+    // perdre des achats saisis avant l'introduction de cette liste de référence.
+    const fournisseurs = Array.from(new Set(
+      (referentiels.fournisseurs || []).concat(achats.map(function (a) { return a.fournisseur; }).filter(Boolean))
+    )).sort();
     selectFournisseur.innerHTML = '';
     const optVideF = document.createElement('option');
     optVideF.value = ''; optVideF.textContent = 'Fournisseur...';
@@ -1904,16 +1971,9 @@
       const o = document.createElement('option'); o.value = f; o.textContent = f;
       selectFournisseur.appendChild(o);
     });
-    const optAutreF = document.createElement('option');
-    optAutreF.value = '__autre__'; optAutreF.textContent = '+ Nouveau fournisseur...';
-    selectFournisseur.appendChild(optAutreF);
     if (Array.from(selectFournisseur.options).some(function (o) { return o.value === valeurFournisseurActuelle; })) {
       selectFournisseur.value = valeurFournisseurActuelle;
     }
-    selectFournisseur.onchange = function () {
-      champFournisseurAutre.style.display = selectFournisseur.value === '__autre__' ? '' : 'none';
-    };
-    champFournisseurAutre.style.display = selectFournisseur.value === '__autre__' ? '' : 'none';
 
     const champDate = document.getElementById('achatDate');
     if (!champDate.value) champDate.value = AUJOURD_HUI;
@@ -2049,23 +2109,15 @@
     });
   }
 
-  function rendreAchats() {
-    // N'appelle volontairement PAS rendreFormulaireAchat() ici : cette fonction est
-    // déclenchée par tous les listeners Firestore (rendreVueActive) et par la recherche
-    // du récap, y compris pendant que l'utilisateur est en train de saisir une ligne
-    // d'achat — reconstruire le formulaire à chaque fois lui ferait perdre le focus/curseur
-    // en pleine frappe. Le formulaire n'est (re)construit que sur des actions structurelles
-    // explicites (ouverture de l'onglet, ajout/retrait de ligne, édition, annulation, envoi).
+  // Partagé entre l'affichage du récapitulatif et l'export PDF : applique la
+  // recherche de #filtreAchats sur chaque ligne (achat, ligne) à plat.
+  function lignesAchatsFiltrees() {
     const q = (document.getElementById('filtreAchats').value || '').toLowerCase();
-    const corps = document.getElementById('corpsRecapAchats');
-    corps.innerHTML = '';
-
     const lignesAffichees = [];
     achats.forEach(function (a) {
       (a.lignes || []).forEach(function (l) { lignesAffichees.push({ achat: a, ligne: l }); });
     });
-
-    const filtrees = lignesAffichees.filter(function (item) {
+    return lignesAffichees.filter(function (item) {
       if (!q) return true;
       const transport = item.ligne.transportType === 'ramasse' ? 'ramasse' : (item.ligne.transporteurNom || '');
       return (item.achat.fournisseur || '').toLowerCase().indexOf(q) !== -1 ||
@@ -2073,6 +2125,19 @@
         transport.toLowerCase().indexOf(q) !== -1 ||
         (item.achat.responsable || '').toLowerCase().indexOf(q) !== -1;
     });
+  }
+
+  function rendreAchats() {
+    // N'appelle volontairement PAS rendreFormulaireAchat() ici : cette fonction est
+    // déclenchée par tous les listeners Firestore (rendreVueActive) et par la recherche
+    // du récap, y compris pendant que l'utilisateur est en train de saisir une ligne
+    // d'achat — reconstruire le formulaire à chaque fois lui ferait perdre le focus/curseur
+    // en pleine frappe. Le formulaire n'est (re)construit que sur des actions structurelles
+    // explicites (ouverture de l'onglet, ajout/retrait de ligne, édition, annulation, envoi).
+    const corps = document.getElementById('corpsRecapAchats');
+    corps.innerHTML = '';
+
+    const filtrees = lignesAchatsFiltrees();
 
     document.getElementById('videRecapAchats').style.display = filtrees.length ? 'none' : 'block';
 
@@ -2119,6 +2184,31 @@
     });
   }
   window.rendreAchats = rendreAchats;
+
+  // Génère un récapitulatif imprimable (respecte la recherche en cours de #filtreAchats)
+  // via la boîte d'impression du navigateur — l'utilisateur choisit "Enregistrer au
+  // format PDF" comme destination. Pas de dépendance PDF supplémentaire côté client.
+  function exporterAchatsPDF() {
+    const filtrees = lignesAchatsFiltrees();
+    let html = '<h2>Récapitulatif des achats — La Légumière</h2>';
+    html += '<div style="margin-bottom:10px;">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
+    html += '<table><thead><tr>' +
+      '<th>Date</th><th>Fournisseur</th><th>Produit</th><th>Quantité</th>' +
+      '<th>Prix d\'achat</th><th>Heure de départ</th><th>Transport</th><th>Responsable</th>' +
+      '</tr></thead><tbody>';
+    filtrees.forEach(function (item) {
+      const a = item.achat, l = item.ligne;
+      const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
+      const prix = !peutVoirPrix() ? '—' : (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+      html += '<tr><td>' + a.date + '</td><td>' + a.fournisseur + '</td><td>' + l.produit + '</td>' +
+        '<td>' + l.quantite + '</td><td>' + prix + '</td><td>' + (l.heureDepart || '—') + '</td>' +
+        '<td>' + transport + '</td><td>' + a.responsable + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('zoneImpressionAchats').innerHTML = html;
+    window.print();
+  }
+  window.exporterAchatsPDF = exporterAchatsPDF;
 
   // ============================================================
   // HISTORIQUE
@@ -2265,6 +2355,7 @@
       rendreListeReferentiel('origines', 'listeOrigines');
       rendreListeReferentiel('conditionnements', 'listeConditionnements');
       rendreListeReferentiel('suremballages', 'listeSuremballages');
+      rendreListeReferentiel('fournisseurs', 'listeFournisseurs');
     }
 
     const corpsProduits = document.getElementById('corpsProduits');
