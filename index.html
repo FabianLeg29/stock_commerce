@@ -1650,23 +1650,52 @@
         trDetail.style.display = ouvert ? 'none' : 'table-row';
         btnDetail.textContent = ouvert ? '▸ Détail' : '▾ Détail';
         if (!ouvert) {
-          let html = '';
-          html += '<strong>Achats aujourd\'hui (' + achatsAujourdhui + ')</strong>';
+          const styleTh = 'text-align:left; padding:4px 10px; font-size:11px; text-transform:uppercase; letter-spacing:0.03em; color:#8a8072; border-bottom:1.5px solid var(--line);';
+          const styleThD = styleTh + ' text-align:right;';
+          const styleTd = 'padding:4px 10px; border-bottom:1px solid var(--line);';
+          const styleTdD = styleTd + ' text-align:right;';
+          const avecPrix = peutVoirPrix();
+
+          let html = '<strong>Achats aujourd\'hui (' + achatsAujourdhui + ')</strong>';
           if (detailAchats.length) {
-            html += '<ul style="margin:6px 0 12px 18px; padding:0;">' + detailAchats.map(function (d) {
-              const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
-              const prix = !peutVoirPrix() ? '—' : (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
-              return '<li>' + d.quantite + ' — ' + d.fournisseur + ' — ' + prix + ' — ' + (d.heureDepart || '—') + ' — ' + transport + '</li>';
-            }).join('') + '</ul>';
+            html += '<table style="width:100%; border-collapse:collapse; margin:6px 0 14px 0;"><thead><tr>' +
+              '<th style="' + styleTh + '">Quantité</th>' +
+              '<th style="' + styleTh + '">Fournisseur</th>' +
+              (avecPrix ? '<th style="' + styleTh + '">Prix d\'achat</th>' : '') +
+              '<th style="' + styleTh + '">Heure de départ</th>' +
+              '<th style="' + styleTh + '">Transport</th>' +
+              '</tr></thead><tbody>' + detailAchats.map(function (d) {
+                const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
+                const prix = (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
+                return '<tr><td style="' + styleTd + '">' + d.quantite + '</td>' +
+                  '<td style="' + styleTd + '">' + d.fournisseur + '</td>' +
+                  (avecPrix ? '<td style="' + styleTd + '">' + prix + '</td>' : '') +
+                  '<td style="' + styleTd + '">' + (d.heureDepart || '—') + '</td>' +
+                  '<td style="' + styleTd + '">' + transport + '</td></tr>';
+              }).join('') + '</tbody></table>';
           } else {
-            html += '<div style="margin:6px 0 12px 0; color:#a49a89;">Aucun achat aujourd\'hui.</div>';
+            html += '<div style="margin:6px 0 14px 0; color:#a49a89;">Aucun achat aujourd\'hui.</div>';
           }
-          const ventesParCommercial = detailCommerciaux.filter(function (d) { return d.ventes; })
-            .map(function (d) { return libelleCommercial(d.commercial) + ' : ' + d.ventes; }).join(', ');
-          const reservationsParCommercial = detailCommerciaux.filter(function (d) { return d.reservations; })
-            .map(function (d) { return libelleCommercial(d.commercial) + ' : ' + d.reservations; }).join(', ');
-          html += '<strong>Ventes par commercial :</strong> ' + (ventesParCommercial || '—') + ' (total ' + sommeGlobale.ventes + ')<br>';
-          html += '<strong>Réservations par commercial :</strong> ' + (reservationsParCommercial || '—') + ' (total ' + sommeGlobale.reservations + ')';
+
+          html += '<strong>Ventes / réservations par commercial</strong>';
+          const commerciauxActifs = detailCommerciaux.filter(function (d) { return d.ventes || d.reservations; });
+          if (commerciauxActifs.length) {
+            html += '<table style="width:100%; border-collapse:collapse; margin:6px 0 0 0;"><thead><tr>' +
+              '<th style="' + styleTh + '">Commercial</th>' +
+              '<th style="' + styleThD + '">Ventes</th>' +
+              '<th style="' + styleThD + '">Réservations</th>' +
+              '</tr></thead><tbody>' + commerciauxActifs.map(function (d) {
+                return '<tr><td style="' + styleTd + '">' + libelleCommercial(d.commercial) + '</td>' +
+                  '<td style="' + styleTdD + '">' + (d.ventes || 0) + '</td>' +
+                  '<td style="' + styleTdD + '">' + (d.reservations || 0) + '</td></tr>';
+              }).join('') +
+              '<tr><td style="' + styleTd + ' font-weight:700;">Total</td>' +
+              '<td style="' + styleTdD + ' font-weight:700;">' + sommeGlobale.ventes + '</td>' +
+              '<td style="' + styleTdD + ' font-weight:700;">' + sommeGlobale.reservations + '</td></tr>' +
+              '</tbody></table>';
+          } else {
+            html += '<div style="margin:6px 0 0 0; color:#a49a89;">Aucune vente ni réservation aujourd\'hui.</div>';
+          }
           tdDetailContenu.innerHTML = html;
         }
       };
