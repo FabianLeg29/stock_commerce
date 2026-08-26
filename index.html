@@ -409,7 +409,7 @@
               <th>Fournisseur</th>
               <th>Produit</th>
               <th class="centre">Quantité</th>
-              <th class="centre">Prix d'achat</th>
+              <th class="centre" id="thPrixAchatRecap">Prix d'achat</th>
               <th class="centre">Heure de départ</th>
               <th>Transport</th>
               <th>Responsable</th>
@@ -2136,6 +2136,7 @@
     // explicites (ouverture de l'onglet, ajout/retrait de ligne, édition, annulation, envoi).
     const corps = document.getElementById('corpsRecapAchats');
     corps.innerHTML = '';
+    document.getElementById('thPrixAchatRecap').style.display = peutVoirPrix() ? '' : 'none';
 
     const filtrees = lignesAchatsFiltrees();
 
@@ -2149,8 +2150,6 @@
       const tdFournisseur = document.createElement('td'); tdFournisseur.textContent = a.fournisseur;
       const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
       const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.textContent = l.quantite;
-      const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono';
-      tdPrix.textContent = !peutVoirPrix() ? '—' : (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
       const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.textContent = l.heureDepart || '—';
       const tdTransport = document.createElement('td');
       tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
@@ -2178,7 +2177,13 @@
       }
 
       tr.appendChild(tdDate); tr.appendChild(tdFournisseur); tr.appendChild(tdProduit);
-      tr.appendChild(tdQuantite); tr.appendChild(tdPrix); tr.appendChild(tdHeure);
+      tr.appendChild(tdQuantite);
+      if (peutVoirPrix()) {
+        const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono';
+        tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+        tr.appendChild(tdPrix);
+      }
+      tr.appendChild(tdHeure);
       tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdActions);
       corps.appendChild(tr);
     });
@@ -2190,18 +2195,21 @@
   // format PDF" comme destination. Pas de dépendance PDF supplémentaire côté client.
   function exporterAchatsPDF() {
     const filtrees = lignesAchatsFiltrees();
+    const avecPrix = peutVoirPrix();
     let html = '<h2>Récapitulatif des achats — La Légumière</h2>';
     html += '<div style="margin-bottom:10px;">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
     html += '<table><thead><tr>' +
       '<th>Date</th><th>Fournisseur</th><th>Produit</th><th>Quantité</th>' +
-      '<th>Prix d\'achat</th><th>Heure de départ</th><th>Transport</th><th>Responsable</th>' +
+      (avecPrix ? '<th>Prix d\'achat</th>' : '') +
+      '<th>Heure de départ</th><th>Transport</th><th>Responsable</th>' +
       '</tr></thead><tbody>';
     filtrees.forEach(function (item) {
       const a = item.achat, l = item.ligne;
       const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
-      const prix = !peutVoirPrix() ? '—' : (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+      const prix = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
       html += '<tr><td>' + a.date + '</td><td>' + a.fournisseur + '</td><td>' + l.produit + '</td>' +
-        '<td>' + l.quantite + '</td><td>' + prix + '</td><td>' + (l.heureDepart || '—') + '</td>' +
+        '<td>' + l.quantite + '</td>' + (avecPrix ? '<td>' + prix + '</td>' : '') +
+        '<td>' + (l.heureDepart || '—') + '</td>' +
         '<td>' + transport + '</td><td>' + a.responsable + '</td></tr>';
     });
     html += '</tbody></table>';
