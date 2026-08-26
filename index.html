@@ -236,6 +236,7 @@
   }
 
   .impression-seule { display: none; }
+  @page { size: landscape; margin: 12mm; }
   @media print {
     body > *:not(.impression-seule) { display: none !important; }
     .impression-seule { display: block !important; }
@@ -2226,8 +2227,12 @@
   // via la boîte d'impression du navigateur — l'utilisateur choisit "Enregistrer au
   // format PDF" comme destination. Pas de dépendance PDF supplémentaire côté client.
   function exporterAchatsPDF() {
+    // Pour un rôle ayant accès au prix, laisser le choix de l'inclure ou non dans le
+    // PDF (ex : version à transmettre sans prix) — la production, qui n'a de toute
+    // façon jamais accès au prix, ne voit pas cette question.
+    const avecPrix = peutVoirPrix() &&
+      confirm("Inclure les prix d'achat dans le PDF ?\n\nOK = avec les prix — Annuler = sans les prix.");
     const filtrees = lignesAchatsFiltrees();
-    const avecPrix = peutVoirPrix();
     let html = '<h2>Récapitulatif des achats — La Légumière</h2>';
     html += '<div style="margin-bottom:10px;">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
     html += '<table><thead><tr>' +
