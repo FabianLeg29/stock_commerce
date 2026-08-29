@@ -393,6 +393,25 @@
         </table>
         <div class="vide" id="videProduction" style="display:none;">Aucun produit actif pour le moment.</div>
       </div>
+
+      <div style="margin-top:24px;">
+        <h3 class="section-titre">Consulter un stock antérieur</h3>
+        <div class="ligne-ajout">
+          <input type="date" id="dateConsultationStock">
+          <button onclick="consulterStockDate()">Consulter</button>
+          <button class="bouton-secondaire" id="boutonFermerConsultation" style="display:none;" onclick="fermerConsultationStock()">Fermer</button>
+        </div>
+        <p class="sous-titre-section" id="limiteConsultationStock" style="display:none;"></p>
+        <div id="resultatConsultationStock" style="display:none;">
+          <div class="carte-tableau" style="margin-top:10px;">
+            <table>
+              <thead><tr><th>Produit</th><th class="centre" style="width:100px;">Haut</th><th class="centre" style="width:100px;">Bas</th><th class="centre" style="width:100px;">Total</th></tr></thead>
+              <tbody id="corpsConsultationStock"></tbody>
+            </table>
+            <div class="vide" id="videConsultationStock" style="display:none;">Aucune saisie enregistrée pour cette date.</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ---------------- ACHATS (consultation) ---------------- -->
@@ -609,6 +628,15 @@
         <button class="bouton-nouveau-referentiel" onclick="ajouterLigneOperateurVide()">+ Nouvel opérateur</button>
       </div>
 
+      <h3 class="section-titre">Historique du stock du soir</h3>
+      <p class="sous-titre-section">Nombre de jours de saisies (Stock du soir) à conserver dans la base avant suppression automatique. Laissez vide pour ne rien supprimer automatiquement.</p>
+      <div class="carte-referentiel" style="max-width:360px; margin-bottom:24px;">
+        <div class="ligne-ajout" style="margin:0;">
+          <input type="number" id="joursConservationStockSoir" min="1" step="1" placeholder="Illimité" style="max-width:120px;">
+          <button onclick="enregistrerJoursConservation()">Enregistrer</button>
+        </div>
+      </div>
+
       <h3 class="section-titre">Comptes</h3>
       <div class="carte-tableau">
         <table>
@@ -655,6 +683,8 @@
   let referentiels = { familles: [], varietes: [], origines: [], conditionnements: [], suremballages: [] }; // listes gérées depuis l'onglet Produits (admin + commerce)
   let produitEnEdition = null; // id du produit dont la ligne est actuellement en édition dans l'onglet Produits
   let operateurs = [];           // personnes réalisant les contrôles de stock du soir, gérées depuis Paramètres (admin)
+  let joursConservationStockSoir = null; // nombre de jours d'historique saisieStock à garder (admin, Paramètres) ; null = illimité
+  let purgeHistoriqueLancee = false;     // garde-fou : ne lancer la purge qu'une fois par session, côté admin
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: valeurTexte } — comptage local de la session, écrit en une fois à la fin
   let terminaisonEnCours = false; // true pendant l'écriture Firestore de "Terminer et enregistrer" (anti double-clic)
@@ -876,6 +906,16 @@
       db.collection('parametres').doc('operateurs').onSnapshot(function (snap) {
         const d = snap.exists ? (snap.data() || {}) : {};
         operateurs = (d.liste || []).slice().sort();
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
+      db.collection('parametres').doc('historique').onSnapshot(function (snap) {
+        const d = snap.exists ? (snap.data() || {}) : {};
+        joursConservationStockSoir = (typeof d.joursConservationStockSoir === 'number' && d.joursConservationStockSoir > 0)
+          ? d.joursConservationStockSoir : null;
+        lancerPurgeHistoriqueSiBesoin();
         rendreVueActive();
       })
     );
@@ -1276,6 +1316,19 @@
     document.getElementById('dateProduction').textContent = 'Soir du ' + AUJOURD_HUI;
     document.getElementById('ligneAjoutProduction').style.display = peutSaisirProduction() ? '' : 'none';
     rendreListeInactifs();
+
+    const inputConsultation = document.getElementById('dateConsultationStock');
+    inputConsultation.max = AUJOURD_HUI;
+    const noteConsultation = document.getElementById('limiteConsultationStock');
+    if (joursConservationStockSoir !== null) {
+      const seuil = dateMoinsJours(AUJOURD_HUI, joursConservationStockSoir);
+      inputConsultation.min = seuil;
+      noteConsultation.textContent = 'Historique conservé ' + joursConservationStockSoir + ' jour(s) — jusqu\'au ' + seuil + '.';
+      noteConsultation.style.display = '';
+    } else {
+      inputConsultation.removeAttribute('min');
+      noteConsultation.style.display = 'none';
+    }
 
     if (!sessionStockSoir) {
       document.getElementById('blocDemarrerStockSoir').style.display = '';
@@ -2543,6 +2596,11 @@
 
     rendreListeOperateurs();
 
+    const champJours = document.getElementById('joursConservationStockSoir');
+    if (document.activeElement !== champJours) {
+      champJours.value = joursConservationStockSoir === null ? '' : joursConservationStockSoir;
+    }
+
     const corpsComptes = document.getElementById('corpsComptes');
     corpsComptes.innerHTML = '';
     comptes.forEach(function (c) {
@@ -2915,6 +2973,81 @@
       { liste: firebase.firestore.FieldValue.arrayRemove(nom) }
     ).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
+
+  function enregistrerJoursConservation() {
+    if (!estAdmin()) return;
+    const valeurBrute = document.getElementById('joursConservationStockSoir').value;
+    const valeur = valeurBrute === '' ? null : Number(valeurBrute);
+    if (valeur !== null && (!Number.isInteger(valeur) || valeur < 1)) {
+      afficherToast('Indiquez un nombre entier de jours (1 ou plus), ou laissez vide');
+      return;
+    }
+    db.collection('parametres').doc('historique').set(
+      { joursConservationStockSoir: valeur }, { merge: true }
+    ).then(function () {
+      afficherToast(valeur === null ? 'Conservation illimitée' : 'Conservation limitée à ' + valeur + ' jour(s)');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.enregistrerJoursConservation = enregistrerJoursConservation;
+
+  function dateMoinsJours(dateStr, jours) {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() - jours);
+    return d.toISOString().slice(0, 10);
+  }
+
+  // Supprime les saisieStock (et brouillons) antérieurs à la limite de conservation
+  // configurée par l'admin. Purement côté client (l'app n'a pas de backend) : lancée
+  // une fois par session, uniquement pour un compte admin (seul rôle autorisé par les
+  // règles Firestore à supprimer des saisieStock), et seulement si une limite a été
+  // explicitement définie — par défaut (limite vide) rien n'est jamais supprimé.
+  function lancerPurgeHistoriqueSiBesoin() {
+    if (purgeHistoriqueLancee || !estAdmin() || joursConservationStockSoir === null) return;
+    purgeHistoriqueLancee = true;
+    const seuil = dateMoinsJours(AUJOURD_HUI, joursConservationStockSoir);
+    ['saisieStock', 'brouillonsStockSoir'].forEach(function (collection) {
+      db.collection(collection).where('date', '<', seuil).get().then(function (qs) {
+        if (qs.empty) return;
+        const lot = db.batch();
+        qs.forEach(function (doc) { lot.delete(doc.ref); });
+        return lot.commit();
+      }).catch(function (e) { console.error('Purge ' + collection + ' : ' + e.message); });
+    });
+  }
+
+  function consulterStockDate() {
+    const date = document.getElementById('dateConsultationStock').value;
+    if (!date) { afficherToast('Choisissez une date'); return; }
+    db.collection('saisieStock').where('date', '==', date).get().then(function (qs) {
+      const lignes = [];
+      qs.forEach(function (doc) { lignes.push(doc.data()); });
+      lignes.sort(function (a, b) { return (a.produit || '').localeCompare(b.produit || ''); });
+      const corps = document.getElementById('corpsConsultationStock');
+      corps.innerHTML = '';
+      document.getElementById('videConsultationStock').style.display = lignes.length ? 'none' : 'block';
+      lignes.forEach(function (s) {
+        const tr = document.createElement('tr');
+        const tdNom = document.createElement('td'); tdNom.className = 'produit'; tdNom.textContent = s.produit;
+        const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono';
+        tdHaut.textContent = typeof s.stockHaut === 'number' ? s.stockHaut : '—';
+        const tdBas = document.createElement('td'); tdBas.className = 'centre mono';
+        tdBas.textContent = typeof s.stockBas === 'number' ? s.stockBas : '—';
+        const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono';
+        tdTotal.textContent = typeof s.stockSoir === 'number' ? s.stockSoir : '—';
+        tr.appendChild(tdNom); tr.appendChild(tdHaut); tr.appendChild(tdBas); tr.appendChild(tdTotal);
+        corps.appendChild(tr);
+      });
+      document.getElementById('resultatConsultationStock').style.display = '';
+      document.getElementById('boutonFermerConsultation').style.display = '';
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.consulterStockDate = consulterStockDate;
+
+  function fermerConsultationStock() {
+    document.getElementById('resultatConsultationStock').style.display = 'none';
+    document.getElementById('boutonFermerConsultation').style.display = 'none';
+  }
+  window.fermerConsultationStock = fermerConsultationStock;
 
   function ajouterLigneOperateurVide() {
     const conteneur = document.getElementById('listeOperateurs');
