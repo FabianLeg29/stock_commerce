@@ -363,6 +363,7 @@
           <select id="coteDemarrerStockSoir">
             <option value="haut">Stock Haut</option>
             <option value="bas">Stock Bas</option>
+            <option value="les2">Stock Haut + Bas</option>
           </select>
           <select id="operateurDemarrerStockSoir"></select>
           <button onclick="demarrerStockSoir()" id="boutonDemarrerStockSoir">Démarrer</button>
@@ -686,7 +687,7 @@
   let joursConservationStockSoir = null; // nombre de jours d'historique saisieStock à garder (admin, Paramètres) ; null = illimité
   let purgeHistoriqueLancee = false;     // garde-fou : ne lancer la purge qu'une fois par session, côté admin
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
-  let saisieSessionEnCours = {};  // { nomProduit: valeurTexte } — comptage local de la session, écrit en une fois à la fin
+  let saisieSessionEnCours = {};  // { nomProduit: { haut: valeurTexte, bas: valeurTexte } } — comptage local de la session, écrit en une fois à la fin
   let terminaisonEnCours = false; // true pendant l'écriture Firestore de "Terminer et enregistrer" (anti double-clic)
   let brouillonsStockSoir = {};   // { docId: { date, cote, operateur, heure, valeurs } } — sessions en cours (persistées), tous opérateurs, pour le jour
   let idBrouillonActuel = null;   // docId du brouillon Firestore de la session en cours (pour l'auto-sauvegarde et le nettoyage)
@@ -1104,6 +1105,12 @@
     return date + '__' + cote + '__' + slugify(operateur);
   }
 
+  function libelleCoteStockSoir(cote) {
+    if (cote === 'haut') return 'Stock Haut';
+    if (cote === 'bas') return 'Stock Bas';
+    return 'Stock Haut + Bas';
+  }
+
   // Démarre (ou reprend depuis un point de départ donné) une session de comptage,
   // et persiste immédiatement un brouillon Firestore — pour que la session survive
   // à la fermeture de l'onglet et que d'autres opérateurs voient qu'elle est "en cours".
@@ -1146,7 +1153,17 @@
     const brouillon = brouillonsStockSoir[docId];
     if (!brouillon) return;
     sessionStockSoir = { date: brouillon.date, heure: brouillon.heure, cote: brouillon.cote, operateur: brouillon.operateur };
-    saisieSessionEnCours = Object.assign({}, brouillon.valeurs || {});
+    saisieSessionEnCours = {};
+    const valeurs = brouillon.valeurs || {};
+    Object.keys(valeurs).forEach(function (nom) {
+      const v = valeurs[nom];
+      // Brouillon d'un schéma antérieur au support "Stock Haut + Bas" (une simple
+      // chaîne, portée par le côté unique de la session) : normalisé ici plutôt que
+      // de planter la reprise.
+      saisieSessionEnCours[nom] = (typeof v === 'string')
+        ? Object.assign({ haut: '', bas: '' }, brouillon.cote === 'bas' ? { bas: v } : { haut: v })
+        : Object.assign({ haut: '', bas: '' }, v);
+    });
     idBrouillonActuel = docId;
     rendreProduction();
   }
@@ -1160,7 +1177,7 @@
     corps.innerHTML = '';
     ids.forEach(function (docId) {
       const b = brouillonsStockSoir[docId];
-      const libelleCote = b.cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
+      const libelleCote = libelleCoteStockSoir(b.cote);
       const tr = document.createElement('tr');
       const tdSession = document.createElement('td');
       tdSession.textContent = b.date + ' — ' + libelleCote + ' (' + b.operateur + ')';
@@ -1195,25 +1212,18 @@
   }
   window.annulerStockSoir = annulerStockSoir;
 
+  // Renvoie { haut, bas } (chaînes, '' si non saisi) pour un produit de la session
+  // en cours — jamais undefined, pour ne pas avoir à re-tester ailleurs.
+  function valeursSessionProduit(nom) {
+    const s = saisieSessionEnCours[nom];
+    return { haut: (s && s.haut) || '', bas: (s && s.bas) || '' };
+  }
+
   function terminerStockSoir() {
     if (!sessionStockSoir || terminaisonEnCours) return;
-    const entrees = Object.keys(saisieSessionEnCours).filter(function (nom) { return saisieSessionEnCours[nom] !== ''; });
-    if (!entrees.length) { afficherToast('Aucune valeur saisie'); return; }
-    const invalides = entrees.filter(function (nom) { return sommerExpression(saisieSessionEnCours[nom]) === null; });
-    if (invalides.length) {
-      afficherToast('Valeur invalide pour : ' + invalides.join(', ') + ' — nombres séparés par + (ex. 12+8+5)');
-      return;
-    }
-    terminaisonEnCours = true;
-    clearTimeout(minuteurBrouillon);
-    rendreProduction();
-
-    const brouillonId = idBrouillonActuel;
     const cote = sessionStockSoir.cote;
-    const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
-    const champOperateur = cote === 'haut' ? 'stockHautOperateur' : 'stockBasOperateur';
-    const champHeure = cote === 'haut' ? 'stockHautHeure' : 'stockBasHeure';
-    const champAutreValeur = cote === 'haut' ? 'stockBas' : 'stockHaut';
+    const toucheHaut = cote === 'haut' || cote === 'les2';
+    const toucheBas = cote === 'bas' || cote === 'les2';
 
     // Toute la session porte sur l'ensemble des produits actifs : un produit non
     // renseigné dans cet inventaire est considéré comme absent (valeur 0), pas
@@ -1221,32 +1231,71 @@
     // resterait affichée alors qu'elle ne correspond plus à l'inventaire en cours.
     const produitsActifs = produits.filter(function (p) { return p.actif; });
 
+    const entrees = produitsActifs.filter(function (p) {
+      const v = valeursSessionProduit(p.nom);
+      return (toucheHaut && v.haut !== '') || (toucheBas && v.bas !== '');
+    }).map(function (p) { return p.nom; });
+    if (!entrees.length) { afficherToast('Aucune valeur saisie'); return; }
+
+    const invalides = entrees.filter(function (nom) {
+      const v = valeursSessionProduit(nom);
+      return (toucheHaut && v.haut !== '' && sommerExpression(v.haut) === null) ||
+        (toucheBas && v.bas !== '' && sommerExpression(v.bas) === null);
+    });
+    if (invalides.length) {
+      afficherToast('Valeur invalide pour : ' + invalides.join(', ') + ' — nombres séparés par + (ex. 12+8+5)');
+      return;
+    }
+
+    terminaisonEnCours = true;
+    clearTimeout(minuteurBrouillon);
+    rendreProduction();
+
+    const brouillonId = idBrouillonActuel;
+    const totauxParProduit = {};
+
     const lot = db.batch();
     produitsActifs.forEach(function (p) {
       const nom = p.nom;
-      const saisie = saisieSessionEnCours.hasOwnProperty(nom) ? saisieSessionEnCours[nom] : '';
-      const valeur = saisie === '' ? 0 : sommerExpression(saisie);
+      const v = valeursSessionProduit(nom);
       const saisieExistante = saisieDuJour[nom] || {};
-      const autre = (typeof saisieExistante[champAutreValeur] === 'number') ? saisieExistante[champAutreValeur] : 0;
       const donnees = {
         date: AUJOURD_HUI, produit: nom,
-        stockSoir: valeur + autre,
         horodatage: firebase.firestore.FieldValue.serverTimestamp(),
         responsable: utilisateurCourant.email,
         importe: false
       };
-      donnees[champValeur] = valeur;
-      donnees[champOperateur] = sessionStockSoir.operateur;
-      donnees[champHeure] = sessionStockSoir.heure;
+      let valeurHaut, valeurBas;
+      if (toucheHaut) {
+        valeurHaut = v.haut === '' ? 0 : sommerExpression(v.haut);
+        donnees.stockHaut = valeurHaut;
+        donnees.stockHautOperateur = sessionStockSoir.operateur;
+        donnees.stockHautHeure = sessionStockSoir.heure;
+      } else {
+        valeurHaut = (typeof saisieExistante.stockHaut === 'number') ? saisieExistante.stockHaut : 0;
+      }
+      if (toucheBas) {
+        valeurBas = v.bas === '' ? 0 : sommerExpression(v.bas);
+        donnees.stockBas = valeurBas;
+        donnees.stockBasOperateur = sessionStockSoir.operateur;
+        donnees.stockBasHeure = sessionStockSoir.heure;
+      } else {
+        valeurBas = (typeof saisieExistante.stockBas === 'number') ? saisieExistante.stockBas : 0;
+      }
+      donnees.stockSoir = valeurHaut + valeurBas;
+      totauxParProduit[nom] = { haut: valeurHaut, bas: valeurBas, total: donnees.stockSoir };
       lot.set(db.collection('saisieStock').doc(idJourProduit(AUJOURD_HUI, nom)), donnees, { merge: true });
     });
 
     lot.commit().then(function () {
       entrees.forEach(function (nom) {
-        enregistrerTransaction('stock_soir', nom, sommerExpression(saisieSessionEnCours[nom]));
+        // Pour "Stock Haut + Bas", journalise le total (les deux ont changé) ; pour
+        // un seul côté, journalise comme avant la seule valeur de ce côté.
+        const valeurLoguee = cote === 'les2' ? totauxParProduit[nom].total : totauxParProduit[nom][cote];
+        enregistrerTransaction('stock_soir', nom, valeurLoguee);
       });
       afficherToast(produitsActifs.length + ' produit(s) enregistré(s) — ' + sessionStockSoir.operateur +
-        ' (' + (cote === 'haut' ? 'Stock Haut' : 'Stock Bas') + ')');
+        ' (' + libelleCoteStockSoir(cote) + ')');
       sessionStockSoir = null;
       saisieSessionEnCours = {};
       idBrouillonActuel = null;
@@ -1287,7 +1336,8 @@
     produits.filter(function (p) { return p.actif; }).forEach(function (p) {
       const s = saisieDuJour[p.nom];
       if (s && typeof s[champValeur] === 'number') {
-        valeurs[p.nom] = String(s[champValeur]);
+        valeurs[p.nom] = {};
+        valeurs[p.nom][cote] = String(s[champValeur]);
       }
     });
     demarrerSessionStockSoir(cote, existant.operateur, existant.heure, valeurs);
@@ -1351,7 +1401,7 @@
       document.getElementById('blocDemarrerStockSoir').style.display = 'none';
       document.getElementById('carteBrouillonsStockSoir').style.display = 'none';
       document.getElementById('blocSessionStockSoir').style.display = '';
-      const libelleCote = sessionStockSoir.cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
+      const libelleCote = libelleCoteStockSoir(sessionStockSoir.cote);
       document.getElementById('resumeSessionStockSoir').textContent =
         'Session en cours — ' + libelleCote + ' — ' + sessionStockSoir.operateur + ' — ' + sessionStockSoir.heure;
       document.getElementById('boutonTerminerStockSoir').disabled = terminaisonEnCours;
@@ -1401,20 +1451,22 @@
           return { td: td, input: null };
         }
 
-        function champSession() {
+        function champSession(coteChamp) {
           const td = document.createElement('td');
           td.className = 'centre';
           const input = document.createElement('input');
           input.type = 'text';
           input.placeholder = 'ex. 12+8+5';
           input.dataset.produit = p.nom;
-          input.dataset.champ = 'stockSession';
-          const valeurEnCours = saisieSessionEnCours.hasOwnProperty(p.nom) ? saisieSessionEnCours[p.nom] : '';
+          input.dataset.champ = 'stockSession_' + coteChamp;
+          const existant = saisieSessionEnCours[p.nom];
+          const valeurEnCours = (existant && typeof existant[coteChamp] !== 'undefined') ? existant[coteChamp] : '';
           input.className = 'champ-valeur' + (valeurEnCours !== '' ? ' enregistre' : '');
           input.value = valeurEnCours;
           input.disabled = !peutSaisirProduction();
           input.addEventListener('input', function () {
-            saisieSessionEnCours[p.nom] = input.value;
+            if (!saisieSessionEnCours[p.nom]) saisieSessionEnCours[p.nom] = { haut: '', bas: '' };
+            saisieSessionEnCours[p.nom][coteChamp] = input.value;
             majTotal();
             sauvegarderBrouillon();
           });
@@ -1422,10 +1474,10 @@
           return { td: td, input: input };
         }
 
-        const sessionHaut = sessionStockSoir && sessionStockSoir.cote === 'haut';
-        const sessionBas = sessionStockSoir && sessionStockSoir.cote === 'bas';
-        const blocHaut = sessionHaut ? champSession() : texteLectureSeule(saisie.stockHaut);
-        const blocBas = sessionBas ? champSession() : texteLectureSeule(saisie.stockBas);
+        const editableHaut = !!sessionStockSoir && (sessionStockSoir.cote === 'haut' || sessionStockSoir.cote === 'les2');
+        const editableBas = !!sessionStockSoir && (sessionStockSoir.cote === 'bas' || sessionStockSoir.cote === 'les2');
+        const blocHaut = editableHaut ? champSession('haut') : texteLectureSeule(saisie.stockHaut);
+        const blocBas = editableBas ? champSession('bas') : texteLectureSeule(saisie.stockBas);
 
         function majTotal() {
           const h = blocHaut.input ? sommerExpression(blocHaut.input.value) : (typeof saisie.stockHaut === 'number' ? saisie.stockHaut : null);
