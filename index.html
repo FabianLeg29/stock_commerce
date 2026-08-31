@@ -210,6 +210,12 @@
 
   .vide { padding: 40px; text-align: center; color: #a49a89; }
 
+  .alerte-vrac {
+    background: #fdecea; border: 1.5px solid var(--danger); color: #8a2a1f;
+    border-radius: 10px; padding: 12px 16px; font-size: 13.5px; font-weight: 600;
+    margin-bottom: 8px;
+  }
+
   .toast {
     position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
     background: var(--ink); color: white; padding: 11px 22px; border-radius: 24px;
@@ -518,6 +524,7 @@
         <span class="date-du-jour" id="dateCommerce"></span>
       </div>
       <div class="sous-onglets" id="sousOngletsCommerce"></div>
+      <div id="alertesVrac" style="display:none; margin-bottom:14px;"></div>
       <div class="carte-tableau">
         <table>
           <thead>
@@ -587,6 +594,7 @@
               <th>Suremballage</th>
               <th class="centre">Prix d'achat par défaut</th>
               <th class="centre">Unité</th>
+              <th class="centre">Poids unitaire (kg)</th>
               <th class="centre">Actif</th>
             </tr>
           </thead>
@@ -960,7 +968,8 @@
           origines: (d.origines || []).slice().sort(),
           conditionnements: (d.conditionnements || []).slice().sort(),
           suremballages: (d.suremballages || []).slice().sort(),
-          fournisseurs: (d.fournisseurs || []).slice().sort()
+          fournisseurs: (d.fournisseurs || []).slice().sort(),
+          plafondsVrac: d.plafondsVrac || {}
         };
         rendreVueActive();
       })
@@ -1757,9 +1766,40 @@
     });
   }
 
+  // Poids vendu aujourd'hui par famille (tous commerciaux confondus, comme le reste
+  // du calcul de stock), pour les produits ayant un poids unitaire renseigné — un
+  // produit sans poids unitaire (ex. conditionnement au calibre/à la pièce) n'entre
+  // simplement pas dans ce total. Renvoie les familles dont le plafond configuré
+  // (referentiels.plafondsVrac) est atteint ou dépassé.
+  function alertesVracDuJour() {
+    const poidsParFamille = {};
+    produits.forEach(function (p) {
+      if (!p.famille || typeof p.poidsUnitaireKg !== 'number') return;
+      const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
+      if (!ventes) return;
+      poidsParFamille[p.famille] = (poidsParFamille[p.famille] || 0) + ventes * p.poidsUnitaireKg;
+    });
+    const plafonds = referentiels.plafondsVrac || {};
+    return Object.keys(plafonds).filter(function (famille) { return typeof plafonds[famille] === 'number'; })
+      .map(function (famille) { return { famille: famille, poids: poidsParFamille[famille] || 0, plafond: plafonds[famille] }; })
+      .filter(function (a) { return a.poids >= a.plafond; })
+      .sort(function (a, b) { return a.famille.localeCompare(b.famille); });
+  }
+
+  function rendreAlertesVrac() {
+    const conteneur = document.getElementById('alertesVrac');
+    const alertes = alertesVracDuJour();
+    conteneur.style.display = alertes.length ? '' : 'none';
+    conteneur.innerHTML = alertes.map(function (a) {
+      return '<div class="alerte-vrac">⚠️ ' + a.famille + ' — plafond vrac dépassé : ' +
+        a.poids.toLocaleString('fr-FR') + ' kg vendus aujourd\'hui (limite ' + a.plafond.toLocaleString('fr-FR') + ' kg).</div>';
+    }).join('');
+  }
+
   function rendreCommerce() {
     document.getElementById('dateCommerce').textContent = "Aujourd'hui " + AUJOURD_HUI;
     rendreSousOngletsCommerce();
+    rendreAlertesVrac();
 
     const estGlobal = commerceSousOnglet === 'global';
     document.getElementById('entierVentesLabel').textContent = estGlobal ? 'Ventes (total)' : 'Mes ventes';
@@ -2183,6 +2223,7 @@
 
       const tdPrix = champPrixAchat(p, peutGererCommerce());
       const tdUnite = champUniteAchat(p, peutGererCommerce());
+      const tdPoids = champPoidsUnitaire(p, peutGererCommerce());
 
       const tdActif = document.createElement('td');
       tdActif.className = 'centre';
@@ -2200,7 +2241,7 @@
 
       tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete); tr.appendChild(tdOrigine);
       tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
-      tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdActif);
+      tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdPoids); tr.appendChild(tdActif);
       corps.appendChild(tr);
     });
     restaurerSaisieEnCours(corps, saisieEnCours);
@@ -3130,6 +3171,29 @@
     return td;
   }
 
+  function champPoidsUnitaire(p, peutEditer) {
+    const td = document.createElement('td');
+    td.className = 'centre';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = 'any';
+    input.min = '0';
+    input.className = 'champ-valeur';
+    input.value = (p.poidsUnitaireKg === null || typeof p.poidsUnitaireKg === 'undefined') ? '' : p.poidsUnitaireKg;
+    input.disabled = !peutEditer;
+    input.style.cssText = 'width:80px;';
+    input.dataset.produit = p.id;
+    input.dataset.champ = 'poidsUnitaireKg';
+    input.placeholder = '—';
+    if (peutEditer) {
+      input.addEventListener('change', function () {
+        modifierProduit(p.id, { poidsUnitaireKg: input.value === '' ? null : Number(input.value) });
+      });
+    }
+    td.appendChild(input);
+    return td;
+  }
+
   function modifierProduit(id, champs) {
     db.collection('produits').doc(id).update(champs).catch(function (e) {
       afficherToast('Erreur : ' + e.message);
@@ -3232,6 +3296,7 @@
       actif: true,
       prixAchatDefaut: null,
       prixAchatUnite: null,
+      poidsUnitaireKg: null,
       ordre: prochainOrdreProduit()
     }).then(function () {
       input.value = '';
@@ -3244,6 +3309,23 @@
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.ajouterProduit = ajouterProduit;
+
+  // Plafond de volume vrac (kg) par famille — poids maximum vendu dans la journée,
+  // tous conditionnements confondus (ceux dotés d'un poids unitaire, voir
+  // champPoidsUnitaire()), avant affichage d'une alerte aux commerciaux dans l'onglet
+  // Commerce (voir alertesVracDuJour()). Stocké comme sous-champ de referentiels/main
+  // (même document que les autres listes de référence), pas une nouvelle collection.
+  function enregistrerPlafondVrac(nomFamille, valeurKg) {
+    if (!peutGererCommerce()) return;
+    const champ = {};
+    champ[nomFamille] = (valeurKg === null) ? firebase.firestore.FieldValue.delete() : valeurKg;
+    db.collection('referentiels').doc('main').set(
+      { plafondsVrac: champ }, { merge: true }
+    ).then(function () {
+      afficherToast(valeurKg === null ? 'Plafond retiré' : 'Plafond enregistré');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.enregistrerPlafondVrac = enregistrerPlafondVrac;
 
   function ajouterValeurReferentiel(categorie, valeur) {
     if ((referentiels[categorie] || []).indexOf(valeur) !== -1) {
@@ -3577,11 +3659,31 @@
       const spanFamille = document.createElement('span');
       spanFamille.className = 'valeur-referentiel';
       spanFamille.textContent = nomFamille;
+
+      const inputPlafond = document.createElement('input');
+      inputPlafond.type = 'number';
+      inputPlafond.min = '0';
+      inputPlafond.step = 'any';
+      inputPlafond.className = 'champ-valeur';
+      inputPlafond.placeholder = 'Illimité';
+      inputPlafond.title = 'Plafond vrac (kg) — poids maximum vendu aujourd\'hui, tous conditionnements confondus, avant alerte aux commerciaux';
+      inputPlafond.style.cssText = 'width:90px;';
+      const plafondActuel = referentiels.plafondsVrac[nomFamille];
+      inputPlafond.value = (typeof plafondActuel === 'number') ? plafondActuel : '';
+      inputPlafond.addEventListener('change', function () {
+        enregistrerPlafondVrac(nomFamille, inputPlafond.value === '' ? null : Number(inputPlafond.value));
+      });
+      const labelPlafond = document.createElement('span');
+      labelPlafond.style.cssText = 'font-size:11px; color:#a49a89; margin-right:4px;';
+      labelPlafond.textContent = 'Plafond vrac (kg)';
+
       const lienSupprFamille = document.createElement('a');
       lienSupprFamille.className = 'lien-supprimer';
       lienSupprFamille.textContent = 'supprimer';
       lienSupprFamille.onclick = function () { supprimerFamille(nomFamille); };
       ligneFamille.appendChild(spanFamille);
+      ligneFamille.appendChild(labelPlafond);
+      ligneFamille.appendChild(inputPlafond);
       ligneFamille.appendChild(lienSupprFamille);
       bloc.appendChild(ligneFamille);
 
