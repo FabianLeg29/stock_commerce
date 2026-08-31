@@ -189,8 +189,11 @@
   .bouton-nouveau-referentiel { display: block; width: 100%; margin-top: 10px; background: var(--copper); color: white; border: none; border-radius: 20px; padding: 9px 16px; font-weight: 600; font-size: 13px; cursor: pointer; }
 
   .carte-familles { margin-bottom: 16px; }
-  .bloc-famille { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .bloc-famille { padding: 10px 0; border-bottom: 1px solid var(--line); border-radius: 8px; }
   .bloc-famille:last-child { border-bottom: none; }
+  .bloc-famille.cible-glissement { outline: 2px dashed var(--copper); outline-offset: 4px; background: var(--copper-soft); }
+  .variete-glissable { cursor: grab; }
+  .variete-glissable.en-glissement { opacity: 0.4; }
   .ligne-famille .valeur-referentiel { font-weight: 700; }
   .liste-varietes-famille { margin: 6px 0 6px 20px; }
   .liste-varietes-famille .ligne-referentiel { padding: 5px 0; }
@@ -746,6 +749,7 @@
   let joursConservationStockSoir = null; // nombre de jours d'historique saisieStock à garder (admin, Paramètres) ; null = illimité
   let purgeHistoriqueLancee = false;     // garde-fou : ne lancer la purge qu'une fois par session, côté admin
   let formulaireDemarrageOuvert = false; // affichage du formulaire (heure/côté/opérateur) sous le bouton "Démarrer un stock du soir"
+  let varieteEnGlissement = null;        // { nom, famille } — variété en cours de glisser-déposer vers une autre famille
   let dateConsultee = null;              // date actuellement affichée dans "Consulter un stock antérieur" (pour Supprimer)
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: { haut: valeurTexte, bas: valeurTexte } } — comptage local de la session, écrit en une fois à la fin
@@ -3612,6 +3616,26 @@
     ).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
 
+  // Change la famille de rattachement d'une variété existante : arrayUnion/arrayRemove
+  // ne peuvent pas cohabiter sur le même champ dans une seule écriture, donc on
+  // réécrit le tableau varietes en entier à partir de la version déjà en mémoire.
+  // Le regroupement par famille (rendreListeFamilles()) se met à jour automatiquement
+  // au prochain rendu, déclenché par le listener temps réel sur referentiels/main.
+  function deplacerVariete(nomVariete, ancienneFamille, nouvelleFamille) {
+    if (!peutGererCommerce() || nouvelleFamille === ancienneFamille) return;
+    if ((referentiels.varietes || []).some(function (v) { return v.nom === nomVariete && v.famille === nouvelleFamille; })) {
+      afficherToast('Cette variété existe déjà pour la famille ' + nouvelleFamille);
+      return;
+    }
+    const nouvellesVarietes = referentiels.varietes.map(function (v) {
+      return (v.nom === nomVariete && v.famille === ancienneFamille) ? { nom: nomVariete, famille: nouvelleFamille } : v;
+    });
+    db.collection('referentiels').doc('main').update({ varietes: nouvellesVarietes }).then(function () {
+      afficherToast(nomVariete + ' déplacée vers ' + nouvelleFamille);
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.deplacerVariete = deplacerVariete;
+
   // Même principe que ajouterLigneReferentielVide, mais la variété créée est
   // directement rattachée à la famille sous laquelle le bouton "+ Nouvelle
   // variété" a été cliqué.
@@ -3687,10 +3711,23 @@
       (referentiels.varietes || []).filter(function (v) { return v.famille === nomFamille; })
         .forEach(function (v) {
           const ligneVariete = document.createElement('div');
-          ligneVariete.className = 'ligne-referentiel';
+          ligneVariete.className = 'ligne-referentiel variete-glissable';
+          ligneVariete.draggable = true;
+          ligneVariete.title = 'Glisser vers une autre famille pour la déplacer';
           const spanVariete = document.createElement('span');
           spanVariete.className = 'valeur-referentiel';
           spanVariete.textContent = v.nom;
+
+          ligneVariete.addEventListener('dragstart', function (e) {
+            varieteEnGlissement = { nom: v.nom, famille: nomFamille };
+            ligneVariete.classList.add('en-glissement');
+            if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+          });
+          ligneVariete.addEventListener('dragend', function () {
+            ligneVariete.classList.remove('en-glissement');
+            varieteEnGlissement = null;
+          });
+
           const lienSupprVariete = document.createElement('a');
           lienSupprVariete.className = 'lien-supprimer';
           lienSupprVariete.textContent = 'supprimer';
@@ -3705,6 +3742,25 @@
       btnNouvelleVariete.textContent = '+ Nouvelle variété';
       btnNouvelleVariete.onclick = function () { ajouterVarieteVide(nomFamille, idListeVarietes); };
       bloc.appendChild(btnNouvelleVariete);
+
+      // Toute la carte de la famille est une cible de dépôt : on peut lâcher une
+      // variété glissée depuis n'importe quelle autre famille pour l'y rattacher.
+      bloc.addEventListener('dragover', function (e) {
+        if (!varieteEnGlissement || varieteEnGlissement.famille === nomFamille) return;
+        e.preventDefault();
+        bloc.classList.add('cible-glissement');
+      });
+      bloc.addEventListener('dragleave', function () {
+        bloc.classList.remove('cible-glissement');
+      });
+      bloc.addEventListener('drop', function (e) {
+        e.preventDefault();
+        bloc.classList.remove('cible-glissement');
+        if (varieteEnGlissement) {
+          deplacerVariete(varieteEnGlissement.nom, varieteEnGlissement.famille, nomFamille);
+          varieteEnGlissement = null;
+        }
+      });
 
       conteneur.appendChild(bloc);
     });
