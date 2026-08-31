@@ -444,6 +444,7 @@
               <th class="centre">Quantité</th>
               <th class="centre" id="thPrixAchatRecap">Prix d'achat</th>
               <th class="centre">Heure de départ</th>
+              <th>Livraison prévue</th>
               <th>Transport</th>
               <th>Responsable</th>
               <th style="width:140px;"></th>
@@ -452,6 +453,30 @@
           <tbody id="corpsRecapAchats"></tbody>
         </table>
         <div class="vide" id="videRecapAchats" style="display:none;">Aucun achat enregistré pour le moment.</div>
+      </div>
+
+      <div style="margin-top:24px;">
+        <h3 class="section-titre">Consulter les achats d'une date</h3>
+        <div class="ligne-ajout">
+          <input type="date" id="dateConsultationAchats">
+          <button onclick="consulterAchatsDate()">Consulter</button>
+          <button class="bouton-secondaire" id="boutonFermerConsultationAchats" style="display:none;" onclick="fermerConsultationAchats()">Fermer</button>
+        </div>
+        <div id="resultatConsultationAchats" style="display:none;">
+          <div class="carte-tableau" style="margin-top:10px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fournisseur</th><th>Produit</th><th class="centre">Quantité</th>
+                  <th class="centre" id="thPrixAchatConsultation">Prix d'achat</th>
+                  <th class="centre">Heure de départ</th><th>Livraison prévue</th><th>Transport</th><th>Responsable</th>
+                </tr>
+              </thead>
+              <tbody id="corpsConsultationAchats"></tbody>
+            </table>
+            <div class="vide" id="videConsultationAchats" style="display:none;">Aucun achat enregistré pour cette date.</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -470,6 +495,10 @@
           <div style="flex:1 1 160px;">
             <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Date</label>
             <input type="date" id="achatDate" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
+          </div>
+          <div style="flex:1 1 160px;">
+            <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Livraison prévue (optionnel)</label>
+            <input type="date" id="achatDateLivraison" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
           </div>
         </div>
         <div id="corpsLignesAchat"></div>
@@ -1044,7 +1073,8 @@
         qs.forEach(function (doc) {
           const d = doc.data();
           out.push({
-            id: doc.id, date: d.date, fournisseur: d.fournisseur, responsable: d.responsable,
+            id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
+            fournisseur: d.fournisseur, responsable: d.responsable,
             horodatage: d.horodatage && d.horodatage.toDate ? d.horodatage.toDate() : null,
             lignes: d.lignes || []
           });
@@ -2064,6 +2094,7 @@
     achatEnEditionId = null;
     lignesAchatEnCours = [ligneAchatVide()];
     document.getElementById('achatDate').value = AUJOURD_HUI;
+    document.getElementById('achatDateLivraison').value = '';
     document.getElementById('boutonAnnulerAchat').style.display = 'none';
     document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
     document.getElementById('achatFournisseur').value = '';
@@ -2081,6 +2112,7 @@
     lignesAchatEnCours = [ligneAchatVide()];
     if (produitPreselectionne) lignesAchatEnCours[0].produit = produitPreselectionne;
     document.getElementById('achatDate').value = AUJOURD_HUI;
+    document.getElementById('achatDateLivraison').value = '';
     document.getElementById('boutonAnnulerAchat').style.display = 'none';
     document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
     document.getElementById('achatFournisseur').value = '';
@@ -2100,6 +2132,7 @@
     });
     if (!lignesAchatEnCours.length) lignesAchatEnCours = [ligneAchatVide()];
     document.getElementById('achatDate').value = a.date;
+    document.getElementById('achatDateLivraison').value = a.dateLivraisonPrevue || '';
     document.getElementById('boutonAnnulerAchat').style.display = '';
     document.getElementById('boutonEnregistrerAchat').textContent = 'Enregistrer les modifications';
     rendreFormulaireAchat();
@@ -2120,6 +2153,7 @@
     const selectFournisseur = document.getElementById('achatFournisseur');
     const fournisseur = selectFournisseur.value;
     const date = document.getElementById('achatDate').value || AUJOURD_HUI;
+    const dateLivraisonPrevue = document.getElementById('achatDateLivraison').value || null;
     if (!fournisseur) {
       afficherToast('Choisissez un fournisseur');
       return;
@@ -2146,6 +2180,7 @@
     });
     const donnees = {
       date: date,
+      dateLivraisonPrevue: dateLivraisonPrevue,
       fournisseur: fournisseur,
       responsable: utilisateurCourant.email,
       horodatage: firebase.firestore.FieldValue.serverTimestamp(),
@@ -2362,6 +2397,7 @@
       const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
       const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.textContent = l.quantite;
       const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.textContent = l.heureDepart || '—';
+      const tdLivraison = document.createElement('td'); tdLivraison.textContent = a.dateLivraisonPrevue || '—';
       const tdTransport = document.createElement('td');
       tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
       const tdResponsable = document.createElement('td'); tdResponsable.textContent = a.responsable;
@@ -2395,6 +2431,7 @@
         tr.appendChild(tdPrix);
       }
       tr.appendChild(tdHeure);
+      tr.appendChild(tdLivraison);
       tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdActions);
       corps.appendChild(tr);
     });
@@ -2416,7 +2453,7 @@
     html += '<table><thead><tr>' +
       '<th>Date</th><th>Fournisseur</th><th>Produit</th><th>Quantité</th>' +
       (avecPrix ? '<th>Prix d\'achat</th>' : '') +
-      '<th>Heure de départ</th><th>Transport</th><th>Responsable</th>' +
+      '<th>Heure de départ</th><th>Livraison prévue</th><th>Transport</th><th>Responsable</th>' +
       '</tr></thead><tbody>';
     filtrees.forEach(function (item) {
       const a = item.achat, l = item.ligne;
@@ -2425,6 +2462,7 @@
       html += '<tr><td>' + a.date + '</td><td>' + a.fournisseur + '</td><td>' + l.produit + '</td>' +
         '<td>' + l.quantite + '</td>' + (avecPrix ? '<td>' + prix + '</td>' : '') +
         '<td>' + (l.heureDepart || '—') + '</td>' +
+        '<td>' + (a.dateLivraisonPrevue || '—') + '</td>' +
         '<td>' + transport + '</td><td>' + a.responsable + '</td></tr>';
     });
     html += '</tbody></table>';
@@ -2432,6 +2470,55 @@
     window.print();
   }
   window.exporterAchatsPDF = exporterAchatsPDF;
+
+  // Requête ponctuelle (pas un onSnapshot) : le récapitulatif ci-dessus ne charge que
+  // les 200 achats les plus récents, donc une date plus ancienne n'y apparaîtrait pas
+  // — même principe que "Consulter un stock antérieur" sur l'onglet Stock du soir.
+  function consulterAchatsDate() {
+    const date = document.getElementById('dateConsultationAchats').value;
+    if (!date) { afficherToast('Choisissez une date'); return; }
+    db.collection('achats').where('date', '==', date).get().then(function (qs) {
+      const lignes = [];
+      qs.forEach(function (doc) {
+        const a = doc.data();
+        (a.lignes || []).forEach(function (l) { lignes.push({ achat: a, ligne: l }); });
+      });
+      const avecPrix = peutVoirPrix();
+      document.getElementById('thPrixAchatConsultation').style.display = avecPrix ? '' : 'none';
+      const corps = document.getElementById('corpsConsultationAchats');
+      corps.innerHTML = '';
+      document.getElementById('videConsultationAchats').style.display = lignes.length ? 'none' : 'block';
+      lignes.forEach(function (item) {
+        const a = item.achat, l = item.ligne;
+        const tr = document.createElement('tr');
+        const tdFournisseur = document.createElement('td'); tdFournisseur.textContent = a.fournisseur;
+        const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
+        const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.textContent = l.quantite;
+        tr.appendChild(tdFournisseur); tr.appendChild(tdProduit); tr.appendChild(tdQuantite);
+        if (avecPrix) {
+          const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono';
+          tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+          tr.appendChild(tdPrix);
+        }
+        const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.textContent = l.heureDepart || '—';
+        const tdLivraison = document.createElement('td'); tdLivraison.textContent = a.dateLivraisonPrevue || '—';
+        const tdTransport = document.createElement('td');
+        tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
+        const tdResponsable = document.createElement('td'); tdResponsable.textContent = a.responsable;
+        tr.appendChild(tdHeure); tr.appendChild(tdLivraison); tr.appendChild(tdTransport); tr.appendChild(tdResponsable);
+        corps.appendChild(tr);
+      });
+      document.getElementById('resultatConsultationAchats').style.display = '';
+      document.getElementById('boutonFermerConsultationAchats').style.display = '';
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.consulterAchatsDate = consulterAchatsDate;
+
+  function fermerConsultationAchats() {
+    document.getElementById('resultatConsultationAchats').style.display = 'none';
+    document.getElementById('boutonFermerConsultationAchats').style.display = 'none';
+  }
+  window.fermerConsultationAchats = fermerConsultationAchats;
 
   // ============================================================
   // HISTORIQUE
