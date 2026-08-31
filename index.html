@@ -335,6 +335,7 @@
         <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
         <span class="date-du-jour" id="dateProduction"></span>
         <button class="bouton-secondaire" onclick="exporterStockSoirExcel()">Exporter le stock du soir (.xlsx)</button>
+        <button class="bouton-secondaire" onclick="exporterStockSoirPDF()">Exporter le stock du soir (.pdf)</button>
       </div>
       <div class="ligne-ajout" id="ligneAjoutProduction">
         <button onclick="basculerListeInactifs()" id="boutonListeInactifs">Ajouter</button>
@@ -418,6 +419,9 @@
               <tbody id="corpsConsultationStock"></tbody>
             </table>
             <div class="vide" id="videConsultationStock" style="display:none;">Aucune saisie enregistrée pour cette date.</div>
+          </div>
+          <div id="ligneSupprimerConsultation" style="display:none; margin-top:10px;">
+            <button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerStockDate()">Supprimer ce stock du soir</button>
           </div>
         </div>
       </div>
@@ -658,7 +662,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<div id="zoneImpressionAchats" class="impression-seule"></div>
+<div id="zoneImpression" class="impression-seule"></div>
 
 <script>
 (function () {
@@ -695,6 +699,7 @@
   let joursConservationStockSoir = null; // nombre de jours d'historique saisieStock à garder (admin, Paramètres) ; null = illimité
   let purgeHistoriqueLancee = false;     // garde-fou : ne lancer la purge qu'une fois par session, côté admin
   let formulaireDemarrageOuvert = false; // affichage du formulaire (heure/côté/opérateur) sous le bouton "Démarrer un stock du soir"
+  let dateConsultee = null;              // date actuellement affichée dans "Consulter un stock antérieur" (pour Supprimer)
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: { haut: valeurTexte, bas: valeurTexte } } — comptage local de la session, écrit en une fois à la fin
   let terminaisonEnCours = false; // true pendant l'écriture Firestore de "Terminer et enregistrer" (anti double-clic)
@@ -1543,17 +1548,21 @@
   }
   window.rendreProduction = rendreProduction;
 
-  function exporterStockSoirExcel() {
-    if (typeof XLSX === 'undefined') {
-      afficherToast('Bibliothèque Excel indisponible, réessayez.');
-      return;
-    }
-    const actifs = produits.filter(function (p) { return p.actif; })
+  function produitsActifsTriesParFamille() {
+    return produits.filter(function (p) { return p.actif; })
       .slice().sort(function (a, b) {
         const familleA = a.famille || 'Sans famille', familleB = b.famille || 'Sans famille';
         if (familleA !== familleB) return familleA.localeCompare(familleB);
         return (a.ordre || 0) - (b.ordre || 0);
       });
+  }
+
+  function exporterStockSoirExcel() {
+    if (typeof XLSX === 'undefined') {
+      afficherToast('Bibliothèque Excel indisponible, réessayez.');
+      return;
+    }
+    const actifs = produitsActifsTriesParFamille();
     const feuille = [['Famille', 'Produit', 'Haut', 'Bas', 'Total']];
     actifs.forEach(function (p) {
       const saisie = saisieDuJour[p.nom] || {};
@@ -1569,6 +1578,25 @@
     XLSX.writeFile(classeur, 'stock_du_soir_' + AUJOURD_HUI + '.xlsx');
   }
   window.exporterStockSoirExcel = exporterStockSoirExcel;
+
+  // Même principe que exporterAchatsPDF() : construit une vue imprimable dans la zone
+  // dédiée puis déclenche l'impression navigateur (orientation paysage par défaut).
+  function exporterStockSoirPDF() {
+    const actifs = produitsActifsTriesParFamille();
+    let html = '<h2>Stock du soir — La Légumière</h2>';
+    html += '<div style="margin-bottom:10px;">Soir du ' + AUJOURD_HUI + '</div>';
+    html += '<table><thead><tr><th>Famille</th><th>Produit</th><th>Haut</th><th>Bas</th><th>Total</th></tr></thead><tbody>';
+    actifs.forEach(function (p) {
+      const saisie = saisieDuJour[p.nom] || {};
+      const vide = function (v) { return (v === null || typeof v === 'undefined') ? '—' : v; };
+      html += '<tr><td>' + (p.famille || 'Sans famille') + '</td><td>' + p.nom + '</td>' +
+        '<td>' + vide(saisie.stockHaut) + '</td><td>' + vide(saisie.stockBas) + '</td><td>' + vide(saisie.stockSoir) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('zoneImpression').innerHTML = html;
+    window.print();
+  }
+  window.exporterStockSoirPDF = exporterStockSoirPDF;
 
   function prochainOrdreProduit() {
     return produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0) + 1;
@@ -2400,7 +2428,7 @@
         '<td>' + transport + '</td><td>' + a.responsable + '</td></tr>';
     });
     html += '</tbody></table>';
-    document.getElementById('zoneImpressionAchats').innerHTML = html;
+    document.getElementById('zoneImpression').innerHTML = html;
     window.print();
   }
   window.exporterAchatsPDF = exporterAchatsPDF;
@@ -3116,6 +3144,7 @@
     const date = document.getElementById('dateConsultationStock').value;
     if (!date) { afficherToast('Choisissez une date'); return; }
     db.collection('saisieStock').where('date', '==', date).get().then(function (qs) {
+      dateConsultee = date;
       const lignes = [];
       qs.forEach(function (doc) { lignes.push(doc.data()); });
       lignes.sort(function (a, b) { return (a.produit || '').localeCompare(b.produit || ''); });
@@ -3136,13 +3165,32 @@
       });
       document.getElementById('resultatConsultationStock').style.display = '';
       document.getElementById('boutonFermerConsultation').style.display = '';
+      // Suppression réservée à l'admin (comme les autres suppressions d'historique),
+      // et seulement s'il y a effectivement quelque chose à supprimer pour cette date.
+      document.getElementById('ligneSupprimerConsultation').style.display = (estAdmin() && lignes.length) ? '' : 'none';
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.consulterStockDate = consulterStockDate;
 
+  function supprimerStockDate() {
+    if (!estAdmin() || !dateConsultee) return;
+    if (!confirm('Supprimer définitivement tout le stock du soir enregistré le ' + dateConsultee + ' (toutes les lignes produit) ? Cette action est irréversible.')) return;
+    db.collection('saisieStock').where('date', '==', dateConsultee).get().then(function (qs) {
+      if (qs.empty) return;
+      const lot = db.batch();
+      qs.forEach(function (doc) { lot.delete(doc.ref); });
+      return lot.commit();
+    }).then(function () {
+      afficherToast('Stock du soir du ' + dateConsultee + ' supprimé');
+      consulterStockDate();
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.supprimerStockDate = supprimerStockDate;
+
   function fermerConsultationStock() {
     document.getElementById('resultatConsultationStock').style.display = 'none';
     document.getElementById('boutonFermerConsultation').style.display = 'none';
+    dateConsultee = null;
   }
   window.fermerConsultationStock = fermerConsultationStock;
 
