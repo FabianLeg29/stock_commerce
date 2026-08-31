@@ -356,19 +356,23 @@
       </div>
 
       <div id="blocDemarrerStockSoir">
-        <h3 class="section-titre" style="margin-top:0;">Démarrer un stock du soir</h3>
-        <div class="ligne-ajout">
-          <span class="date-du-jour" id="dateDemarrerStockSoir"></span>
-          <input type="time" id="heureDemarrerStockSoir">
-          <select id="coteDemarrerStockSoir">
-            <option value="haut">Stock Haut</option>
-            <option value="bas">Stock Bas</option>
-            <option value="les2">Stock Haut + Bas</option>
-          </select>
-          <select id="operateurDemarrerStockSoir"></select>
-          <button onclick="demarrerStockSoir()" id="boutonDemarrerStockSoir">Démarrer</button>
+        <button onclick="ouvrirFormulaireDemarrage()" id="boutonOuvrirDemarrage" style="margin-bottom:14px;">Démarrer un stock du soir</button>
+        <div id="formulaireDemarrageStockSoir" style="display:none;">
+          <h3 class="section-titre" style="margin-top:0;">Démarrer un stock du soir</h3>
+          <div class="ligne-ajout">
+            <span class="date-du-jour" id="dateDemarrerStockSoir"></span>
+            <input type="time" id="heureDemarrerStockSoir">
+            <select id="coteDemarrerStockSoir">
+              <option value="haut">Stock Haut</option>
+              <option value="bas">Stock Bas</option>
+              <option value="les2">Stock Haut + Bas</option>
+            </select>
+            <select id="operateurDemarrerStockSoir"></select>
+            <button onclick="demarrerStockSoir()" id="boutonDemarrerStockSoir">Démarrer</button>
+            <button class="bouton-secondaire" onclick="fermerFormulaireDemarrage()">Annuler</button>
+          </div>
+          <div class="vide" id="videOperateurs" style="display:none;">Aucun opérateur déclaré — un administrateur doit d'abord en ajouter un depuis l'onglet Paramètres.</div>
         </div>
-        <div class="vide" id="videOperateurs" style="display:none;">Aucun opérateur déclaré — un administrateur doit d'abord en ajouter un depuis l'onglet Paramètres.</div>
         <div id="resumeStocksEnregistres" style="margin-top:14px;"></div>
       </div>
 
@@ -686,6 +690,7 @@
   let operateurs = [];           // personnes réalisant les contrôles de stock du soir, gérées depuis Paramètres (admin)
   let joursConservationStockSoir = null; // nombre de jours d'historique saisieStock à garder (admin, Paramètres) ; null = illimité
   let purgeHistoriqueLancee = false;     // garde-fou : ne lancer la purge qu'une fois par session, côté admin
+  let formulaireDemarrageOuvert = false; // affichage du formulaire (heure/côté/opérateur) sous le bouton "Démarrer un stock du soir"
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: { haut: valeurTexte, bas: valeurTexte } } — comptage local de la session, écrit en une fois à la fin
   let terminaisonEnCours = false; // true pendant l'écriture Firestore de "Terminer et enregistrer" (anti double-clic)
@@ -1115,6 +1120,7 @@
   // et persiste immédiatement un brouillon Firestore — pour que la session survive
   // à la fermeture de l'onglet et que d'autres opérateurs voient qu'elle est "en cours".
   function demarrerSessionStockSoir(cote, operateur, heure, valeursInitiales) {
+    formulaireDemarrageOuvert = false;
     sessionStockSoir = { date: AUJOURD_HUI, heure: heure, cote: cote, operateur: operateur };
     saisieSessionEnCours = Object.assign({}, valeursInitiales || {});
     idBrouillonActuel = idBrouillonStockSoir(AUJOURD_HUI, cote, operateur);
@@ -1147,6 +1153,18 @@
     demarrerSessionStockSoir(cote, operateur, heure, {});
   }
   window.demarrerStockSoir = demarrerStockSoir;
+
+  function ouvrirFormulaireDemarrage() {
+    formulaireDemarrageOuvert = true;
+    rendreProduction();
+  }
+  window.ouvrirFormulaireDemarrage = ouvrirFormulaireDemarrage;
+
+  function fermerFormulaireDemarrage() {
+    formulaireDemarrageOuvert = false;
+    rendreProduction();
+  }
+  window.fermerFormulaireDemarrage = fermerFormulaireDemarrage;
 
   function reprendreStockEnCours(docId) {
     if (!peutSaisirProduction()) return;
@@ -1208,6 +1226,7 @@
     sessionStockSoir = null;
     saisieSessionEnCours = {};
     idBrouillonActuel = null;
+    formulaireDemarrageOuvert = false;
     rendreProduction();
   }
   window.annulerStockSoir = annulerStockSoir;
@@ -1376,7 +1395,15 @@
 
   function rendreProduction() {
     document.getElementById('dateProduction').textContent = 'Soir du ' + AUJOURD_HUI;
-    document.getElementById('ligneAjoutProduction').style.display = peutSaisirProduction() ? '' : 'none';
+    // Réactiver un produit inactif n'a de sens que pendant la réalisation d'un stock
+    // du soir (on peut alors se rendre compte qu'un produit devrait être compté) — pas
+    // sur l'écran de démarrage/consultation, avant qu'une session soit en cours.
+    const boutonAjouterVisible = peutSaisirProduction() && !!sessionStockSoir;
+    document.getElementById('ligneAjoutProduction').style.display = boutonAjouterVisible ? '' : 'none';
+    if (!boutonAjouterVisible) {
+      document.getElementById('carteListeInactifs').style.display = 'none';
+      document.getElementById('boutonListeInactifs').textContent = 'Ajouter';
+    }
     rendreListeInactifs();
 
     const inputConsultation = document.getElementById('dateConsultationStock');
@@ -1395,6 +1422,8 @@
     if (!sessionStockSoir) {
       document.getElementById('blocDemarrerStockSoir').style.display = '';
       document.getElementById('blocSessionStockSoir').style.display = 'none';
+      document.getElementById('boutonOuvrirDemarrage').style.display = formulaireDemarrageOuvert ? 'none' : '';
+      document.getElementById('formulaireDemarrageStockSoir').style.display = formulaireDemarrageOuvert ? '' : 'none';
       document.getElementById('dateDemarrerStockSoir').textContent = "Aujourd'hui " + AUJOURD_HUI;
       const inputHeure = document.getElementById('heureDemarrerStockSoir');
       if (!inputHeure.value) {
