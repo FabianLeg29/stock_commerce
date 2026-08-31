@@ -1254,11 +1254,23 @@
     const brouillonId = idBrouillonActuel;
     const totauxParProduit = {};
 
+    // "Haut seul" / "Bas seul" réécrivent tous les produits actifs (inventaire complet,
+    // 0 si non saisi — comportement demandé explicitement pour ces deux cas). "Haut +
+    // Bas" est différent : on ne touche que les produits où au moins un des deux côtés
+    // a été saisi, et pour chaque produit on n'écrase QUE le côté effectivement retapé
+    // — l'autre garde sa valeur existante, pour ne jamais écraser une donnée par un 0
+    // simplement parce que l'opérateur ne l'a pas retapée dans cette session groupée.
+    const produitsAEcrire = cote === 'les2'
+      ? produitsActifs.filter(function (p) { return entrees.indexOf(p.nom) !== -1; })
+      : produitsActifs;
+
     const lot = db.batch();
-    produitsActifs.forEach(function (p) {
+    produitsAEcrire.forEach(function (p) {
       const nom = p.nom;
       const v = valeursSessionProduit(nom);
       const saisieExistante = saisieDuJour[nom] || {};
+      const ecrireHaut = cote === 'les2' ? v.haut !== '' : toucheHaut;
+      const ecrireBas = cote === 'les2' ? v.bas !== '' : toucheBas;
       const donnees = {
         date: AUJOURD_HUI, produit: nom,
         horodatage: firebase.firestore.FieldValue.serverTimestamp(),
@@ -1266,7 +1278,7 @@
         importe: false
       };
       let valeurHaut, valeurBas;
-      if (toucheHaut) {
+      if (ecrireHaut) {
         valeurHaut = v.haut === '' ? 0 : sommerExpression(v.haut);
         donnees.stockHaut = valeurHaut;
         donnees.stockHautOperateur = sessionStockSoir.operateur;
@@ -1274,7 +1286,7 @@
       } else {
         valeurHaut = (typeof saisieExistante.stockHaut === 'number') ? saisieExistante.stockHaut : 0;
       }
-      if (toucheBas) {
+      if (ecrireBas) {
         valeurBas = v.bas === '' ? 0 : sommerExpression(v.bas);
         donnees.stockBas = valeurBas;
         donnees.stockBasOperateur = sessionStockSoir.operateur;
@@ -1294,7 +1306,7 @@
         const valeurLoguee = cote === 'les2' ? totauxParProduit[nom].total : totauxParProduit[nom][cote];
         enregistrerTransaction('stock_soir', nom, valeurLoguee);
       });
-      afficherToast(produitsActifs.length + ' produit(s) enregistré(s) — ' + sessionStockSoir.operateur +
+      afficherToast(produitsAEcrire.length + ' produit(s) enregistré(s) — ' + sessionStockSoir.operateur +
         ' (' + libelleCoteStockSoir(cote) + ')');
       sessionStockSoir = null;
       saisieSessionEnCours = {};
