@@ -594,7 +594,6 @@
               <th>Suremballage</th>
               <th class="centre">Prix d'achat par défaut</th>
               <th class="centre">Unité</th>
-              <th class="centre">Poids unitaire (kg)</th>
               <th class="centre">Actif</th>
             </tr>
           </thead>
@@ -1774,10 +1773,12 @@
   function alertesVracDuJour() {
     const poidsParFamille = {};
     produits.forEach(function (p) {
-      if (!p.famille || typeof p.poidsUnitaireKg !== 'number') return;
+      if (!p.famille) return;
+      const poidsUnitaire = poidsUnitaireDepuisConditionnement(p.conditionnement);
+      if (poidsUnitaire === null) return;
       const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
       if (!ventes) return;
-      poidsParFamille[p.famille] = (poidsParFamille[p.famille] || 0) + ventes * p.poidsUnitaireKg;
+      poidsParFamille[p.famille] = (poidsParFamille[p.famille] || 0) + ventes * poidsUnitaire;
     });
     const plafonds = referentiels.plafondsVrac || {};
     return Object.keys(plafonds).filter(function (famille) { return typeof plafonds[famille] === 'number'; })
@@ -2223,7 +2224,6 @@
 
       const tdPrix = champPrixAchat(p, peutGererCommerce());
       const tdUnite = champUniteAchat(p, peutGererCommerce());
-      const tdPoids = champPoidsUnitaire(p, peutGererCommerce());
 
       const tdActif = document.createElement('td');
       tdActif.className = 'centre';
@@ -2241,7 +2241,7 @@
 
       tr.appendChild(tdNom); tr.appendChild(tdFamille); tr.appendChild(tdVariete); tr.appendChild(tdOrigine);
       tr.appendChild(tdConditionnement); tr.appendChild(tdSuremballage);
-      tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdPoids); tr.appendChild(tdActif);
+      tr.appendChild(tdPrix); tr.appendChild(tdUnite); tr.appendChild(tdActif);
       corps.appendChild(tr);
     });
     restaurerSaisieEnCours(corps, saisieEnCours);
@@ -3171,27 +3171,18 @@
     return td;
   }
 
-  function champPoidsUnitaire(p, peutEditer) {
-    const td = document.createElement('td');
-    td.className = 'centre';
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.step = 'any';
-    input.min = '0';
-    input.className = 'champ-valeur';
-    input.value = (p.poidsUnitaireKg === null || typeof p.poidsUnitaireKg === 'undefined') ? '' : p.poidsUnitaireKg;
-    input.disabled = !peutEditer;
-    input.style.cssText = 'width:80px;';
-    input.dataset.produit = p.id;
-    input.dataset.champ = 'poidsUnitaireKg';
-    input.placeholder = '—';
-    if (peutEditer) {
-      input.addEventListener('change', function () {
-        modifierProduit(p.id, { poidsUnitaireKg: input.value === '' ? null : Number(input.value) });
-      });
-    }
-    td.appendChild(input);
-    return td;
+  // Déduit un poids unitaire (kg) directement du texte du conditionnement (ex. "Sac
+  // 5kg" → 5, "Barquette 250g" → 0.25), plutôt qu'un champ dédié à saisir séparément
+  // — le poids est déjà indiqué dans le conditionnement. Un conditionnement au
+  // calibre/à la pièce (ex. "Carton 6T") ne contient ni "kg" ni "g" et renvoie null :
+  // ce produit n'entre alors pas dans le calcul du plafond vrac de sa famille.
+  function poidsUnitaireDepuisConditionnement(conditionnement) {
+    if (!conditionnement) return null;
+    const correspondance = String(conditionnement).match(/(\d+(?:[.,]\d+)?)\s*(kg|g)\b/i);
+    if (!correspondance) return null;
+    const valeur = Number(correspondance[1].replace(',', '.'));
+    if (isNaN(valeur)) return null;
+    return correspondance[2].toLowerCase() === 'g' ? valeur / 1000 : valeur;
   }
 
   function modifierProduit(id, champs) {
@@ -3296,7 +3287,6 @@
       actif: true,
       prixAchatDefaut: null,
       prixAchatUnite: null,
-      poidsUnitaireKg: null,
       ordre: prochainOrdreProduit()
     }).then(function () {
       input.value = '';
@@ -3311,10 +3301,11 @@
   window.ajouterProduit = ajouterProduit;
 
   // Plafond de volume vrac (kg) par famille — poids maximum vendu dans la journée,
-  // tous conditionnements confondus (ceux dotés d'un poids unitaire, voir
-  // champPoidsUnitaire()), avant affichage d'une alerte aux commerciaux dans l'onglet
-  // Commerce (voir alertesVracDuJour()). Stocké comme sous-champ de referentiels/main
-  // (même document que les autres listes de référence), pas une nouvelle collection.
+  // tous conditionnements confondus (poids déduit du texte du conditionnement, voir
+  // poidsUnitaireDepuisConditionnement()), avant affichage d'une alerte aux
+  // commerciaux dans l'onglet Commerce (voir alertesVracDuJour()). Stocké comme
+  // sous-champ de referentiels/main (même document que les autres listes de
+  // référence), pas une nouvelle collection.
   function enregistrerPlafondVrac(nomFamille, valeurKg) {
     if (!peutGererCommerce()) return;
     const champ = {};
