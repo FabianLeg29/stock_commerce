@@ -90,6 +90,14 @@
   }
   .bouton-principal { background: var(--copper); color: white; width: 100%; margin-top: 6px; }
   .bouton-principal:hover { background: var(--wave-2); }
+
+  .bouton-demarrer {
+    background: var(--copper); color: white; border: none; border-radius: 10px;
+    padding: 15px 36px; font-size: 16px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 3px 10px rgba(150,62,136,0.35);
+  }
+  .bouton-demarrer:hover { background: var(--wave-2); }
+  .bouton-demarrer:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
   .erreur { color: var(--danger); font-size: 13px; margin-top: 10px; min-height: 16px; }
 
   /* ---------- App ---------- */
@@ -356,7 +364,7 @@
       </div>
 
       <div id="blocDemarrerStockSoir">
-        <button onclick="ouvrirFormulaireDemarrage()" id="boutonOuvrirDemarrage" style="margin-bottom:14px;">Démarrer</button>
+        <button class="bouton-demarrer" onclick="ouvrirFormulaireDemarrage()" id="boutonOuvrirDemarrage" style="margin-bottom:14px;">Démarrer</button>
         <div id="formulaireDemarrageStockSoir" style="display:none;">
           <h3 class="section-titre" style="margin-top:0;">Démarrer un stock du soir</h3>
           <div class="ligne-ajout">
