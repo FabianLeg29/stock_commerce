@@ -133,6 +133,15 @@ service cloud.firestore {
       allow create, update, delete: if estCommerce();
     }
 
+    // ---- Clôture de journée (un document par date) ----
+    // Marque l'heure à partir de laquelle les achats/ventes/réservations du jour ne
+    // comptent plus dans le stock réel (déjà reflétés dans le stock du soir validé) —
+    // ne supprime ni ne modifie aucun document achats/commerce, juste un seuil de temps.
+    match /clotures/{date} {
+      allow read: if connecte();
+      allow write: if estCommerce();
+    }
+
     // ---- Historique (journal des actions) ----
     match /transactions/{docId} {
       allow read: if connecte();

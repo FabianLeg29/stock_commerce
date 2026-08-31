@@ -561,6 +561,13 @@
           <div class="vide" id="videValidationStock" style="display:none;">Aucun stock en attente de validation.</div>
         </div>
       </div>
+
+      <div id="carteClotureJournee" style="display:none; margin-top:24px;">
+        <h3 class="section-titre">Clôture de la journée</h3>
+        <p class="sous-titre-section">Une fois le stock du soir validé et importé, clôturer la journée remet à zéro les achats et les ventes/réservations comptés dans le stock réel — pour ne pas les compter une seconde fois demain. Rien n'est supprimé : achats et ventes restent consultables dans leurs onglets et dans l'Historique. Une sauvegarde Excel est générée automatiquement avant la clôture.</p>
+        <div id="statutClotureJournee" style="margin-bottom:10px; font-size:13px; color:#746a5e;"></div>
+        <button class="bouton-secondaire" onclick="cloturerJournee()">Clôturer la journée</button>
+      </div>
     </div>
 
     <!-- ---------------- PRIX D'ACHAT ---------------- -->
@@ -743,6 +750,9 @@
   let commerciaux = [];             // comptes ayant le rôle commerce : [{ uid, email }]
   let commerceSousOnglet = 'global'; // 'global' ou l'email d'un commercial (sous-onglet actif de l'onglet Commerce)
   let achatsDuJourParProduit = {};       // { nom: quantiteTotale }
+  let clotureAujourdhui = null;          // { heure, responsable } si la journée a déjà été clôturée — voir clotures/{date}
+  let commerceDocsAujourdhui = [];       // cache brut des documents commerce du jour (avant filtre clôture), pour recalculer sans refaire une requête
+  let achatsDocsAujourdhui = [];         // cache brut des documents achats du jour (avant filtre clôture), pour recalculer sans refaire une requête
   let achatsDuJourDetailParProduit = {}; // { nom: [ { achatId, fournisseur, quantite, prixAchat, heureDepart, transportType, transporteurNom } ] }
   let achats = [];                 // tous les achats chargés (récap) : [{ id, date, fournisseur, responsable, horodatage, lignes: [...] }]
   let achatsCharges = false;
@@ -870,6 +880,53 @@
     });
   }
 
+  // Recalcule commerceDuJour/commerceDuJourDetailParProduit à partir du cache brut
+  // commerceDocsAujourdhui et de clotureAujourdhui — appelée après chaque mise à jour
+  // de l'un ou l'autre, sans réinterroger Firestore.
+  function recalculerCommerceDuJour() {
+    const sommes = {};
+    const details = {};
+    commerceDocsAujourdhui.forEach(function (d) {
+      // Une fois la journée clôturée, les ventes/réservations enregistrées AVANT la
+      // clôture ne comptent plus dans le stock réel (déjà reflétées dans le stock du
+      // soir validé qui devient le nouveau stock initial) — seules celles saisies
+      // après continuent de s'additionner normalement.
+      if (clotureAujourdhui && clotureAujourdhui.heure && d.horodatageMillis !== null &&
+        d.horodatageMillis <= clotureAujourdhui.heure.toMillis()) return;
+      const ventes = d.ventes || 0;
+      const reservations = d.reservations || 0;
+      if (!sommes[d.produit]) sommes[d.produit] = { ventes: 0, reservations: 0 };
+      sommes[d.produit].ventes += ventes;
+      sommes[d.produit].reservations += reservations;
+      if (!details[d.produit]) details[d.produit] = [];
+      details[d.produit].push({ id: d.id, commercial: d.commercial, ventes: d.ventes, reservations: d.reservations });
+    });
+    commerceDuJour = sommes;
+    commerceDuJourDetailParProduit = details;
+  }
+
+  // Même principe que recalculerCommerceDuJour(), pour les achats du jour.
+  function recalculerAchatsDuJour() {
+    const totaux = {};
+    const details = {};
+    achatsDocsAujourdhui.forEach(function (d) {
+      if (clotureAujourdhui && clotureAujourdhui.heure && d.horodatageMillis !== null &&
+        d.horodatageMillis <= clotureAujourdhui.heure.toMillis()) return;
+      d.lignes.forEach(function (ligne) {
+        totaux[ligne.produit] = (totaux[ligne.produit] || 0) + (Number(ligne.quantite) || 0);
+        if (!details[ligne.produit]) details[ligne.produit] = [];
+        details[ligne.produit].push({
+          achatId: d.id, fournisseur: d.fournisseur, quantite: ligne.quantite,
+          prixAchat: ligne.prixAchat, heureDepart: ligne.heureDepart,
+          transportType: ligne.transportType, transporteurNom: ligne.transporteurNom,
+          responsable: d.responsable
+        });
+      });
+    });
+    achatsDuJourParProduit = totaux;
+    achatsDuJourDetailParProduit = details;
+  }
+
   // ============================================================
   // LISTENERS TEMPS RÉEL
   // ============================================================
@@ -974,21 +1031,29 @@
     );
 
     desabonnements.push(
+      db.collection('clotures').doc(AUJOURD_HUI).onSnapshot(function (snap) {
+        clotureAujourdhui = snap.exists ? snap.data() : null;
+        // La clôture ne change aucun document commerce/achats — elle ne fait que
+        // déplacer le seuil "compte encore dans le stock réel" — donc recalculer à
+        // partir des caches déjà chargés, sans réinterroger Firestore.
+        recalculerCommerceDuJour();
+        recalculerAchatsDuJour();
+        rendreVueActive();
+      })
+    );
+
+    desabonnements.push(
       db.collection('commerce').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
-        const sommes = {};
-        const details = {};
+        commerceDocsAujourdhui = [];
         qs.forEach(function (doc) {
           const d = doc.data();
-          const ventes = d.ventes || 0;
-          const reservations = d.reservations || 0;
-          if (!sommes[d.produit]) sommes[d.produit] = { ventes: 0, reservations: 0 };
-          sommes[d.produit].ventes += ventes;
-          sommes[d.produit].reservations += reservations;
-          if (!details[d.produit]) details[d.produit] = [];
-          details[d.produit].push({ id: doc.id, commercial: d.commercial, ventes: d.ventes, reservations: d.reservations });
+          commerceDocsAujourdhui.push({
+            id: doc.id, produit: d.produit, commercial: d.commercial,
+            ventes: d.ventes, reservations: d.reservations,
+            horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null
+          });
         });
-        commerceDuJour = sommes;
-        commerceDuJourDetailParProduit = details;
+        recalculerCommerceDuJour();
         rendreVueActive();
       })
     );
@@ -1004,23 +1069,16 @@
 
     desabonnements.push(
       db.collection('achats').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
-        const totaux = {};
-        const details = {};
+        achatsDocsAujourdhui = [];
         qs.forEach(function (doc) {
           const d = doc.data();
-          (d.lignes || []).forEach(function (ligne) {
-            totaux[ligne.produit] = (totaux[ligne.produit] || 0) + (Number(ligne.quantite) || 0);
-            if (!details[ligne.produit]) details[ligne.produit] = [];
-            details[ligne.produit].push({
-              achatId: doc.id, fournisseur: d.fournisseur, quantite: ligne.quantite,
-              prixAchat: ligne.prixAchat, heureDepart: ligne.heureDepart,
-              transportType: ligne.transportType, transporteurNom: ligne.transporteurNom,
-              responsable: d.responsable
-            });
+          achatsDocsAujourdhui.push({
+            id: doc.id, fournisseur: d.fournisseur, responsable: d.responsable,
+            horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null,
+            lignes: d.lignes || []
           });
         });
-        achatsDuJourParProduit = totaux;
-        achatsDuJourDetailParProduit = details;
+        recalculerAchatsDuJour();
         rendreVueActive();
       })
     );
@@ -1939,8 +1997,25 @@
     }
 
     rendreValidationStock();
+    rendreClotureJournee();
   }
   window.rendreCommerce = rendreCommerce;
+
+  // Regroupe une entrée en attente par session de comptage (date + attribution Haut
+  // + attribution Bas) — une session "Haut + Bas" a la même attribution des deux
+  // côtés et se retrouve donc naturellement dans un seul groupe ; des côtés faits
+  // séparément par des personnes/heures différentes forment des groupes distincts.
+  function cleSessionValidation(s) {
+    return s.date + '|' + (s.stockHautOperateur || '') + '@' + (s.stockHautHeure || '') +
+      '|' + (s.stockBasOperateur || '') + '@' + (s.stockBasHeure || '');
+  }
+
+  function libelleSessionValidation(s) {
+    const parties = [];
+    if (s.stockHautOperateur) parties.push('Haut : ' + s.stockHautOperateur + (s.stockHautHeure ? ' (' + s.stockHautHeure + ')' : ''));
+    if (s.stockBasOperateur) parties.push('Bas : ' + s.stockBasOperateur + (s.stockBasHeure ? ' (' + s.stockBasHeure + ')' : ''));
+    return s.date + ' — ' + (parties.length ? parties.join(' · ') : 'Attribution inconnue');
+  }
 
   function rendreValidationStock() {
     const carte = document.getElementById('carteValidationStock');
@@ -1951,33 +2026,55 @@
     corps.innerHTML = '';
     document.getElementById('videValidationStock').style.display = saisieEnAttente.length ? 'none' : 'block';
 
-    saisieEnAttente.slice().sort(function (a, b) {
-      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-      return a.produit.localeCompare(b.produit);
-    }).forEach(function (s) {
-      const tr = document.createElement('tr');
-      const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.textContent = s.date;
-      const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = s.produit;
-      const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono';
-      tdHaut.textContent = (s.stockHaut === null || typeof s.stockHaut === 'undefined') ? '—' : s.stockHaut;
-      if (s.stockHautOperateur) tdHaut.title = s.stockHautOperateur + (s.stockHautHeure ? ' — ' + s.stockHautHeure : '');
-      const tdBas = document.createElement('td'); tdBas.className = 'centre mono';
-      tdBas.textContent = (s.stockBas === null || typeof s.stockBas === 'undefined') ? '—' : s.stockBas;
-      if (s.stockBasOperateur) tdBas.title = s.stockBasOperateur + (s.stockBasHeure ? ' — ' + s.stockBasHeure : '');
-      const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.textContent = s.stockSoir;
-      const tdResponsable = document.createElement('td'); tdResponsable.textContent = s.responsable;
+    const groupes = {};
+    saisieEnAttente.forEach(function (s) {
+      const cle = cleSessionValidation(s);
+      if (!groupes[cle]) groupes[cle] = [];
+      groupes[cle].push(s);
+    });
 
-      const tdAction = document.createElement('td');
-      tdAction.className = 'centre';
-      const btn = document.createElement('button');
-      btn.className = 'bouton-secondaire';
-      btn.textContent = 'Valider et importer';
-      btn.onclick = function () { validerStock([s]); };
-      tdAction.appendChild(btn);
+    Object.keys(groupes).sort().forEach(function (cle) {
+      const groupe = groupes[cle];
+      const trTitre = document.createElement('tr');
+      trTitre.className = 'entete-groupe';
+      const tdTitre = document.createElement('td');
+      tdTitre.colSpan = 6;
+      tdTitre.textContent = libelleSessionValidation(groupe[0]);
+      const tdBoutonGroupe = document.createElement('td');
+      const btnGroupe = document.createElement('button');
+      btnGroupe.className = 'bouton-secondaire';
+      btnGroupe.textContent = 'Valider cette session';
+      btnGroupe.onclick = function () { validerStock(groupe); };
+      tdBoutonGroupe.appendChild(btnGroupe);
+      trTitre.appendChild(tdTitre);
+      trTitre.appendChild(tdBoutonGroupe);
+      corps.appendChild(trTitre);
 
-      tr.appendChild(tdDate); tr.appendChild(tdProduit); tr.appendChild(tdHaut);
-      tr.appendChild(tdBas); tr.appendChild(tdTotal); tr.appendChild(tdResponsable); tr.appendChild(tdAction);
-      corps.appendChild(tr);
+      groupe.slice().sort(function (a, b) { return a.produit.localeCompare(b.produit); }).forEach(function (s) {
+        const tr = document.createElement('tr');
+        const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.textContent = s.date;
+        const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = s.produit;
+        const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono';
+        tdHaut.textContent = (s.stockHaut === null || typeof s.stockHaut === 'undefined') ? '—' : s.stockHaut;
+        if (s.stockHautOperateur) tdHaut.title = s.stockHautOperateur + (s.stockHautHeure ? ' — ' + s.stockHautHeure : '');
+        const tdBas = document.createElement('td'); tdBas.className = 'centre mono';
+        tdBas.textContent = (s.stockBas === null || typeof s.stockBas === 'undefined') ? '—' : s.stockBas;
+        if (s.stockBasOperateur) tdBas.title = s.stockBasOperateur + (s.stockBasHeure ? ' — ' + s.stockBasHeure : '');
+        const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.textContent = s.stockSoir;
+        const tdResponsable = document.createElement('td'); tdResponsable.textContent = s.responsable;
+
+        const tdAction = document.createElement('td');
+        tdAction.className = 'centre';
+        const btn = document.createElement('button');
+        btn.className = 'bouton-secondaire';
+        btn.textContent = 'Valider et importer';
+        btn.onclick = function () { validerStock([s]); };
+        tdAction.appendChild(btn);
+
+        tr.appendChild(tdDate); tr.appendChild(tdProduit); tr.appendChild(tdHaut);
+        tr.appendChild(tdBas); tr.appendChild(tdTotal); tr.appendChild(tdResponsable); tr.appendChild(tdAction);
+        corps.appendChild(tr);
+      });
     });
   }
 
@@ -2010,6 +2107,46 @@
     validerStock(saisieEnAttente);
   }
   window.validerToutLeStock = validerToutLeStock;
+
+  function rendreClotureJournee() {
+    const carte = document.getElementById('carteClotureJournee');
+    const peutCloturer = peutGererCommerce();
+    carte.style.display = peutCloturer ? '' : 'none';
+    if (!peutCloturer) return;
+    const statut = document.getElementById('statutClotureJournee');
+    if (clotureAujourdhui && clotureAujourdhui.heure) {
+      const heureTexte = clotureAujourdhui.heure.toDate
+        ? clotureAujourdhui.heure.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+        : '';
+      statut.textContent = 'Journée déjà clôturée' + (heureTexte ? ' à ' + heureTexte : '') +
+        (clotureAujourdhui.responsable ? ' par ' + clotureAujourdhui.responsable : '') + '.';
+    } else {
+      statut.textContent = "Pas encore clôturée aujourd'hui.";
+    }
+  }
+
+  // Remet à zéro (pour le calcul du stock réel uniquement — rien n'est supprimé) les
+  // achats et ventes/réservations du jour déjà comptés, en enregistrant un seuil de
+  // temps (clotures/{date}) : tout ce qui a été saisi AVANT ce seuil cesse de compter
+  // dans le stock réel/disponible, car déjà reflété dans le stock du soir tout juste
+  // validé (qui devient le nouveau stock initial) — sans quoi il serait compté deux fois.
+  function cloturerJournee() {
+    if (!peutGererCommerce()) return;
+    const message = clotureAujourdhui
+      ? "La journée a déjà été clôturée aujourd'hui. La reclôturer va aussi remettre à zéro les achats/ventes/réservations enregistrés depuis. Continuer ?"
+      : "Clôturer la journée maintenant ?\n\nLes achats et ventes/réservations déjà comptés dans le stock réel seront remis à zéro pour le reste de la journée. Rien n'est supprimé : ils restent consultables dans les onglets Achats/Historique. Une sauvegarde Excel va être générée d'abord.";
+    if (!confirm(message)) return;
+    exporterSauvegardeExcel();
+    db.collection('clotures').doc(AUJOURD_HUI).set({
+      date: AUJOURD_HUI,
+      heure: firebase.firestore.FieldValue.serverTimestamp(),
+      responsable: utilisateurCourant.email
+    }).then(function () {
+      enregistrerTransaction('cloture_journee', '—', null);
+      afficherToast('Journée clôturée');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.cloturerJournee = cloturerJournee;
 
   function rendrePrixAchat() {
     const q = (document.getElementById('filtrePrixAchat').value || '').toLowerCase();
@@ -2568,8 +2705,9 @@
 
   function libelleTypeTransaction(t) {
     return {
-      stock_soir: 'Stock du soir', achats: 'Achats', ventes: 'Ventes', prixAchat: "Prix d'achat",
-      reservations: 'Réservations', produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé'
+      stock_soir: 'Stock du soir', stock_importe: 'Stock importé', achats: 'Achats', ventes: 'Ventes', prixAchat: "Prix d'achat",
+      reservations: 'Réservations', produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé',
+      cloture_journee: 'Clôture de journée'
     }[t] || t;
   }
 
