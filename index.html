@@ -1831,7 +1831,23 @@
     corps.innerHTML = '';
     document.getElementById('videCommerce').style.display = actifs.length ? 'none' : 'block';
 
+    const groupesFamilles = {};
     actifs.forEach(function (p) {
+      const famille = p.famille || 'Sans famille';
+      if (!groupesFamilles[famille]) groupesFamilles[famille] = [];
+      groupesFamilles[famille].push(p);
+    });
+
+    Object.keys(groupesFamilles).sort().forEach(function (famille) {
+      const trTitreFamille = document.createElement('tr');
+      trTitreFamille.className = 'entete-groupe';
+      const tdTitreFamille = document.createElement('td');
+      tdTitreFamille.colSpan = 9;
+      tdTitreFamille.textContent = famille;
+      trTitreFamille.appendChild(tdTitreFamille);
+      corps.appendChild(trTitreFamille);
+
+      groupesFamilles[famille].sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
       const cache = dernierStockParProduit[p.nom] || {};
       const stockVeille = typeof cache.valeur === 'number' ? cache.valeur : 0;
       const achatsAujourdhui = achatsDuJourParProduit[p.nom] || 0;
@@ -2030,6 +2046,7 @@
       tr.appendChild(tdDetail);
       corps.appendChild(tr);
       corps.appendChild(trDetail);
+      });
     });
 
     if (saisieEnCours) {
