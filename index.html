@@ -516,7 +516,7 @@
         <button class="bouton-secondaire" onclick="exporterAchatsPDF()">Générer PDF récapitulatif</button>
       </div>
       <div class="carte-tableau">
-        <table>
+        <table class="tableau-cartes">
           <thead>
             <tr>
               <th>Date</th>
@@ -545,7 +545,7 @@
         </div>
         <div id="resultatConsultationAchats" style="display:none;">
           <div class="carte-tableau" style="margin-top:10px;">
-            <table>
+            <table class="tableau-cartes">
               <thead>
                 <tr>
                   <th>Fournisseur</th><th>Produit</th><th class="centre">Quantité</th>
@@ -2744,15 +2744,16 @@
       const a = item.achat, l = item.ligne;
       const tr = document.createElement('tr');
 
-      const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.textContent = a.date;
-      const tdFournisseur = document.createElement('td'); tdFournisseur.textContent = a.fournisseur;
+      const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.dataset.label = 'Date'; tdDate.textContent = a.date;
+      const tdFournisseur = document.createElement('td'); tdFournisseur.dataset.label = 'Fournisseur'; tdFournisseur.textContent = a.fournisseur;
       const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
-      const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.textContent = l.quantite;
-      const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.textContent = l.heureDepart || '—';
-      const tdLivraison = document.createElement('td'); tdLivraison.textContent = a.dateLivraisonPrevue || '—';
+      const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = l.quantite;
+      const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = 'Heure de départ'; tdHeure.textContent = l.heureDepart || '—';
+      const tdLivraison = document.createElement('td'); tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
       const tdTransport = document.createElement('td');
+      tdTransport.dataset.label = 'Transport';
       tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
-      const tdResponsable = document.createElement('td'); tdResponsable.textContent = a.responsable;
+      const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
 
       const tdActions = document.createElement('td');
       tdActions.className = 'centre';
@@ -2778,7 +2779,7 @@
       tr.appendChild(tdDate); tr.appendChild(tdFournisseur); tr.appendChild(tdProduit);
       tr.appendChild(tdQuantite);
       if (peutVoirPrix()) {
-        const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono';
+        const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono'; tdPrix.dataset.label = "Prix d'achat";
         tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
         tr.appendChild(tdPrix);
       }
@@ -2843,20 +2844,21 @@
       lignes.forEach(function (item) {
         const a = item.achat, l = item.ligne;
         const tr = document.createElement('tr');
-        const tdFournisseur = document.createElement('td'); tdFournisseur.textContent = a.fournisseur;
+        const tdFournisseur = document.createElement('td'); tdFournisseur.dataset.label = 'Fournisseur'; tdFournisseur.textContent = a.fournisseur;
         const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
-        const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.textContent = l.quantite;
+        const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = l.quantite;
         tr.appendChild(tdFournisseur); tr.appendChild(tdProduit); tr.appendChild(tdQuantite);
         if (avecPrix) {
-          const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono';
+          const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono'; tdPrix.dataset.label = "Prix d'achat";
           tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
           tr.appendChild(tdPrix);
         }
-        const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.textContent = l.heureDepart || '—';
-        const tdLivraison = document.createElement('td'); tdLivraison.textContent = a.dateLivraisonPrevue || '—';
+        const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = 'Heure de départ'; tdHeure.textContent = l.heureDepart || '—';
+        const tdLivraison = document.createElement('td'); tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
         const tdTransport = document.createElement('td');
+        tdTransport.dataset.label = 'Transport';
         tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
-        const tdResponsable = document.createElement('td'); tdResponsable.textContent = a.responsable;
+        const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
         tr.appendChild(tdHeure); tr.appendChild(tdLivraison); tr.appendChild(tdTransport); tr.appendChild(tdResponsable);
         corps.appendChild(tr);
       });
