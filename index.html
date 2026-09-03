@@ -150,6 +150,17 @@
   td.produit { font-weight: 600; }
   td.centre, th.centre { text-align: center; }
 
+  /* Sous-tableau du panneau "▸ Détail" (Commerce) : plus compact que les tableaux
+     principaux, sans défilement forcé (déjà dans une cellule qui peut faire défiler
+     .carte-tableau au besoin sur desktop, et convertie en cartes sous 640px comme
+     n'importe quelle .tableau-cartes). */
+  .tableau-detail { min-width: 0; margin: 6px 0 14px 0; }
+  .tableau-detail th, .tableau-detail td { padding: 6px 10px; font-size: 12.5px; }
+  .tableau-detail th {
+    position: static; background: transparent; color: #8a8072; font-weight: 600;
+    text-transform: none; letter-spacing: 0;
+  }
+
   /* Étiquette + annotation (date, bouton +) affichées uniquement en mode carte mobile
      (voir @media plus bas) — regroupées avec le libellé, plutôt qu'à côté de la valeur,
      pour que la valeur elle-même reste seule et alignée dans la même colonne sur
@@ -293,7 +304,10 @@
     }
     .tableau-cartes tbody tr:first-child.entete-groupe { margin-top: 0; }
     .tableau-cartes tbody tr.ligne-detail { border: none; padding: 0; margin: -6px 0 10px 0; }
-    .tableau-cartes td {
+    /* La cellule de la ligne "détail" dépliable contient un bloc libre (titres +
+       sous-tableaux), pas une paire libellé/valeur — exclue de la mise en page en
+       ligne flex ci-dessous pour ne pas éclater son contenu horizontalement. */
+    .tableau-cartes tbody > tr:not(.ligne-detail) > td {
       display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
       padding: 3px 0; border: none; text-align: right; font-size: 14px;
     }
@@ -2074,56 +2088,99 @@
         const ouvert = trDetail.style.display !== 'none';
         trDetail.style.display = ouvert ? 'none' : '';
         btnDetail.textContent = ouvert ? '▸ Détail' : '▾ Détail';
-        if (!ouvert) {
-          const styleTh = 'text-align:left; padding:4px 10px; font-size:11px; text-transform:uppercase; letter-spacing:0.03em; color:#8a8072; border-bottom:1.5px solid var(--line);';
-          const styleThD = styleTh + ' text-align:right;';
-          const styleTd = 'padding:4px 10px; border-bottom:1px solid var(--line);';
-          const styleTdD = styleTd + ' text-align:right;';
-          const avecPrix = peutVoirPrix();
+        if (ouvert) return;
 
-          let html = '<strong>Achats aujourd\'hui (' + achatsAujourdhui + ')</strong>';
-          if (detailAchats.length) {
-            html += '<table style="width:100%; border-collapse:collapse; margin:6px 0 14px 0;"><thead><tr>' +
-              '<th style="' + styleTh + '">Quantité</th>' +
-              '<th style="' + styleTh + '">Fournisseur</th>' +
-              (avecPrix ? '<th style="' + styleTh + '">Prix d\'achat</th>' : '') +
-              '<th style="' + styleTh + '">Heure de départ</th>' +
-              '<th style="' + styleTh + '">Transport</th>' +
-              '<th style="' + styleTh + '">Commercial</th>' +
-              '</tr></thead><tbody>' + detailAchats.map(function (d) {
-                const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
-                const prix = (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
-                return '<tr><td style="' + styleTd + '">' + d.quantite + '</td>' +
-                  '<td style="' + styleTd + '">' + d.fournisseur + '</td>' +
-                  (avecPrix ? '<td style="' + styleTd + '">' + prix + '</td>' : '') +
-                  '<td style="' + styleTd + '">' + (d.heureDepart || '—') + '</td>' +
-                  '<td style="' + styleTd + '">' + transport + '</td>' +
-                  '<td style="' + styleTd + '">' + libelleCommercial(d.responsable) + '</td></tr>';
-              }).join('') + '</tbody></table>';
-          } else {
-            html += '<div style="margin:6px 0 14px 0; color:#a49a89;">Aucun achat aujourd\'hui.</div>';
-          }
+        const avecPrix = peutVoirPrix();
+        tdDetailContenu.innerHTML = '';
 
-          html += '<strong>Ventes / réservations par commercial</strong>';
-          const commerciauxActifs = detailCommerciaux.filter(function (d) { return d.ventes || d.reservations; });
-          if (commerciauxActifs.length) {
-            html += '<table style="width:100%; border-collapse:collapse; margin:6px 0 0 0;"><thead><tr>' +
-              '<th style="' + styleTh + '">Commercial</th>' +
-              '<th style="' + styleThD + '">Ventes</th>' +
-              '<th style="' + styleThD + '">Réservations</th>' +
-              '</tr></thead><tbody>' + commerciauxActifs.map(function (d) {
-                return '<tr><td style="' + styleTd + '">' + libelleCommercial(d.commercial) + '</td>' +
-                  '<td style="' + styleTdD + '">' + (d.ventes || 0) + '</td>' +
-                  '<td style="' + styleTdD + '">' + (d.reservations || 0) + '</td></tr>';
-              }).join('') +
-              '<tr><td style="' + styleTd + ' font-weight:700;">Total</td>' +
-              '<td style="' + styleTdD + ' font-weight:700;">' + sommeGlobale.ventes + '</td>' +
-              '<td style="' + styleTdD + ' font-weight:700;">' + sommeGlobale.reservations + '</td></tr>' +
-              '</tbody></table>';
-          } else {
-            html += '<div style="margin:6px 0 0 0; color:#a49a89;">Aucune vente ni réservation aujourd\'hui.</div>';
-          }
-          tdDetailContenu.innerHTML = html;
+        // Sous-tableaux du détail construits en DOM (pas en HTML concaténé) pour
+        // pouvoir porter la classe "tableau-cartes" : sur petit smartphone, ils
+        // basculent donc automatiquement en cartes empilées comme le tableau
+        // principal, au lieu d'un mini-tableau à 5-6 colonnes illisible.
+        const titreAchats = document.createElement('strong');
+        titreAchats.textContent = "Achats aujourd'hui (" + achatsAujourdhui + ')';
+        tdDetailContenu.appendChild(titreAchats);
+
+        if (detailAchats.length) {
+          const tableAchats = document.createElement('table');
+          tableAchats.className = 'tableau-cartes tableau-detail';
+          tableAchats.innerHTML = '<thead><tr>' +
+            '<th>Fournisseur</th><th class="centre">Quantité</th>' +
+            (avecPrix ? '<th class="centre">Prix d\'achat</th>' : '') +
+            '<th>Heure de départ</th><th>Transport</th><th>Commercial</th>' +
+            '</tr></thead>';
+          const corpsAchats = document.createElement('tbody');
+          detailAchats.forEach(function (d) {
+            const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
+            const prix = (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
+            const trLigne = document.createElement('tr');
+            const tdFournisseur = document.createElement('td');
+            tdFournisseur.className = 'produit'; tdFournisseur.textContent = d.fournisseur;
+            const tdQuantite = document.createElement('td');
+            tdQuantite.className = 'centre mono'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = d.quantite;
+            trLigne.appendChild(tdFournisseur); trLigne.appendChild(tdQuantite);
+            if (avecPrix) {
+              const tdPrixLigne = document.createElement('td');
+              tdPrixLigne.className = 'centre mono'; tdPrixLigne.dataset.label = "Prix d'achat"; tdPrixLigne.textContent = prix;
+              trLigne.appendChild(tdPrixLigne);
+            }
+            const tdHeure = document.createElement('td');
+            tdHeure.dataset.label = 'Heure de départ'; tdHeure.textContent = d.heureDepart || '—';
+            const tdTransport = document.createElement('td');
+            tdTransport.dataset.label = 'Transport'; tdTransport.textContent = transport;
+            const tdCommercial = document.createElement('td');
+            tdCommercial.dataset.label = 'Commercial'; tdCommercial.textContent = libelleCommercial(d.responsable);
+            trLigne.appendChild(tdHeure); trLigne.appendChild(tdTransport); trLigne.appendChild(tdCommercial);
+            corpsAchats.appendChild(trLigne);
+          });
+          tableAchats.appendChild(corpsAchats);
+          tdDetailContenu.appendChild(tableAchats);
+        } else {
+          const videAchats = document.createElement('div');
+          videAchats.style.cssText = 'margin:6px 0 14px 0; color:#a49a89;';
+          videAchats.textContent = 'Aucun achat aujourd\'hui.';
+          tdDetailContenu.appendChild(videAchats);
+        }
+
+        const titreVentes = document.createElement('strong');
+        titreVentes.style.cssText = 'display:block; margin-top:14px;';
+        titreVentes.textContent = 'Ventes / réservations par commercial';
+        tdDetailContenu.appendChild(titreVentes);
+
+        const commerciauxActifs = detailCommerciaux.filter(function (d) { return d.ventes || d.reservations; });
+        if (commerciauxActifs.length) {
+          const tableVentes = document.createElement('table');
+          tableVentes.className = 'tableau-cartes tableau-detail';
+          tableVentes.innerHTML = '<thead><tr><th>Commercial</th><th class="centre">Ventes</th><th class="centre">Réservations</th></tr></thead>';
+          const corpsVentes = document.createElement('tbody');
+          commerciauxActifs.forEach(function (d) {
+            const trLigne = document.createElement('tr');
+            const tdCommercial = document.createElement('td');
+            tdCommercial.className = 'produit'; tdCommercial.textContent = libelleCommercial(d.commercial);
+            const tdV = document.createElement('td');
+            tdV.className = 'centre mono'; tdV.dataset.label = 'Ventes'; tdV.textContent = d.ventes || 0;
+            const tdR = document.createElement('td');
+            tdR.className = 'centre mono'; tdR.dataset.label = 'Réservations'; tdR.textContent = d.reservations || 0;
+            trLigne.appendChild(tdCommercial); trLigne.appendChild(tdV); trLigne.appendChild(tdR);
+            corpsVentes.appendChild(trLigne);
+          });
+          const trTotal = document.createElement('tr');
+          trTotal.style.fontWeight = '700';
+          const tdTotalLabel = document.createElement('td');
+          tdTotalLabel.className = 'produit'; tdTotalLabel.textContent = 'Total';
+          const tdTotalV = document.createElement('td');
+          tdTotalV.className = 'centre mono'; tdTotalV.dataset.label = 'Ventes'; tdTotalV.textContent = sommeGlobale.ventes;
+          const tdTotalR = document.createElement('td');
+          tdTotalR.className = 'centre mono'; tdTotalR.dataset.label = 'Réservations'; tdTotalR.textContent = sommeGlobale.reservations;
+          trTotal.appendChild(tdTotalLabel); trTotal.appendChild(tdTotalV); trTotal.appendChild(tdTotalR);
+          corpsVentes.appendChild(trTotal);
+          tableVentes.appendChild(corpsVentes);
+          tdDetailContenu.appendChild(tableVentes);
+        } else {
+          const videVentes = document.createElement('div');
+          videVentes.style.cssText = 'margin:6px 0 0 0; color:#a49a89;';
+          videVentes.textContent = 'Aucune vente ni réservation aujourd\'hui.';
+          tdDetailContenu.appendChild(videVentes);
         }
       };
 
