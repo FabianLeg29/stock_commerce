@@ -150,19 +150,6 @@
   td.produit { font-weight: 600; }
   td.centre, th.centre { text-align: center; }
 
-  /* Colonne de gauche figée au défilement horizontal (identifie la ligne
-     — produit, date, fournisseur... — pendant qu'on fait défiler les colonnes
-     de saisie sur un écran étroit). Exclut les lignes de titre de groupe et de
-     détail dépliable, qui n'ont qu'une seule cellule couvrant toute la largeur. */
-  .carte-tableau table th:first-child {
-    position: sticky; left: 0; z-index: 3;
-  }
-  .carte-tableau table tbody tr:not(.entete-groupe):not(.ligne-detail) td:first-child {
-    position: sticky; left: 0; z-index: 1;
-    background: var(--panel);
-    box-shadow: 2px 0 4px rgba(43,38,32,0.08);
-  }
-
   input.champ-valeur {
     width: 90px; padding: 8px; font-size: 15px; font-weight: 600; text-align: center;
     border: 1.5px solid var(--line); border-radius: 8px; background: white;
@@ -280,6 +267,36 @@
        la mise au point sur iOS Safari (Chrome/Safari mobile) — gênant sur un
        formulaire à plusieurs champs (ex. modale d'achat, plafond vrac). */
     input, select, textarea { font-size: 16px !important; }
+
+    /* Tableaux denses (stock du soir, commerce, validation du stock) : plutôt que
+       de faire défiler horizontalement de nombreuses colonnes étroites (illisible
+       sur un petit smartphone) ou de figer une colonne (confus), chaque ligne
+       devient une carte empilée — produit en titre, puis "Libellé : valeur" pour
+       chaque colonne. Les tableaux non convertis (Produits, Achats, Historique...)
+       gardent le défilement horizontal classique de .carte-tableau. */
+    .tableau-cartes { min-width: 0; }
+    .tableau-cartes, .tableau-cartes tbody { display: block; width: 100%; }
+    .tableau-cartes thead { display: none; }
+    .tableau-cartes tbody tr {
+      display: flex; flex-direction: column; gap: 6px;
+      padding: 12px 14px; margin: 10px 0; border: 1.5px solid var(--line); border-radius: 12px;
+    }
+    .tableau-cartes tbody tr.entete-groupe {
+      display: block; padding: 6px 4px; margin: 14px 0 4px 0; border: none; border-radius: 0;
+    }
+    .tableau-cartes tbody tr:first-child.entete-groupe { margin-top: 0; }
+    .tableau-cartes tbody tr.ligne-detail { border: none; padding: 0; margin: -6px 0 10px 0; }
+    .tableau-cartes td {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+      padding: 3px 0; border: none; text-align: right; font-size: 14px;
+    }
+    .tableau-cartes td[data-label]::before {
+      content: attr(data-label); font-weight: 600; color: #8a8072; text-align: left; font-size: 12.5px;
+    }
+    .tableau-cartes td.produit {
+      order: -1; justify-content: flex-start; font-size: 15.5px;
+      padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
+    }
   }
 </style>
 </head>
@@ -421,7 +438,7 @@
       </div>
 
       <div class="carte-tableau">
-        <table>
+        <table class="tableau-cartes">
           <thead>
             <tr>
               <th>Produit</th>
@@ -551,7 +568,7 @@
       <div class="sous-onglets" id="sousOngletsCommerce"></div>
       <div id="alertesVrac" style="display:none; margin-bottom:14px;"></div>
       <div class="carte-tableau">
-        <table>
+        <table class="tableau-cartes">
           <thead>
             <tr>
               <th>Produit</th>
@@ -576,7 +593,7 @@
           <button class="bouton-secondaire" onclick="validerToutLeStock()">Tout valider et importer</button>
         </div>
         <div class="carte-tableau">
-          <table>
+          <table class="tableau-cartes">
             <thead>
               <tr>
                 <th>Date</th>
@@ -1619,17 +1636,20 @@
 
         const tdTotal = document.createElement('td');
         tdTotal.className = 'centre mono';
+        tdTotal.dataset.label = 'Total';
 
-        function texteLectureSeule(valeur) {
+        function texteLectureSeule(valeur, libelle) {
           const td = document.createElement('td');
           td.className = 'centre mono';
+          td.dataset.label = libelle;
           td.textContent = (valeur === null || typeof valeur === 'undefined') ? '—' : valeur;
           return { td: td, input: null };
         }
 
-        function champSession(coteChamp) {
+        function champSession(coteChamp, libelle) {
           const td = document.createElement('td');
           td.className = 'centre';
+          td.dataset.label = libelle;
           const input = document.createElement('input');
           input.type = 'tel';
           input.autocomplete = 'off';
@@ -1653,8 +1673,8 @@
 
         const editableHaut = !!sessionStockSoir && (sessionStockSoir.cote === 'haut' || sessionStockSoir.cote === 'les2');
         const editableBas = !!sessionStockSoir && (sessionStockSoir.cote === 'bas' || sessionStockSoir.cote === 'les2');
-        const blocHaut = editableHaut ? champSession('haut') : texteLectureSeule(saisie.stockHaut);
-        const blocBas = editableBas ? champSession('bas') : texteLectureSeule(saisie.stockBas);
+        const blocHaut = editableHaut ? champSession('haut', 'Haut') : texteLectureSeule(saisie.stockHaut, 'Haut');
+        const blocBas = editableBas ? champSession('bas', 'Bas') : texteLectureSeule(saisie.stockBas, 'Bas');
 
         function majTotal() {
           const h = blocHaut.input ? sommerExpression(blocHaut.input.value) : (typeof saisie.stockHaut === 'number' ? saisie.stockHaut : null);
@@ -1901,6 +1921,7 @@
 
       const tdPrix = document.createElement('td');
       tdPrix.className = 'centre mono';
+      tdPrix.dataset.label = "Prix d'achat";
       if (!peutVoirPrix()) {
         tdPrix.textContent = '—';
       } else if (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') {
@@ -1912,6 +1933,7 @@
 
       const tdVeille = document.createElement('td');
       tdVeille.className = 'centre mono';
+      tdVeille.dataset.label = 'Stock initial';
       const spanValeurVeille = document.createElement('span');
       spanValeurVeille.textContent = stockVeille;
       tdVeille.appendChild(spanValeurVeille);
@@ -1924,6 +1946,7 @@
 
       const tdAchats = document.createElement('td');
       tdAchats.className = 'centre mono';
+      tdAchats.dataset.label = 'Achats';
       const spanAchats = document.createElement('span');
       spanAchats.textContent = achatsAujourdhui;
       tdAchats.appendChild(spanAchats);
@@ -1938,15 +1961,18 @@
 
       const tdReel = document.createElement('td');
       tdReel.className = 'centre pastille-stock ' + (stockReel < 0 ? 'negatif' : 'positif');
+      tdReel.dataset.label = 'Stock réel';
       tdReel.textContent = stockReel;
 
       const tdDisponible = document.createElement('td');
       tdDisponible.className = 'centre mono pastille-stock ' + (stockDisponible < 0 ? 'negatif' : 'positif');
+      tdDisponible.dataset.label = 'Stock disponible';
       tdDisponible.textContent = stockDisponible;
 
-      function champCommerce(valeur, nomChamp) {
+      function champCommerce(valeur, nomChamp, libelle) {
         const td = document.createElement('td');
         td.className = 'centre';
+        td.dataset.label = libelle;
         const input = document.createElement('input');
         input.type = 'number';
         input.step = 'any';
@@ -1977,15 +2003,18 @@
         return td;
       }
 
-      function champLectureSeule(valeur) {
+      function champLectureSeule(valeur, libelle) {
         const td = document.createElement('td');
         td.className = 'centre mono';
+        td.dataset.label = libelle;
         td.textContent = valeur;
         return td;
       }
 
-      const tdVentes = estGlobal ? champLectureSeule(venteAffichee) : champCommerce(venteAffichee, 'ventes');
-      const tdReservations = estGlobal ? champLectureSeule(reservationAffichee) : champCommerce(reservationAffichee, 'reservations');
+      const libelleVentes = estGlobal ? 'Ventes (total)' : 'Mes ventes';
+      const libelleReservations = estGlobal ? 'Réservations (total)' : 'Mes réservations';
+      const tdVentes = estGlobal ? champLectureSeule(venteAffichee, libelleVentes) : champCommerce(venteAffichee, 'ventes', libelleVentes);
+      const tdReservations = estGlobal ? champLectureSeule(reservationAffichee, libelleReservations) : champCommerce(reservationAffichee, 'reservations', libelleReservations);
 
       const tdDetail = document.createElement('td');
       tdDetail.className = 'centre';
@@ -2004,7 +2033,7 @@
 
       btnDetail.onclick = function () {
         const ouvert = trDetail.style.display !== 'none';
-        trDetail.style.display = ouvert ? 'none' : 'table-row';
+        trDetail.style.display = ouvert ? 'none' : '';
         btnDetail.textContent = ouvert ? '▸ Détail' : '▾ Détail';
         if (!ouvert) {
           const styleTh = 'text-align:left; padding:4px 10px; font-size:11px; text-transform:uppercase; letter-spacing:0.03em; color:#8a8072; border-bottom:1.5px solid var(--line);';
@@ -2142,16 +2171,16 @@
 
       groupe.slice().sort(function (a, b) { return a.produit.localeCompare(b.produit); }).forEach(function (s) {
         const tr = document.createElement('tr');
-        const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.textContent = s.date;
+        const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.dataset.label = 'Date'; tdDate.textContent = s.date;
         const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = s.produit;
-        const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono';
+        const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono'; tdHaut.dataset.label = 'Haut';
         tdHaut.textContent = (s.stockHaut === null || typeof s.stockHaut === 'undefined') ? '—' : s.stockHaut;
         if (s.stockHautOperateur) tdHaut.title = s.stockHautOperateur + (s.stockHautHeure ? ' — ' + s.stockHautHeure : '');
-        const tdBas = document.createElement('td'); tdBas.className = 'centre mono';
+        const tdBas = document.createElement('td'); tdBas.className = 'centre mono'; tdBas.dataset.label = 'Bas';
         tdBas.textContent = (s.stockBas === null || typeof s.stockBas === 'undefined') ? '—' : s.stockBas;
         if (s.stockBasOperateur) tdBas.title = s.stockBasOperateur + (s.stockBasHeure ? ' — ' + s.stockBasHeure : '');
-        const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.textContent = s.stockSoir;
-        const tdResponsable = document.createElement('td'); tdResponsable.textContent = s.responsable;
+        const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.dataset.label = 'Total'; tdTotal.textContent = s.stockSoir;
+        const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = s.responsable;
 
         const tdAction = document.createElement('td');
         tdAction.className = 'centre';
