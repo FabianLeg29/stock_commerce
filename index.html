@@ -150,6 +150,13 @@
   td.produit { font-weight: 600; }
   td.centre, th.centre { text-align: center; }
 
+  /* Étiquette + annotation (date, bouton +) affichées uniquement en mode carte mobile
+     (voir @media plus bas) — regroupées avec le libellé, plutôt qu'à côté de la valeur,
+     pour que la valeur elle-même reste seule et alignée dans la même colonne sur
+     chaque ligne de la carte. Masquées par défaut (tableau classique en desktop). */
+  .libelle-carte { display: none; }
+  .bouton-mini-carte { display: none; }
+
   input.champ-valeur {
     width: 90px; padding: 8px; font-size: 15px; font-weight: 600; text-align: center;
     border: 1.5px solid var(--line); border-radius: 8px; background: white;
@@ -297,6 +304,18 @@
       order: -1; justify-content: flex-start; font-size: 15.5px;
       padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
     }
+
+    /* Lignes avec une annotation (date du dernier stock, bouton "+" d'ajout d'achat) :
+       l'annotation rejoint le libellé à gauche plutôt que de coller à la valeur, pour
+       que seule la valeur numérique reste à droite — alignée avec les autres lignes. */
+    .tableau-cartes .libelle-carte {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-weight: 600; color: #8a8072; text-align: left; font-size: 12.5px;
+    }
+    .tableau-cartes .badge-date-carte { font-weight: 400; color: #a49a89; font-size: 11px; }
+    .tableau-cartes .bouton-mini-carte { display: inline-block; }
+    .tableau-cartes .bouton-mini-desktop,
+    .tableau-cartes .date-desktop-seule { display: none; }
   }
 </style>
 </head>
@@ -1933,12 +1952,22 @@
 
       const tdVeille = document.createElement('td');
       tdVeille.className = 'centre mono';
-      tdVeille.dataset.label = 'Stock initial';
+      const libelleVeille = document.createElement('span');
+      libelleVeille.className = 'libelle-carte';
+      libelleVeille.textContent = 'Stock initial';
+      if (cache.date) {
+        const badgeDateVeille = document.createElement('span');
+        badgeDateVeille.className = 'badge-date-carte';
+        badgeDateVeille.textContent = cache.date;
+        libelleVeille.appendChild(badgeDateVeille);
+      }
+      tdVeille.appendChild(libelleVeille);
       const spanValeurVeille = document.createElement('span');
       spanValeurVeille.textContent = stockVeille;
       tdVeille.appendChild(spanValeurVeille);
       if (cache.date) {
         const spanDateVeille = document.createElement('span');
+        spanDateVeille.className = 'date-desktop-seule';
         spanDateVeille.style.cssText = 'display:block; font-size:11px; color:#a49a89; margin-top:2px;';
         spanDateVeille.textContent = cache.date;
         tdVeille.appendChild(spanDateVeille);
@@ -1946,17 +1975,27 @@
 
       const tdAchats = document.createElement('td');
       tdAchats.className = 'centre mono';
-      tdAchats.dataset.label = 'Achats';
+      const libelleAchats = document.createElement('span');
+      libelleAchats.className = 'libelle-carte';
+      libelleAchats.textContent = 'Achats';
+      tdAchats.appendChild(libelleAchats);
       const spanAchats = document.createElement('span');
       spanAchats.textContent = achatsAujourdhui;
       tdAchats.appendChild(spanAchats);
       if (peutGererCommerce()) {
         const btnAjouterAchat = document.createElement('button');
-        btnAjouterAchat.className = 'bouton-mini';
+        btnAjouterAchat.className = 'bouton-mini bouton-mini-desktop';
         btnAjouterAchat.textContent = '+';
         btnAjouterAchat.title = 'Ajouter un achat pour ' + p.nom;
         btnAjouterAchat.onclick = function () { ouvrirModalAchat(p.nom); };
         tdAchats.appendChild(btnAjouterAchat);
+
+        const btnAjouterAchatCarte = document.createElement('button');
+        btnAjouterAchatCarte.className = 'bouton-mini bouton-mini-carte';
+        btnAjouterAchatCarte.textContent = '+';
+        btnAjouterAchatCarte.title = 'Ajouter un achat pour ' + p.nom;
+        btnAjouterAchatCarte.onclick = function () { ouvrirModalAchat(p.nom); };
+        libelleAchats.appendChild(btnAjouterAchatCarte);
       }
 
       const tdReel = document.createElement('td');
