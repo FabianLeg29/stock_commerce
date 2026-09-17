@@ -13,7 +13,9 @@ rules_version = '2';
 //                document par produit+jour+commercial — chacun ne peut écrire QUE son
 //                propre document), achats/livraisons (collection "achats"), + validation
 //                du stock du soir (champ "importe" de saisieStock) qui met à jour
-//                dernierStock (pas les valeurs saisies par la production)
+//                dernierStock (pas les valeurs saisies par la production) — et,
+//                depuis peu, les mêmes droits que "production" sur le stock du soir
+//                lui-même (estProduction() renvoie vrai aussi pour ce rôle)
 //   production : stock du soir (collection "saisieStock"), + réactivation d'un
 //                produit inactif existant (champ "actif" uniquement)
 //   viewer     : lecture seule partout
@@ -41,7 +43,7 @@ service cloud.firestore {
     }
 
     function estProduction() {
-      return connecte() && (monRole() == 'production' || monRole() == 'admin');
+      return connecte() && (monRole() == 'production' || monRole() == 'commerce' || monRole() == 'admin');
     }
 
     // ---- Comptes / rôles ----
@@ -131,6 +133,17 @@ service cloud.firestore {
     match /achats/{achatId} {
       allow read: if connecte();
       allow create, update, delete: if estCommerce();
+    }
+
+    // ---- Préférences d'affichage produit par commercial (un document par commercial) ----
+    // Un commercial choisit quels produits actifs afficher dans son PROPRE sous-onglet
+    // Commerce (ex. une référence qu'il ne vend jamais) — n'affecte ni les autres
+    // commerciaux ni le sous-onglet Global. Chacun ne peut écrire QUE son propre
+    // document (même principe que "commerce" ci-dessus) ; l'admin peut corriger n'importe lequel.
+    match /preferencesCommerce/{docId} {
+      allow read: if connecte();
+      allow write: if estAdmin() ||
+        (estCommerce() && request.resource.data.email == request.auth.token.email);
     }
 
     // ---- Clôture de journée (un document par date) ----

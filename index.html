@@ -524,10 +524,11 @@
               <th>Produit</th>
               <th class="centre">Quantité</th>
               <th class="centre" id="thPrixAchatRecap">Prix d'achat</th>
-              <th class="centre">Heure de départ</th>
+              <th class="centre">Heure d'arrivée prévue</th>
               <th>Livraison prévue</th>
               <th>Transport</th>
               <th>Responsable</th>
+              <th>Commentaire</th>
               <th style="width:140px;"></th>
             </tr>
           </thead>
@@ -550,7 +551,7 @@
                 <tr>
                   <th>Fournisseur</th><th>Produit</th><th class="centre">Quantité</th>
                   <th class="centre" id="thPrixAchatConsultation">Prix d'achat</th>
-                  <th class="centre">Heure de départ</th><th>Livraison prévue</th><th>Transport</th><th>Responsable</th>
+                  <th class="centre">Heure d'arrivée prévue</th><th>Livraison prévue</th><th>Transport</th><th>Responsable</th><th>Commentaire</th>
                 </tr>
               </thead>
               <tbody id="corpsConsultationAchats"></tbody>
@@ -578,9 +579,13 @@
             <input type="date" id="achatDate" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
           </div>
           <div style="flex:1 1 160px;">
-            <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Livraison prévue (optionnel)</label>
-            <input type="date" id="achatDateLivraison" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
+            <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Livraison prévue</label>
+            <input type="date" id="achatDateLivraison" required style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
           </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Commentaire (optionnel)</label>
+          <input type="text" id="achatCommentaire" placeholder="Ex. livraison partielle, réserve qualité..." style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
         </div>
         <div id="corpsLignesAchat"></div>
         <button class="bouton-secondaire" style="margin-top:6px;" onclick="ajouterLigneAchat()">+ Ajouter une ligne produit</button>
@@ -599,6 +604,10 @@
         <span class="date-du-jour" id="dateCommerce"></span>
       </div>
       <div class="sous-onglets" id="sousOngletsCommerce"></div>
+      <div style="margin-bottom:14px;">
+        <button class="bouton-secondaire" id="boutonProduitsAffiches" style="display:none;" onclick="basculerPanneauProduitsAffiches()">Choisir mes produits affichés</button>
+        <div id="panneauProduitsAffiches" style="display:none; margin-top:10px;"></div>
+      </div>
       <div id="alertesVrac" style="display:none; margin-bottom:14px;"></div>
       <div class="carte-tableau">
         <table class="tableau-cartes">
@@ -612,6 +621,7 @@
               <th class="centre" id="entierReservationsLabel">Réservations</th>
               <th class="centre">Stock réel</th>
               <th class="centre">Stock disponible</th>
+              <th class="centre">Stock dispo J+</th>
               <th style="width:70px;"></th>
             </tr>
           </thead>
@@ -622,20 +632,18 @@
 
       <h3 class="section-titre">Stock du soir à valider</h3>
       <div id="carteValidationStock">
-        <div style="margin-bottom:10px;">
-          <button class="bouton-secondaire" onclick="validerToutLeStock()">Tout valider et importer</button>
-        </div>
+        <p class="sous-titre-section">Décochez une ligne pour ne pas encore l'intégrer — elle restera en attente pour un prochain clic sur « Intégrer les stocks et clôturer la journée de la veille » ci-dessous.</p>
         <div class="carte-tableau">
           <table class="tableau-cartes">
             <thead>
               <tr>
+                <th style="width:40px;"></th>
                 <th>Date</th>
                 <th>Produit</th>
                 <th class="centre">Haut</th>
                 <th class="centre">Bas</th>
                 <th class="centre">Total</th>
                 <th>Responsable</th>
-                <th style="width:160px;"></th>
               </tr>
             </thead>
             <tbody id="corpsValidationStock"></tbody>
@@ -644,11 +652,11 @@
         </div>
       </div>
 
-      <div id="carteClotureJournee" style="display:none; margin-top:24px;">
-        <h3 class="section-titre">Clôture de la journée</h3>
-        <p class="sous-titre-section">Une fois le stock du soir validé et importé, clôturer la journée remet à zéro les achats et les ventes/réservations comptés dans le stock réel — pour ne pas les compter une seconde fois demain. Rien n'est supprimé : achats et ventes restent consultables dans leurs onglets et dans l'Historique. Une sauvegarde Excel est générée automatiquement avant la clôture.</p>
+      <div id="carteIntegrationCloture" style="display:none; margin-top:24px;">
+        <h3 class="section-titre">Intégrer les stocks et clôturer la journée de la veille</h3>
+        <p class="sous-titre-section">Intègre les stocks cochés ci-dessus comme nouveau stock initial, puis clôture la journée de la veille : les achats et ventes/réservations déjà comptés dans le stock réel repartent de zéro pour la nouvelle journée. Rien n'est supprimé : le dernier stock intégré, les achats, les prix d'achat et les ventes/réservations restent consultables dans leurs onglets et dans l'Historique. Une sauvegarde Excel est générée automatiquement avant la clôture.</p>
         <div id="statutClotureJournee" style="margin-bottom:10px; font-size:13px; color:#746a5e;"></div>
-        <button class="bouton-secondaire" onclick="cloturerJournee()">Clôturer la journée</button>
+        <button class="bouton-secondaire" onclick="integrerStocksEtCloturerJourneeVeille()">Intégrer les stocks et clôturer la journée de la veille</button>
       </div>
     </div>
 
@@ -698,9 +706,6 @@
 
     <!-- ---------------- PRODUITS (admin + commerce) ---------------- -->
     <div class="vue" id="vueProduits">
-      <div id="blocSupprimerTousProduits" style="margin-bottom:14px; display:none;">
-        <button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerTousLesProduits()">Supprimer tous les produits</button>
-      </div>
       <div class="ligne-ajout" id="ligneAjoutProduit" style="display:none;">
         <input type="text" id="nouveauProduit" placeholder="Désignation (générée automatiquement, modifiable)...">
         <select id="nouvelleFamille" onchange="rendreSelectVariete(); recalculerDesignationAuto();"></select>
@@ -834,13 +839,23 @@
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
   let commerceDuJour = {};                    // { nom: { ventes, reservations } } — sommes tous commerciaux confondus
   let commerceDuJourDetailParProduit = {};    // { nom: [ { id, commercial, ventes, reservations } ] } — détail par commercial
+  let preferencesCommerceParEmail = {};       // { email: { produitsMasques: [nom, ...] } } — produits qu'un commercial a choisi de ne pas afficher dans son propre sous-onglet
+  let panneauProduitsAffichesOuvert = false;  // état local (non persisté) du panneau "Choisir mes produits affichés"
   let commerciaux = [];             // comptes ayant le rôle commerce : [{ uid, email }]
   let commerceSousOnglet = 'global'; // 'global' ou l'email d'un commercial (sous-onglet actif de l'onglet Commerce)
-  let achatsDuJourParProduit = {};       // { nom: quantiteTotale }
+  let achatsDuJourParProduit = {};       // { nom: quantiteTotale } — livraison arrivée aujourd'hui (dateLivraisonPrevue||date === AUJOURD_HUI)
+  let achatsAVenirParProduit = {};       // { nom: quantiteTotale } — livraison future (dateLivraisonPrevue > AUJOURD_HUI), pour le "stock dispo J+"
   let clotureAujourdhui = null;          // { heure, responsable } si la journée a déjà été clôturée — voir clotures/{date}
   let commerceDocsAujourdhui = [];       // cache brut des documents commerce du jour (avant filtre clôture), pour recalculer sans refaire une requête
-  let achatsDocsAujourdhui = [];         // cache brut des documents achats du jour (avant filtre clôture), pour recalculer sans refaire une requête
+  // Deux caches bruts d'achats à fusionner (un même achat peut apparaître dans les deux,
+  // dédoublonné par id lors du recalcul) : les achats COMMANDÉS aujourd'hui (repli pour
+  // ceux sans date de livraison prévue) et ceux dont la LIVRAISON est prévue aujourd'hui
+  // ou plus tard (peu importe le jour de commande — un achat "livraison différée" commandé
+  // hier ne doit pas disparaître du jour au lendemain, voir CLAUDE.md).
+  let achatsDocsAujourdhui = [];         // where('date','==',AUJOURD_HUI)
+  let achatsDocsLivraison = [];          // where('dateLivraisonPrevue','>=',AUJOURD_HUI)
   let achatsDuJourDetailParProduit = {}; // { nom: [ { achatId, fournisseur, quantite, prixAchat, heureDepart, transportType, transporteurNom } ] }
+  let achatsAVenirDetailParProduit = {}; // même forme, pour les livraisons futures (stock dispo J+)
   let achats = [];                 // tous les achats chargés (récap) : [{ id, date, fournisseur, responsable, horodatage, lignes: [...] }]
   let achatsCharges = false;
   let achatEnEditionId = null;
@@ -876,7 +891,7 @@
     t._timer = setTimeout(function () { t.classList.remove('show'); }, 1600);
   }
 
-  function peutSaisirProduction() { return roleCourant === 'production' || roleCourant === 'admin'; }
+  function peutSaisirProduction() { return roleCourant === 'production' || roleCourant === 'commerce' || roleCourant === 'admin'; }
 
   // Permet de taper directement une addition (ex. "12+8+5") dans un champ de saisie de
   // stock : additionne les nombres séparés par "+" plutôt que d'exiger un calcul mental
@@ -992,26 +1007,45 @@
     commerceDuJourDetailParProduit = details;
   }
 
-  // Même principe que recalculerCommerceDuJour(), pour les achats du jour.
+  // Fusionne les deux caches bruts d'achats (par id, un même achat peut être présent
+  // dans les deux) puis répartit chaque ligne entre "arrivée aujourd'hui" (compte dans
+  // le stock réel/disponible du jour) et "arrivée future" (compte seulement dans le
+  // stock dispo J+) selon sa date d'arrivée effective (dateLivraisonPrevue si
+  // renseignée, sinon date de commande). Un achat dont l'arrivée est déjà passée sans
+  // avoir été explicitement clôturé (cas limite) est traité comme arrivé aujourd'hui.
   function recalculerAchatsDuJour() {
-    const totaux = {};
-    const details = {};
-    achatsDocsAujourdhui.forEach(function (d) {
+    const combines = {};
+    achatsDocsAujourdhui.forEach(function (d) { combines[d.id] = d; });
+    achatsDocsLivraison.forEach(function (d) { combines[d.id] = d; });
+
+    const totauxJour = {}, detailsJour = {};
+    const totauxFuturs = {}, detailsFuturs = {};
+
+    Object.keys(combines).forEach(function (id) {
+      const d = combines[id];
       if (clotureAujourdhui && clotureAujourdhui.heure && d.horodatageMillis !== null &&
         d.horodatageMillis <= clotureAujourdhui.heure.toMillis()) return;
+      const arrivee = d.dateLivraisonPrevue || d.date;
+      const futur = arrivee > AUJOURD_HUI;
+      const totaux = futur ? totauxFuturs : totauxJour;
+      const details = futur ? detailsFuturs : detailsJour;
       d.lignes.forEach(function (ligne) {
         totaux[ligne.produit] = (totaux[ligne.produit] || 0) + (Number(ligne.quantite) || 0);
         if (!details[ligne.produit]) details[ligne.produit] = [];
         details[ligne.produit].push({
           achatId: d.id, fournisseur: d.fournisseur, quantite: ligne.quantite,
           prixAchat: ligne.prixAchat, heureDepart: ligne.heureDepart,
+          dateLivraisonPrevue: d.dateLivraisonPrevue,
           transportType: ligne.transportType, transporteurNom: ligne.transporteurNom,
           responsable: d.responsable
         });
       });
     });
-    achatsDuJourParProduit = totaux;
-    achatsDuJourDetailParProduit = details;
+
+    achatsDuJourParProduit = totauxJour;
+    achatsDuJourDetailParProduit = detailsJour;
+    achatsAVenirParProduit = totauxFuturs;
+    achatsAVenirDetailParProduit = detailsFuturs;
   }
 
   // ============================================================
@@ -1155,13 +1189,49 @@
       })
     );
 
+    // Produits qu'un commercial a choisi de masquer dans son propre sous-onglet
+    // Commerce (ex. une référence qu'il ne vend jamais) — n'affecte ni les autres
+    // commerciaux ni le sous-onglet Global.
+    desabonnements.push(
+      db.collection('preferencesCommerce').onSnapshot(function (qs) {
+        const out = {};
+        qs.forEach(function (doc) {
+          const d = doc.data();
+          if (d.email) out[d.email] = d;
+        });
+        preferencesCommerceParEmail = out;
+        if (vueActive === 'commerce') rendreCommerce();
+      })
+    );
+
     desabonnements.push(
       db.collection('achats').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
         achatsDocsAujourdhui = [];
         qs.forEach(function (doc) {
           const d = doc.data();
           achatsDocsAujourdhui.push({
-            id: doc.id, fournisseur: d.fournisseur, responsable: d.responsable,
+            id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
+            fournisseur: d.fournisseur, responsable: d.responsable,
+            horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null,
+            lignes: d.lignes || []
+          });
+        });
+        recalculerAchatsDuJour();
+        rendreVueActive();
+      })
+    );
+
+    // Livraisons prévues aujourd'hui ou plus tard, quel que soit le jour de commande —
+    // un achat "livraison différée" commandé un autre jour ne doit pas disparaître du
+    // calcul du stock tant qu'il n'est pas arrivé (voir recalculerAchatsDuJour()).
+    desabonnements.push(
+      db.collection('achats').where('dateLivraisonPrevue', '>=', AUJOURD_HUI).onSnapshot(function (qs) {
+        achatsDocsLivraison = [];
+        qs.forEach(function (doc) {
+          const d = doc.data();
+          achatsDocsLivraison.push({
+            id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
+            fournisseur: d.fournisseur, responsable: d.responsable,
             horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null,
             lignes: d.lignes || []
           });
@@ -1220,7 +1290,7 @@
           const d = doc.data();
           out.push({
             id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
-            fournisseur: d.fournisseur, responsable: d.responsable,
+            fournisseur: d.fournisseur, responsable: d.responsable, commentaire: d.commentaire || '',
             horodatage: d.horodatage && d.horodatage.toDate ? d.horodatage.toDate() : null,
             lignes: d.lignes || []
           });
@@ -1850,20 +1920,39 @@
   // produit sans poids unitaire (ex. conditionnement au calibre/à la pièce) n'entre
   // simplement pas dans ce total. Renvoie les familles dont le plafond configuré
   // (referentiels.plafondsVrac) est atteint ou dépassé.
+  // L'alerte plafond vrac se déclenche sur deux conditions à la fois : le poids vendu
+  // aujourd'hui pour la famille atteint le plafond configuré, ET ce poids vendu dépasse
+  // aussi le "stock réellement disponible" de la famille — stock initial + achats du
+  // jour, AVANT déduction des ventes (donc pas le champ "stock disponible" déjà utilisé
+  // ailleurs, qui lui déduit ventes et réservations). Un nouvel achat peut donc
+  // désactiver une alerte en augmentant ce qui est disponible à vendre, même si le
+  // volume vendu reste au-dessus du plafond nominal.
   function alertesVracDuJour() {
-    const poidsParFamille = {};
+    const poidsVenduParFamille = {};
+    const poidsApproParFamille = {};
     produits.forEach(function (p) {
       if (!p.famille) return;
       const poidsUnitaire = poidsUnitaireDepuisConditionnement(p.conditionnement);
       if (poidsUnitaire === null) return;
       const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
-      if (!ventes) return;
-      poidsParFamille[p.famille] = (poidsParFamille[p.famille] || 0) + ventes * poidsUnitaire;
+      const cache = dernierStockParProduit[p.nom] || {};
+      const stockInitial = typeof cache.valeur === 'number' ? cache.valeur : 0;
+      const achatsAujourdhui = achatsDuJourParProduit[p.nom] || 0;
+      if (ventes) poidsVenduParFamille[p.famille] = (poidsVenduParFamille[p.famille] || 0) + ventes * poidsUnitaire;
+      const appro = stockInitial + achatsAujourdhui;
+      if (appro) poidsApproParFamille[p.famille] = (poidsApproParFamille[p.famille] || 0) + appro * poidsUnitaire;
     });
     const plafonds = referentiels.plafondsVrac || {};
     return Object.keys(plafonds).filter(function (famille) { return typeof plafonds[famille] === 'number'; })
-      .map(function (famille) { return { famille: famille, poids: poidsParFamille[famille] || 0, plafond: plafonds[famille] }; })
-      .filter(function (a) { return a.poids >= a.plafond; })
+      .map(function (famille) {
+        return {
+          famille: famille,
+          poids: poidsVenduParFamille[famille] || 0,
+          appro: poidsApproParFamille[famille] || 0,
+          plafond: plafonds[famille]
+        };
+      })
+      .filter(function (a) { return a.poids >= a.plafond && a.poids > a.appro; })
       .sort(function (a, b) { return a.famille.localeCompare(b.famille); });
   }
 
@@ -1872,9 +1961,61 @@
     const alertes = alertesVracDuJour();
     conteneur.style.display = alertes.length ? '' : 'none';
     conteneur.innerHTML = alertes.map(function (a) {
-      return '<div class="alerte-vrac">⚠️ ' + a.famille + ' — plafond vrac dépassé : ' +
-        a.poids.toLocaleString('fr-FR') + ' kg vendus aujourd\'hui (limite ' + a.plafond.toLocaleString('fr-FR') + ' kg).</div>';
+      return '<div class="alerte-vrac">⚠️ ' + a.famille + ' — plafond vrac dépassé et stock insuffisant pour couvrir les ventes : ' +
+        a.poids.toLocaleString('fr-FR') + ' kg vendus aujourd\'hui (limite ' + a.plafond.toLocaleString('fr-FR') +
+        ' kg) pour ' + a.appro.toLocaleString('fr-FR') + ' kg réellement disponibles (stock initial + achats).</div>';
     }).join('');
+  }
+
+  function basculerPanneauProduitsAffiches() {
+    panneauProduitsAffichesOuvert = !panneauProduitsAffichesOuvert;
+    rendreCommerce();
+  }
+  window.basculerPanneauProduitsAffiches = basculerPanneauProduitsAffiches;
+
+  // Ajoute/retire "nom" de la liste des produits masqués du commercial "commerceSousOnglet"
+  // dans son propre sous-onglet — n'affecte ni les autres commerciaux, ni le sous-onglet
+  // Global, ni le produit lui-même (juste une préférence d'affichage personnelle).
+  function basculerProduitMasque(nom, versVisible) {
+    const email = commerceSousOnglet;
+    const ref = db.collection('preferencesCommerce').doc(slugify(email));
+    const operation = versVisible
+      ? firebase.firestore.FieldValue.arrayRemove(nom)
+      : firebase.firestore.FieldValue.arrayUnion(nom);
+    ref.set({ email: email, produitsMasques: operation }, { merge: true })
+      .catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.basculerProduitMasque = basculerProduitMasque;
+
+  function rendrePanneauProduitsAffiches(produitsMasques, peutPersonnaliserIci) {
+    const conteneur = document.getElementById('panneauProduitsAffiches');
+    const visible = peutPersonnaliserIci && panneauProduitsAffichesOuvert;
+    conteneur.style.display = visible ? '' : 'none';
+    if (!visible) return;
+    conteneur.innerHTML = '';
+    conteneur.className = 'carte-referentiel';
+    const info = document.createElement('p');
+    info.className = 'sous-titre-section';
+    info.style.margin = '0 0 8px 0';
+    info.textContent = "Décochez un produit que vous ne vendez jamais pour ne plus l'afficher dans votre sous-onglet (les autres commerciaux et le sous-onglet Global ne sont pas concernés).";
+    conteneur.appendChild(info);
+    produits.slice().sort(function (a, b) { return a.nom.localeCompare(b.nom); }).forEach(function (p) {
+      if (!p.actif) return;
+      const ligne = document.createElement('label');
+      ligne.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px;';
+      const coche = document.createElement('input');
+      coche.type = 'checkbox';
+      const masque = produitsMasques.indexOf(p.nom) !== -1;
+      coche.checked = !masque;
+      // basculerProduitMasque(nom, versVisible) : cocher (rendre visible) retire nom
+      // de la liste des masqués (arrayRemove) ; décocher (masquer) l'y ajoute (arrayUnion).
+      coche.addEventListener('change', function () { basculerProduitMasque(p.nom, coche.checked); });
+      ligne.appendChild(coche);
+      const texte = document.createElement('span');
+      texte.textContent = p.nom;
+      ligne.appendChild(texte);
+      conteneur.appendChild(ligne);
+    });
   }
 
   function rendreCommerce() {
@@ -1886,9 +2027,21 @@
     document.getElementById('entierVentesLabel').textContent = estGlobal ? 'Ventes (total)' : 'Mes ventes';
     document.getElementById('entierReservationsLabel').textContent = estGlobal ? 'Réservations (total)' : 'Mes réservations';
 
+    // Un commercial peut masquer des produits qu'il ne vend jamais dans son PROPRE
+    // sous-onglet (préférence d'affichage personnelle) — le sous-onglet Global reste
+    // toujours complet, tous produits actifs confondus, pour garder une vue d'ensemble.
+    const produitsMasques = (!estGlobal && preferencesCommerceParEmail[commerceSousOnglet])
+      ? (preferencesCommerceParEmail[commerceSousOnglet].produitsMasques || []) : [];
+    const peutPersonnaliserIci = !estGlobal && peutGererCommerce() && !!utilisateurCourant &&
+      (estAdmin() || utilisateurCourant.email === commerceSousOnglet);
+    document.getElementById('boutonProduitsAffiches').style.display = peutPersonnaliserIci ? '' : 'none';
+
     const q = (document.getElementById('filtreCommerce').value || '').toLowerCase();
-    const actifs = produits.filter(function (p) { return p.actif && p.nom.toLowerCase().indexOf(q) !== -1; });
+    const actifs = produits.filter(function (p) {
+      return p.actif && p.nom.toLowerCase().indexOf(q) !== -1 && produitsMasques.indexOf(p.nom) === -1;
+    });
     const corps = document.getElementById('corpsCommerce');
+    rendrePanneauProduitsAffiches(produitsMasques, peutPersonnaliserIci);
 
     // Cette fonction est redéclenchée par tous les listeners Firestore (produits,
     // dernierStock, saisieStock, achats, commerce, users), y compris pendant qu'un
@@ -1918,7 +2071,7 @@
       const trTitreFamille = document.createElement('tr');
       trTitreFamille.className = 'entete-groupe';
       const tdTitreFamille = document.createElement('td');
-      tdTitreFamille.colSpan = 9;
+      tdTitreFamille.colSpan = 10;
       tdTitreFamille.textContent = famille;
       trTitreFamille.appendChild(tdTitreFamille);
       corps.appendChild(trTitreFamille);
@@ -2022,6 +2175,17 @@
       tdDisponible.dataset.label = 'Stock disponible';
       tdDisponible.textContent = stockDisponible;
 
+      // Stock dispo J+ : ce qui sera disponible une fois les livraisons futures déjà
+      // commandées (dateLivraisonPrevue > aujourd'hui) arrivées — ne change rien au
+      // stock dispo du jour, juste une anticipation pour ne pas décider à l'aveugle.
+      const achatsAVenir = achatsAVenirParProduit[p.nom] || 0;
+      const stockDisponibleJPlus = stockDisponible + achatsAVenir;
+      const tdDisponibleJPlus = document.createElement('td');
+      tdDisponibleJPlus.className = 'centre mono';
+      tdDisponibleJPlus.dataset.label = 'Stock dispo J+';
+      tdDisponibleJPlus.textContent = achatsAVenir ? stockDisponibleJPlus : '—';
+      if (achatsAVenir) tdDisponibleJPlus.title = '+' + achatsAVenir + ' à venir (livraison future déjà commandée)';
+
       function champCommerce(valeur, nomChamp, libelle) {
         const td = document.createElement('td');
         td.className = 'centre';
@@ -2080,7 +2244,7 @@
       trDetail.className = 'ligne-detail';
       trDetail.style.display = 'none';
       const tdDetailContenu = document.createElement('td');
-      tdDetailContenu.colSpan = 9;
+      tdDetailContenu.colSpan = 10;
       tdDetailContenu.style.cssText = 'background:var(--bg); font-size:13px; padding:14px 20px;';
       trDetail.appendChild(tdDetailContenu);
 
@@ -2107,7 +2271,7 @@
           tableAchats.innerHTML = '<thead><tr>' +
             '<th>Fournisseur</th><th class="centre">Quantité</th>' +
             (avecPrix ? '<th class="centre">Prix d\'achat</th>' : '') +
-            '<th>Heure de départ</th><th>Transport</th><th>Commercial</th>' +
+            '<th>Heure d\'arrivée prévue</th><th>Transport</th><th>Commercial</th>' +
             '</tr></thead>';
           const corpsAchats = document.createElement('tbody');
           detailAchats.forEach(function (d) {
@@ -2125,7 +2289,7 @@
               trLigne.appendChild(tdPrixLigne);
             }
             const tdHeure = document.createElement('td');
-            tdHeure.dataset.label = 'Heure de départ'; tdHeure.textContent = d.heureDepart || '—';
+            tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = d.heureDepart || '—';
             const tdTransport = document.createElement('td');
             tdTransport.dataset.label = 'Transport'; tdTransport.textContent = transport;
             const tdCommercial = document.createElement('td');
@@ -2192,6 +2356,7 @@
       tr.appendChild(tdReservations);
       tr.appendChild(tdReel);
       tr.appendChild(tdDisponible);
+      tr.appendChild(tdDisponibleJPlus);
       tr.appendChild(tdDetail);
       corps.appendChild(tr);
       corps.appendChild(trDetail);
@@ -2212,7 +2377,7 @@
     }
 
     rendreValidationStock();
-    rendreClotureJournee();
+    rendreIntegrationCloture();
   }
   window.rendreCommerce = rendreCommerce;
 
@@ -2231,6 +2396,11 @@
     if (s.stockBasOperateur) parties.push('Bas : ' + s.stockBasOperateur + (s.stockBasHeure ? ' (' + s.stockBasHeure + ')' : ''));
     return s.date + ' — ' + (parties.length ? parties.join(' · ') : 'Attribution inconnue');
   }
+
+  // Mémorise, par id de saisieStock en attente, si le commercial souhaite l'intégrer
+  // au prochain clic sur « Intégrer les stocks et clôturer la journée de la veille »
+  // — cochée par défaut (absence de clé = coché), décocher laisse la ligne en attente.
+  let selectionIntegrationStock = {};
 
   function rendreValidationStock() {
     const carte = document.getElementById('carteValidationStock');
@@ -2253,20 +2423,21 @@
       const trTitre = document.createElement('tr');
       trTitre.className = 'entete-groupe';
       const tdTitre = document.createElement('td');
-      tdTitre.colSpan = 6;
+      tdTitre.colSpan = 7;
       tdTitre.textContent = libelleSessionValidation(groupe[0]);
-      const tdBoutonGroupe = document.createElement('td');
-      const btnGroupe = document.createElement('button');
-      btnGroupe.className = 'bouton-secondaire';
-      btnGroupe.textContent = 'Valider cette session';
-      btnGroupe.onclick = function () { validerStock(groupe); };
-      tdBoutonGroupe.appendChild(btnGroupe);
       trTitre.appendChild(tdTitre);
-      trTitre.appendChild(tdBoutonGroupe);
       corps.appendChild(trTitre);
 
       groupe.slice().sort(function (a, b) { return a.produit.localeCompare(b.produit); }).forEach(function (s) {
         const tr = document.createElement('tr');
+        const tdCoche = document.createElement('td');
+        tdCoche.className = 'centre';
+        const coche = document.createElement('input');
+        coche.type = 'checkbox';
+        coche.checked = selectionIntegrationStock[s.id] !== false;
+        coche.title = 'Intégrer ce stock à la prochaine clôture';
+        coche.addEventListener('change', function () { selectionIntegrationStock[s.id] = coche.checked; });
+        tdCoche.appendChild(coche);
         const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.dataset.label = 'Date'; tdDate.textContent = s.date;
         const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = s.produit;
         const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono'; tdHaut.dataset.label = 'Haut';
@@ -2278,23 +2449,15 @@
         const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.dataset.label = 'Total'; tdTotal.textContent = s.stockSoir;
         const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = s.responsable;
 
-        const tdAction = document.createElement('td');
-        tdAction.className = 'centre';
-        const btn = document.createElement('button');
-        btn.className = 'bouton-secondaire';
-        btn.textContent = 'Valider et importer';
-        btn.onclick = function () { validerStock([s]); };
-        tdAction.appendChild(btn);
-
-        tr.appendChild(tdDate); tr.appendChild(tdProduit); tr.appendChild(tdHaut);
-        tr.appendChild(tdBas); tr.appendChild(tdTotal); tr.appendChild(tdResponsable); tr.appendChild(tdAction);
+        tr.appendChild(tdCoche); tr.appendChild(tdDate); tr.appendChild(tdProduit); tr.appendChild(tdHaut);
+        tr.appendChild(tdBas); tr.appendChild(tdTotal); tr.appendChild(tdResponsable);
         corps.appendChild(tr);
       });
     });
   }
 
-  function validerStock(entrees) {
-    if (!entrees.length) { afficherToast('Rien à valider'); return; }
+  function validerStock(entrees, silencieux) {
+    if (!entrees.length) { if (!silencieux) afficherToast('Rien à valider'); return Promise.resolve(); }
     // Si plusieurs entrées non validées existent pour le même produit (dates différentes),
     // ne garder que la plus récente pour le cache — l'ordre de la requête Firestore n'étant
     // pas garanti, itérer entrees dans l'ordre reçu écraserait potentiellement une valeur
@@ -2312,19 +2475,19 @@
     const lot = db.batch();
     lot.set(db.collection('dernierStock').doc('main'), majCache, { merge: true });
     entrees.forEach(function (s) { lot.update(db.collection('saisieStock').doc(s.id), { importe: true }); });
-    lot.commit().then(function () {
-      entrees.forEach(function (s) { enregistrerTransaction('stock_importe', s.produit, s.stockSoir); });
-      afficherToast((entrees.length > 1 ? entrees.length + ' produits importés' : entrees[0].produit + ' importé') + ' dans le stock commerce');
-    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+    return lot.commit().then(function () {
+      entrees.forEach(function (s) {
+        enregistrerTransaction('stock_importe', s.produit, s.stockSoir);
+        delete selectionIntegrationStock[s.id];
+      });
+      if (!silencieux) {
+        afficherToast((entrees.length > 1 ? entrees.length + ' produits importés' : entrees[0].produit + ' importé') + ' dans le stock commerce');
+      }
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); throw e; });
   }
 
-  function validerToutLeStock() {
-    validerStock(saisieEnAttente);
-  }
-  window.validerToutLeStock = validerToutLeStock;
-
-  function rendreClotureJournee() {
-    const carte = document.getElementById('carteClotureJournee');
+  function rendreIntegrationCloture() {
+    const carte = document.getElementById('carteIntegrationCloture');
     const peutCloturer = peutGererCommerce();
     carte.style.display = peutCloturer ? '' : 'none';
     if (!peutCloturer) return;
@@ -2340,28 +2503,43 @@
     }
   }
 
-  // Remet à zéro (pour le calcul du stock réel uniquement — rien n'est supprimé) les
-  // achats et ventes/réservations du jour déjà comptés, en enregistrant un seuil de
-  // temps (clotures/{date}) : tout ce qui a été saisi AVANT ce seuil cesse de compter
-  // dans le stock réel/disponible, car déjà reflété dans le stock du soir tout juste
-  // validé (qui devient le nouveau stock initial) — sans quoi il serait compté deux fois.
-  function cloturerJournee() {
+  // Remplace les anciens boutons séparés "Tout valider et importer" / "Clôturer la
+  // journée" par un seul geste quotidien : intègre dans dernierStock les lignes de
+  // stock du soir cochées dans "Stock du soir à valider" (le commercial choisit
+  // lesquelles — une ligne décochée reste en attente pour un prochain clic), puis
+  // clôture la journée de la veille. La clôture reste non destructive : elle pose
+  // seulement un seuil de temps (clotures/{date}) à partir duquel les achats et
+  // ventes/réservations déjà comptés dans le stock réel repartent de zéro pour la
+  // nouvelle journée — rien n'est supprimé, tout (dernier stock intégré, achats, prix
+  // d'achat, ventes/réservations) reste consultable dans ses onglets, dans
+  // l'Historique et dans la sauvegarde Excel générée automatiquement avant clôture.
+  function integrerStocksEtCloturerJourneeVeille() {
     if (!peutGererCommerce()) return;
+    const aIntegrer = saisieEnAttente.filter(function (s) { return selectionIntegrationStock[s.id] !== false; });
+    if (saisieEnAttente.length && !aIntegrer.length) {
+      if (!confirm("Aucune ligne n'est cochée dans « Stock du soir à valider » : aucun stock ne sera intégré. Clôturer quand même la journée de la veille ?")) return;
+    }
     const message = clotureAujourdhui
       ? "La journée a déjà été clôturée aujourd'hui. La reclôturer va aussi remettre à zéro les achats/ventes/réservations enregistrés depuis. Continuer ?"
-      : "Clôturer la journée maintenant ?\n\nLes achats et ventes/réservations déjà comptés dans le stock réel seront remis à zéro pour le reste de la journée. Rien n'est supprimé : ils restent consultables dans les onglets Achats/Historique. Une sauvegarde Excel va être générée d'abord.";
+      : (aIntegrer.length ? 'Intégrer ' + aIntegrer.length + ' stock(s) coché(s) et clôturer' : 'Clôturer') +
+        " la journée de la veille maintenant ?\n\nLes achats et ventes/réservations déjà comptés dans le stock réel seront remis à zéro pour la nouvelle journée. Rien n'est supprimé : ils restent consultables dans les onglets Achats/Historique. Une sauvegarde Excel va être générée d'abord.";
     if (!confirm(message)) return;
+
     exporterSauvegardeExcel();
-    db.collection('clotures').doc(AUJOURD_HUI).set({
-      date: AUJOURD_HUI,
-      heure: firebase.firestore.FieldValue.serverTimestamp(),
-      responsable: utilisateurCourant.email
-    }).then(function () {
-      enregistrerTransaction('cloture_journee', '—', null);
-      afficherToast('Journée clôturée');
+
+    const cloturer = function () {
+      return db.collection('clotures').doc(AUJOURD_HUI).set({
+        date: AUJOURD_HUI,
+        heure: firebase.firestore.FieldValue.serverTimestamp(),
+        responsable: utilisateurCourant.email
+      }).then(function () { enregistrerTransaction('cloture_journee', '—', null); });
+    };
+
+    Promise.all([validerStock(aIntegrer, true), cloturer()]).then(function () {
+      afficherToast(aIntegrer.length ? 'Stocks intégrés et journée clôturée' : 'Journée clôturée');
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
-  window.cloturerJournee = cloturerJournee;
+  window.integrerStocksEtCloturerJourneeVeille = integrerStocksEtCloturerJourneeVeille;
 
   function rendrePrixAchat() {
     const q = (document.getElementById('filtrePrixAchat').value || '').toLowerCase();
@@ -2447,6 +2625,7 @@
     lignesAchatEnCours = [ligneAchatVide()];
     document.getElementById('achatDate').value = AUJOURD_HUI;
     document.getElementById('achatDateLivraison').value = '';
+    document.getElementById('achatCommentaire').value = '';
     document.getElementById('boutonAnnulerAchat').style.display = 'none';
     document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
     document.getElementById('achatFournisseur').value = '';
@@ -2465,6 +2644,7 @@
     if (produitPreselectionne) lignesAchatEnCours[0].produit = produitPreselectionne;
     document.getElementById('achatDate').value = AUJOURD_HUI;
     document.getElementById('achatDateLivraison').value = '';
+    document.getElementById('achatCommentaire').value = '';
     document.getElementById('boutonAnnulerAchat').style.display = 'none';
     document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
     document.getElementById('achatFournisseur').value = '';
@@ -2485,6 +2665,7 @@
     if (!lignesAchatEnCours.length) lignesAchatEnCours = [ligneAchatVide()];
     document.getElementById('achatDate').value = a.date;
     document.getElementById('achatDateLivraison').value = a.dateLivraisonPrevue || '';
+    document.getElementById('achatCommentaire').value = a.commentaire || '';
     document.getElementById('boutonAnnulerAchat').style.display = '';
     document.getElementById('boutonEnregistrerAchat').textContent = 'Enregistrer les modifications';
     rendreFormulaireAchat();
@@ -2506,8 +2687,13 @@
     const fournisseur = selectFournisseur.value;
     const date = document.getElementById('achatDate').value || AUJOURD_HUI;
     const dateLivraisonPrevue = document.getElementById('achatDateLivraison').value || null;
+    const commentaire = document.getElementById('achatCommentaire').value.trim();
     if (!fournisseur) {
       afficherToast('Choisissez un fournisseur');
+      return;
+    }
+    if (!dateLivraisonPrevue) {
+      afficherToast('La date de livraison prévue est obligatoire');
       return;
     }
     const lignesValides = lignesAchatEnCours.filter(function (l) { return l.produit && l.quantite !== '' && l.quantite !== null && typeof l.quantite !== 'undefined'; });
@@ -2534,6 +2720,7 @@
       date: date,
       dateLivraisonPrevue: dateLivraisonPrevue,
       fournisseur: fournisseur,
+      commentaire: commentaire,
       responsable: utilisateurCourant.email,
       horodatage: firebase.firestore.FieldValue.serverTimestamp(),
       lignes: lignes
@@ -2700,7 +2887,7 @@
       rangee.appendChild(bloc('Produit', selectProduit));
       rangee.appendChild(bloc('Quantité', inputQuantite));
       rangee.appendChild(bloc("Prix d'achat", inputPrix));
-      rangee.appendChild(bloc('Heure de départ', inputHeure));
+      rangee.appendChild(bloc("Heure d'arrivée prévue", inputHeure));
       rangee.appendChild(blocTransport);
       rangee.appendChild(btnRetirer);
       corps.appendChild(rangee);
@@ -2748,12 +2935,13 @@
       const tdFournisseur = document.createElement('td'); tdFournisseur.dataset.label = 'Fournisseur'; tdFournisseur.textContent = a.fournisseur;
       const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
       const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = l.quantite;
-      const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = 'Heure de départ'; tdHeure.textContent = l.heureDepart || '—';
+      const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = l.heureDepart || '—';
       const tdLivraison = document.createElement('td'); tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
       const tdTransport = document.createElement('td');
       tdTransport.dataset.label = 'Transport';
       tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
       const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
+      const tdCommentaire = document.createElement('td'); tdCommentaire.dataset.label = 'Commentaire'; tdCommentaire.textContent = a.commentaire || '—';
 
       const tdActions = document.createElement('td');
       tdActions.className = 'centre';
@@ -2785,7 +2973,7 @@
       }
       tr.appendChild(tdHeure);
       tr.appendChild(tdLivraison);
-      tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdActions);
+      tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdCommentaire); tr.appendChild(tdActions);
       corps.appendChild(tr);
     });
   }
@@ -2806,7 +2994,7 @@
     html += '<table><thead><tr>' +
       '<th>Date</th><th>Fournisseur</th><th>Produit</th><th>Quantité</th>' +
       (avecPrix ? '<th>Prix d\'achat</th>' : '') +
-      '<th>Heure de départ</th><th>Livraison prévue</th><th>Transport</th><th>Responsable</th>' +
+      '<th>Heure d\'arrivée prévue</th><th>Livraison prévue</th><th>Transport</th><th>Responsable</th><th>Commentaire</th>' +
       '</tr></thead><tbody>';
     filtrees.forEach(function (item) {
       const a = item.achat, l = item.ligne;
@@ -2816,7 +3004,7 @@
         '<td>' + l.quantite + '</td>' + (avecPrix ? '<td>' + prix + '</td>' : '') +
         '<td>' + (l.heureDepart || '—') + '</td>' +
         '<td>' + (a.dateLivraisonPrevue || '—') + '</td>' +
-        '<td>' + transport + '</td><td>' + a.responsable + '</td></tr>';
+        '<td>' + transport + '</td><td>' + a.responsable + '</td><td>' + (a.commentaire || '—') + '</td></tr>';
     });
     html += '</tbody></table>';
     document.getElementById('zoneImpression').innerHTML = html;
@@ -2853,13 +3041,14 @@
           tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
           tr.appendChild(tdPrix);
         }
-        const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = 'Heure de départ'; tdHeure.textContent = l.heureDepart || '—';
+        const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = l.heureDepart || '—';
         const tdLivraison = document.createElement('td'); tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
         const tdTransport = document.createElement('td');
         tdTransport.dataset.label = 'Transport';
         tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
         const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
-        tr.appendChild(tdHeure); tr.appendChild(tdLivraison); tr.appendChild(tdTransport); tr.appendChild(tdResponsable);
+        const tdCommentaire = document.createElement('td'); tdCommentaire.dataset.label = 'Commentaire'; tdCommentaire.textContent = a.commentaire || '—';
+        tr.appendChild(tdHeure); tr.appendChild(tdLivraison); tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdCommentaire);
         corps.appendChild(tr);
       });
       document.getElementById('resultatConsultationAchats').style.display = '';
@@ -2977,12 +3166,12 @@
         feuilleVentes.push([d.date, d.produit, libelleCommercial(d.commercial), d.ventes, d.reservations, d.responsable]);
       });
 
-      const feuilleAchats = [['Date', 'Fournisseur', 'Produit', 'Quantité', "Prix d'achat", 'Heure de départ', 'Transport', 'Responsable']];
+      const feuilleAchats = [['Date', 'Fournisseur', 'Produit', 'Quantité', "Prix d'achat", "Heure d'arrivée prévue", 'Transport', 'Responsable', 'Commentaire']];
       achatsSnap.forEach(function (doc) {
         const d = doc.data();
         (d.lignes || []).forEach(function (l) {
           const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '');
-          feuilleAchats.push([d.date, d.fournisseur, l.produit, l.quantite, l.prixAchat, l.heureDepart, transport, d.responsable]);
+          feuilleAchats.push([d.date, d.fournisseur, l.produit, l.quantite, l.prixAchat, l.heureDepart, transport, d.responsable, d.commentaire || '']);
         });
       });
 
@@ -3013,7 +3202,6 @@
     rendreSelectsProduits();
     const peutGerer = peutGererCommerce();
     document.getElementById('ligneAjoutProduit').style.display = peutGerer ? '' : 'none';
-    document.getElementById('blocSupprimerTousProduits').style.display = estAdmin() ? '' : 'none';
     document.getElementById('blocListesReference').style.display = peutGerer ? '' : 'none';
     if (peutGerer) {
       rendreListeFamilles();
@@ -3950,20 +4138,6 @@
       conteneur.appendChild(bloc);
     });
   }
-
-  function supprimerTousLesProduits() {
-    if (!produits.length) {
-      afficherToast('La liste est déjà vide');
-      return;
-    }
-    if (!confirm('Supprimer définitivement les ' + produits.length + ' produits de la liste ? Cette action est irréversible.')) return;
-    const lot = db.batch();
-    produits.forEach(function (p) { lot.delete(db.collection('produits').doc(p.id)); });
-    lot.commit().then(function () {
-      afficherToast('Liste de produits vidée');
-    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
-  }
-  window.supprimerTousLesProduits = supprimerTousLesProduits;
 
 })();
 </script>
