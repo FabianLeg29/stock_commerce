@@ -1399,13 +1399,70 @@
     }, 800);
   }
 
+  // Valeurs déjà enregistrées aujourd'hui pour un côté donné, au format attendu par
+  // saisieSessionEnCours ({ [produit]: { haut: '...' } } ou { bas: '...' }) — factorisé
+  // pour être utilisé aussi bien par "Modifier le stock enregistré" (un seul côté) que
+  // par le contrôle d'écrasement de demarrerStockSoir() (potentiellement les deux côtés
+  // en mode "Haut + Bas").
+  function valeursExistantesPourCote(cote) {
+    const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
+    const valeurs = {};
+    produits.filter(function (p) { return p.actif; }).forEach(function (p) {
+      const s = saisieDuJour[p.nom];
+      if (s && typeof s[champValeur] === 'number') {
+        valeurs[p.nom] = {};
+        valeurs[p.nom][cote] = String(s[champValeur]);
+      }
+    });
+    return valeurs;
+  }
+
+  function fusionnerValeursSessions(a, b) {
+    const fusion = Object.assign({}, a);
+    Object.keys(b).forEach(function (nom) {
+      fusion[nom] = Object.assign({}, fusion[nom] || {}, b[nom]);
+    });
+    return fusion;
+  }
+
+  // Avant de démarrer une session vierge, vérifie si le ou les côtés choisis ont déjà
+  // une saisie enregistrée aujourd'hui (ex. Stock Haut déjà fait à 17:48 par Eric) — un
+  // "Démarrer" sur un côté déjà fait écraserait silencieusement ces valeurs au clic sur
+  // "Terminer" (tout produit non retapé est mis à 0). Prévient l'utilisateur et propose
+  // soit de reprendre le stock existant en modification (pré-rempli), soit de continuer
+  // quand même avec une session vierge en toute connaissance de cause.
   function demarrerStockSoir() {
     const heure = document.getElementById('heureDemarrerStockSoir').value;
     const cote = document.getElementById('coteDemarrerStockSoir').value;
     const operateur = document.getElementById('operateurDemarrerStockSoir').value;
     if (!operateur) { afficherToast('Choisissez un opérateur'); return; }
     if (!heure) { afficherToast("Renseignez l'heure du contrôle"); return; }
-    demarrerSessionStockSoir(cote, operateur, heure, {});
+
+    const cotesAVerifier = cote === 'les2' ? ['haut', 'bas'] : [cote];
+    const existants = cotesAVerifier
+      .map(function (c) { return { cote: c, info: saisieExistanteCote(c) }; })
+      .filter(function (e) { return e.info; });
+
+    if (!existants.length) {
+      demarrerSessionStockSoir(cote, operateur, heure, {});
+      return;
+    }
+
+    const detail = existants.map(function (e) {
+      return libelleCoteStockSoir(e.cote) + ' (enregistré à ' + e.info.heure + ' par ' + e.info.operateur + ')';
+    }).join(' et ');
+
+    if (confirm('Un stock a déjà été enregistré aujourd\'hui pour : ' + detail +
+      '.\n\nCliquez sur OK pour MODIFIER le stock déjà enregistré (recommandé), ou sur Annuler pour choisir une autre action.')) {
+      let valeurs = {};
+      existants.forEach(function (e) { valeurs = fusionnerValeursSessions(valeurs, valeursExistantesPourCote(e.cote)); });
+      demarrerSessionStockSoir(cote, operateur, heure, valeurs);
+      return;
+    }
+
+    if (confirm('Démarrer quand même une nouvelle session vierge pour ce côté ? Les produits non retapés seront écrits à 0 au clic sur « Terminer et enregistrer », écrasant les valeurs déjà enregistrées.')) {
+      demarrerSessionStockSoir(cote, operateur, heure, {});
+    }
   }
   window.demarrerStockSoir = demarrerStockSoir;
 
@@ -1617,16 +1674,7 @@
     if (!peutSaisirProduction()) return;
     const existant = saisieExistanteCote(cote);
     if (!existant) return;
-    const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
-    const valeurs = {};
-    produits.filter(function (p) { return p.actif; }).forEach(function (p) {
-      const s = saisieDuJour[p.nom];
-      if (s && typeof s[champValeur] === 'number') {
-        valeurs[p.nom] = {};
-        valeurs[p.nom][cote] = String(s[champValeur]);
-      }
-    });
-    demarrerSessionStockSoir(cote, existant.operateur, existant.heure, valeurs);
+    demarrerSessionStockSoir(cote, existant.operateur, existant.heure, valeursExistantesPourCote(cote));
   }
   window.modifierStockSoir = modifierStockSoir;
 
