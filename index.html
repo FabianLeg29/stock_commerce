@@ -632,18 +632,15 @@
 
       <h3 class="section-titre">Stock du soir à valider</h3>
       <div id="carteValidationStock">
-        <p class="sous-titre-section">Décochez une ligne pour ne pas encore l'intégrer — elle restera en attente pour un prochain clic sur « Intégrer les stocks et clôturer la journée de la veille » ci-dessous.</p>
+        <p class="sous-titre-section">Chaque ligne représente un stock complet (Haut, Bas, ou Haut + Bas) prêt à intégrer. Décochez-en un pour ne pas encore l'intégrer — il restera en attente pour un prochain clic sur « Intégrer les stocks et clôturer la journée de la veille » ci-dessous. « ▸ Détail » affiche les produits concernés sans les afficher par défaut.</p>
         <div class="carte-tableau">
           <table class="tableau-cartes">
             <thead>
               <tr>
                 <th style="width:40px;"></th>
-                <th>Date</th>
-                <th>Produit</th>
-                <th class="centre">Haut</th>
-                <th class="centre">Bas</th>
-                <th class="centre">Total</th>
-                <th>Responsable</th>
+                <th>Stock</th>
+                <th class="centre">Produits</th>
+                <th style="width:90px;"></th>
               </tr>
             </thead>
             <tbody id="corpsValidationStock"></tbody>
@@ -2445,9 +2442,11 @@
     return s.date + ' — ' + (parties.length ? parties.join(' · ') : 'Attribution inconnue');
   }
 
-  // Mémorise, par id de saisieStock en attente, si le commercial souhaite l'intégrer
-  // au prochain clic sur « Intégrer les stocks et clôturer la journée de la veille »
-  // — cochée par défaut (absence de clé = coché), décocher laisse la ligne en attente.
+  // Mémorise, par clé de session (cleSessionValidation), si le commercial souhaite
+  // intégrer CE STOCK COMPLET (tous ses produits) au prochain clic sur « Intégrer les
+  // stocks et clôturer la journée de la veille » — coché par défaut (absence de clé =
+  // coché), décocher laisse toute la session en attente. Le choix se fait par stock
+  // complet (Haut, Bas, ou Haut + Bas), pas produit par produit.
   let selectionIntegrationStock = {};
 
   function rendreValidationStock() {
@@ -2467,40 +2466,70 @@
     });
 
     Object.keys(groupes).sort().forEach(function (cle) {
-      const groupe = groupes[cle];
-      const trTitre = document.createElement('tr');
-      trTitre.className = 'entete-groupe';
-      const tdTitre = document.createElement('td');
-      tdTitre.colSpan = 7;
-      tdTitre.textContent = libelleSessionValidation(groupe[0]);
-      trTitre.appendChild(tdTitre);
-      corps.appendChild(trTitre);
+      const groupe = groupes[cle].slice().sort(function (a, b) { return a.produit.localeCompare(b.produit); });
 
-      groupe.slice().sort(function (a, b) { return a.produit.localeCompare(b.produit); }).forEach(function (s) {
-        const tr = document.createElement('tr');
-        const tdCoche = document.createElement('td');
-        tdCoche.className = 'centre';
-        const coche = document.createElement('input');
-        coche.type = 'checkbox';
-        coche.checked = selectionIntegrationStock[s.id] !== false;
-        coche.title = 'Intégrer ce stock à la prochaine clôture';
-        coche.addEventListener('change', function () { selectionIntegrationStock[s.id] = coche.checked; });
-        tdCoche.appendChild(coche);
-        const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.dataset.label = 'Date'; tdDate.textContent = s.date;
-        const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = s.produit;
-        const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono'; tdHaut.dataset.label = 'Haut';
-        tdHaut.textContent = (s.stockHaut === null || typeof s.stockHaut === 'undefined') ? '—' : s.stockHaut;
-        if (s.stockHautOperateur) tdHaut.title = s.stockHautOperateur + (s.stockHautHeure ? ' — ' + s.stockHautHeure : '');
-        const tdBas = document.createElement('td'); tdBas.className = 'centre mono'; tdBas.dataset.label = 'Bas';
-        tdBas.textContent = (s.stockBas === null || typeof s.stockBas === 'undefined') ? '—' : s.stockBas;
-        if (s.stockBasOperateur) tdBas.title = s.stockBasOperateur + (s.stockBasHeure ? ' — ' + s.stockBasHeure : '');
-        const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.dataset.label = 'Total'; tdTotal.textContent = s.stockSoir;
-        const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = s.responsable;
+      const tr = document.createElement('tr');
+      const tdCoche = document.createElement('td');
+      tdCoche.className = 'centre';
+      const coche = document.createElement('input');
+      coche.type = 'checkbox';
+      coche.checked = selectionIntegrationStock[cle] !== false;
+      coche.title = 'Intégrer ce stock complet à la prochaine clôture';
+      coche.addEventListener('change', function () { selectionIntegrationStock[cle] = coche.checked; });
+      tdCoche.appendChild(coche);
 
-        tr.appendChild(tdCoche); tr.appendChild(tdDate); tr.appendChild(tdProduit); tr.appendChild(tdHaut);
-        tr.appendChild(tdBas); tr.appendChild(tdTotal); tr.appendChild(tdResponsable);
-        corps.appendChild(tr);
-      });
+      const tdSession = document.createElement('td');
+      tdSession.className = 'produit';
+      tdSession.textContent = libelleSessionValidation(groupe[0]);
+
+      const tdNbProduits = document.createElement('td');
+      tdNbProduits.className = 'centre mono';
+      tdNbProduits.dataset.label = 'Produits';
+      tdNbProduits.textContent = groupe.length;
+
+      const tdDetail = document.createElement('td');
+      tdDetail.className = 'centre';
+      const btnDetail = document.createElement('button');
+      btnDetail.className = 'bouton-secondaire';
+      btnDetail.textContent = '▸ Détail';
+      tdDetail.appendChild(btnDetail);
+
+      tr.appendChild(tdCoche); tr.appendChild(tdSession); tr.appendChild(tdNbProduits); tr.appendChild(tdDetail);
+      corps.appendChild(tr);
+
+      const trDetail = document.createElement('tr');
+      trDetail.className = 'ligne-detail';
+      trDetail.style.display = 'none';
+      const tdDetailContenu = document.createElement('td');
+      tdDetailContenu.colSpan = 4;
+      tdDetailContenu.style.cssText = 'background:var(--bg); font-size:13px; padding:14px 20px;';
+      trDetail.appendChild(tdDetailContenu);
+      corps.appendChild(trDetail);
+
+      btnDetail.onclick = function () {
+        const ouvert = trDetail.style.display !== 'none';
+        trDetail.style.display = ouvert ? 'none' : '';
+        btnDetail.textContent = ouvert ? '▸ Détail' : '▾ Détail';
+        if (ouvert) return;
+        tdDetailContenu.innerHTML = '';
+        const tableDetail = document.createElement('table');
+        tableDetail.className = 'tableau-cartes tableau-detail';
+        tableDetail.innerHTML = '<thead><tr><th>Produit</th><th class="centre">Haut</th><th class="centre">Bas</th><th class="centre">Total</th></tr></thead>';
+        const corpsDetail = document.createElement('tbody');
+        groupe.forEach(function (s) {
+          const trLigne = document.createElement('tr');
+          const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = s.produit;
+          const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono'; tdHaut.dataset.label = 'Haut';
+          tdHaut.textContent = (s.stockHaut === null || typeof s.stockHaut === 'undefined') ? '—' : s.stockHaut;
+          const tdBas = document.createElement('td'); tdBas.className = 'centre mono'; tdBas.dataset.label = 'Bas';
+          tdBas.textContent = (s.stockBas === null || typeof s.stockBas === 'undefined') ? '—' : s.stockBas;
+          const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.dataset.label = 'Total'; tdTotal.textContent = s.stockSoir;
+          trLigne.appendChild(tdProduit); trLigne.appendChild(tdHaut); trLigne.appendChild(tdBas); trLigne.appendChild(tdTotal);
+          corpsDetail.appendChild(trLigne);
+        });
+        tableDetail.appendChild(corpsDetail);
+        tdDetailContenu.appendChild(tableDetail);
+      };
     });
   }
 
@@ -2526,7 +2555,7 @@
     return lot.commit().then(function () {
       entrees.forEach(function (s) {
         enregistrerTransaction('stock_importe', s.produit, s.stockSoir);
-        delete selectionIntegrationStock[s.id];
+        delete selectionIntegrationStock[cleSessionValidation(s)];
       });
       if (!silencieux) {
         afficherToast((entrees.length > 1 ? entrees.length + ' produits importés' : entrees[0].produit + ' importé') + ' dans le stock commerce');
@@ -2563,13 +2592,14 @@
   // l'Historique et dans la sauvegarde Excel générée automatiquement avant clôture.
   function integrerStocksEtCloturerJourneeVeille() {
     if (!peutGererCommerce()) return;
-    const aIntegrer = saisieEnAttente.filter(function (s) { return selectionIntegrationStock[s.id] !== false; });
+    const aIntegrer = saisieEnAttente.filter(function (s) { return selectionIntegrationStock[cleSessionValidation(s)] !== false; });
+    const nbStocksCoches = new Set(aIntegrer.map(cleSessionValidation)).size;
     if (saisieEnAttente.length && !aIntegrer.length) {
-      if (!confirm("Aucune ligne n'est cochée dans « Stock du soir à valider » : aucun stock ne sera intégré. Clôturer quand même la journée de la veille ?")) return;
+      if (!confirm("Aucun stock n'est coché dans « Stock du soir à valider » : aucun stock ne sera intégré. Clôturer quand même la journée de la veille ?")) return;
     }
     const message = clotureAujourdhui
       ? "La journée a déjà été clôturée aujourd'hui. La reclôturer va aussi remettre à zéro les achats/ventes/réservations enregistrés depuis. Continuer ?"
-      : (aIntegrer.length ? 'Intégrer ' + aIntegrer.length + ' stock(s) coché(s) et clôturer' : 'Clôturer') +
+      : (nbStocksCoches ? 'Intégrer ' + nbStocksCoches + ' stock(s) coché(s) et clôturer' : 'Clôturer') +
         " la journée de la veille maintenant ?\n\nLes achats et ventes/réservations déjà comptés dans le stock réel seront remis à zéro pour la nouvelle journée. Rien n'est supprimé : ils restent consultables dans les onglets Achats/Historique. Une sauvegarde Excel va être générée d'abord.";
     if (!confirm(message)) return;
 
@@ -2584,7 +2614,7 @@
     };
 
     Promise.all([validerStock(aIntegrer, true), cloturer()]).then(function () {
-      afficherToast(aIntegrer.length ? 'Stocks intégrés et journée clôturée' : 'Journée clôturée');
+      afficherToast(nbStocksCoches ? 'Stocks intégrés et journée clôturée' : 'Journée clôturée');
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.integrerStocksEtCloturerJourneeVeille = integrerStocksEtCloturerJourneeVeille;
