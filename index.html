@@ -510,9 +510,13 @@
 
     <!-- ---------------- ACHATS (consultation) ---------------- -->
     <div class="vue" id="vueAchats">
-      <p class="sous-titre-section">Consultation des achats enregistrés. La saisie d'un nouvel achat se fait depuis le bouton « + » de la colonne Achats, dans l'onglet Commerce.</p>
+      <p class="sous-titre-section">Consultation des achats enregistrés. La saisie d'un nouvel achat se fait depuis le bouton « + » de la colonne Achats, dans l'onglet Commerce. Par défaut, seuls les achats dont la livraison est prévue aujourd'hui sont affichés ici ; les achats déjà arrivés les jours précédents restent consultables via « Consulter les achats d'une date » ci-dessous ou en cochant « Afficher aussi les achats des jours précédents ».</p>
       <div class="barre-outils">
         <input type="text" id="filtreAchats" placeholder="Rechercher (fournisseur, produit, transporteur, responsable)..." oninput="rendreAchats()">
+        <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+          <input type="checkbox" id="afficherAchatsPasses" onchange="basculerAffichageAchatsPasses()">
+          Afficher aussi les achats des jours précédents
+        </label>
         <button class="bouton-secondaire" onclick="exporterAchatsPDF()">Générer PDF récapitulatif</button>
       </div>
       <div class="carte-tableau">
@@ -2972,12 +2976,29 @@
     });
   }
 
-  // Partagé entre l'affichage du récapitulatif et l'export PDF : applique la
-  // recherche de #filtreAchats sur chaque ligne (achat, ligne) à plat.
+  // Par défaut, le récapitulatif ne montre que les achats dont la livraison arrive
+  // aujourd'hui (même logique d'arrivée effective que recalculerAchatsDuJour() :
+  // dateLivraisonPrevue si renseignée, sinon repli sur date) — un achat déjà arrivé
+  // les jours précédents disparaît de l'affichage sans jamais être supprimé de
+  // Firestore : il reste consultable via "Consulter les achats d'une date", dans les
+  // 200 achats d'historique si on coche "Afficher aussi les achats des jours
+  // précédents" (afficherAchatsPasses), et dans les exports PDF/Excel.
+  let afficherAchatsPasses = false;
+  function basculerAffichageAchatsPasses() {
+    afficherAchatsPasses = document.getElementById('afficherAchatsPasses').checked;
+    rendreAchats();
+  }
+  window.basculerAffichageAchatsPasses = basculerAffichageAchatsPasses;
+
+  // Partagé entre l'affichage du récapitulatif et l'export PDF : applique le filtre
+  // "aujourd'hui uniquement" (sauf case cochée) puis la recherche de #filtreAchats
+  // sur chaque ligne (achat, ligne) à plat.
   function lignesAchatsFiltrees() {
     const q = (document.getElementById('filtreAchats').value || '').toLowerCase();
     const lignesAffichees = [];
     achats.forEach(function (a) {
+      const arrivee = a.dateLivraisonPrevue || a.date;
+      if (!afficherAchatsPasses && arrivee !== AUJOURD_HUI) return;
       (a.lignes || []).forEach(function (l) { lignesAffichees.push({ achat: a, ligne: l }); });
     });
     return lignesAffichees.filter(function (item) {
@@ -3003,7 +3024,11 @@
 
     const filtrees = lignesAchatsFiltrees();
 
-    document.getElementById('videRecapAchats').style.display = filtrees.length ? 'none' : 'block';
+    const videRecapAchats = document.getElementById('videRecapAchats');
+    videRecapAchats.style.display = filtrees.length ? 'none' : 'block';
+    videRecapAchats.textContent = (!filtrees.length && !afficherAchatsPasses && achats.length)
+      ? "Aucun achat dont la livraison est prévue aujourd'hui. Cochez « Afficher aussi les achats des jours précédents » pour voir l'historique récent."
+      : 'Aucun achat enregistré pour le moment.';
 
     filtrees.forEach(function (item) {
       const a = item.achat, l = item.ligne;
