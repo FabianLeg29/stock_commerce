@@ -2783,15 +2783,29 @@
     document.getElementById('boutonEnregistrerAchat').textContent = 'Enregistrer les modifications';
     rendreFormulaireAchat();
     const selectFournisseur = document.getElementById('achatFournisseur');
-    if (!Array.from(selectFournisseur.options).some(function (o) { return o.value === a.fournisseur; })) {
-      // Fournisseur d'un achat antérieur à la liste de référence (ou retiré depuis) :
-      // on l'ajoute temporairement pour ne pas perdre la valeur existante à l'édition.
+    const options = Array.from(selectFournisseur.options);
+    const optionExacte = options.some(function (o) { return o.value === a.fournisseur; });
+    const optionAutre = options.find(function (o) { return estFournisseurAutre(o.value); });
+    if (optionExacte) {
+      selectFournisseur.value = a.fournisseur;
+      basculerFournisseurAutre();
+    } else if (optionAutre) {
+      // Fournisseur saisi manuellement (via "Autre", ou achat antérieur à la liste de
+      // référence) : rouvrir directement en mode "Autre" avec la valeur existante déjà
+      // dans le champ texte, pour pouvoir la corriger sans la retaper de zéro.
+      selectFournisseur.value = optionAutre.value;
+      basculerFournisseurAutre();
+      document.getElementById('achatFournisseurAutre').value = a.fournisseur;
+    } else {
+      // Pas de valeur "AUTRE" dans le référentiel (jamais créée) : comportement de
+      // secours antérieur, on ajoute temporairement une option avec le texte exact
+      // pour ne pas perdre la valeur existante.
       const opt = document.createElement('option');
       opt.value = a.fournisseur; opt.textContent = a.fournisseur;
       selectFournisseur.appendChild(opt);
+      selectFournisseur.value = a.fournisseur;
+      basculerFournisseurAutre();
     }
-    selectFournisseur.value = a.fournisseur;
-    basculerFournisseurAutre();
     document.getElementById('modalAchat').style.display = 'flex';
   }
 
