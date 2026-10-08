@@ -200,7 +200,6 @@
 
   .sous-titre-section { font-size: 13px; color: #8a8072; margin: -4px 0 14px 0; }
 
-  .grille-referentiels { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
   .carte-referentiel { background: white; border: 1.5px solid var(--line); border-radius: 12px; padding: 16px; }
   .carte-referentiel h4 { margin: 0 0 10px 0; font-size: 12px; color: var(--copper); text-transform: uppercase; letter-spacing: .04em; }
   .liste-referentiel { display: flex; flex-direction: column; }
@@ -738,32 +737,37 @@
       <div id="blocListesReference" style="display:none;">
         <h3 class="section-titre">Listes de référence</h3>
         <p class="sous-titre-section">Valeurs proposées dans les listes déroulantes ci-dessus. Chaque variété est rattachée à une famille : le menu Variété de la fiche produit ne propose que les variétés de la famille choisie.</p>
-        <div class="carte-referentiel carte-familles">
+        <div class="sous-onglets" id="sousOngletsReferentiels">
+          <button data-onglet="familles" onclick="basculerSousOngletReferentiels('familles')">Famille &amp; variétés</button>
+          <button data-onglet="origines" onclick="basculerSousOngletReferentiels('origines')">Origine</button>
+          <button data-onglet="conditionnements" onclick="basculerSousOngletReferentiels('conditionnements')">Conditionnement</button>
+          <button data-onglet="suremballages" onclick="basculerSousOngletReferentiels('suremballages')">Suremballage</button>
+          <button data-onglet="fournisseurs" onclick="basculerSousOngletReferentiels('fournisseurs')">Fournisseur</button>
+        </div>
+        <div class="carte-referentiel carte-familles" id="sousOngletReferentiel-familles">
           <h4>Famille &amp; variétés</h4>
           <div id="listeFamilles"></div>
           <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('familles', 'listeFamilles')">+ Nouvelle famille</button>
         </div>
-        <div class="grille-referentiels">
-          <div class="carte-referentiel">
-            <h4>Origine</h4>
-            <div class="liste-referentiel" id="listeOrigines"></div>
-            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('origines', 'listeOrigines')">+ Nouvelle origine</button>
-          </div>
-          <div class="carte-referentiel">
-            <h4>Conditionnement</h4>
-            <div class="liste-referentiel" id="listeConditionnements"></div>
-            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('conditionnements', 'listeConditionnements')">+ Nouveau conditionnement</button>
-          </div>
-          <div class="carte-referentiel">
-            <h4>Suremballage</h4>
-            <div class="liste-referentiel" id="listeSuremballages"></div>
-            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('suremballages', 'listeSuremballages')">+ Nouveau suremballage</button>
-          </div>
-          <div class="carte-referentiel">
-            <h4>Fournisseur</h4>
-            <div class="liste-referentiel" id="listeFournisseurs"></div>
-            <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('fournisseurs', 'listeFournisseurs')">+ Nouveau fournisseur</button>
-          </div>
+        <div class="carte-referentiel" id="sousOngletReferentiel-origines" style="max-width:480px;">
+          <h4>Origine</h4>
+          <div class="liste-referentiel" id="listeOrigines"></div>
+          <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('origines', 'listeOrigines')">+ Nouvelle origine</button>
+        </div>
+        <div class="carte-referentiel" id="sousOngletReferentiel-conditionnements" style="max-width:480px;">
+          <h4>Conditionnement</h4>
+          <div class="liste-referentiel" id="listeConditionnements"></div>
+          <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('conditionnements', 'listeConditionnements')">+ Nouveau conditionnement</button>
+        </div>
+        <div class="carte-referentiel" id="sousOngletReferentiel-suremballages" style="max-width:480px;">
+          <h4>Suremballage</h4>
+          <div class="liste-referentiel" id="listeSuremballages"></div>
+          <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('suremballages', 'listeSuremballages')">+ Nouveau suremballage</button>
+        </div>
+        <div class="carte-referentiel" id="sousOngletReferentiel-fournisseurs" style="max-width:480px;">
+          <h4>Fournisseur</h4>
+          <div class="liste-referentiel" id="listeFournisseurs"></div>
+          <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('fournisseurs', 'listeFournisseurs')">+ Nouveau fournisseur</button>
         </div>
       </div>
     </div>
@@ -835,6 +839,7 @@
   let produits = [];               // [{ nom, actif, prixAchatDefaut, prixAchatUnite, ordre }]
   let referentiels = { familles: [], varietes: [], origines: [], conditionnements: [], suremballages: [] }; // listes gérées depuis l'onglet Produits (admin + commerce)
   let produitEnEdition = null; // id du produit dont la ligne est actuellement en édition dans l'onglet Produits
+  let referentielSousOnglet = 'familles'; // onglet actif de la section "Listes de référence" (Produits)
   let operateurs = [];           // personnes réalisant les contrôles de stock du soir, gérées depuis Paramètres (admin)
   let joursConservationStockSoir = null; // nombre de jours d'historique saisieStock à garder (admin, Paramètres) ; null = illimité
   let purgeHistoriqueLancee = false;     // garde-fou : ne lancer la purge qu'une fois par session, côté admin
@@ -3409,6 +3414,27 @@
   // ============================================================
   // PRODUITS (admin + commerce)
   // ============================================================
+
+  // Sous-onglets de la section "Listes de référence" (Famille & variétés / Origine /
+  // Conditionnement / Suremballage / Fournisseur) — un seul affiché à la fois, pour
+  // une liste plus lisible qu'avec les 5 cartes empilées/juxtaposées en même temps.
+  const ONGLETS_REFERENTIELS = ['familles', 'origines', 'conditionnements', 'suremballages', 'fournisseurs'];
+
+  function basculerSousOngletReferentiels(cle) {
+    referentielSousOnglet = cle;
+    rendreSousOngletsReferentiels();
+  }
+  window.basculerSousOngletReferentiels = basculerSousOngletReferentiels;
+
+  function rendreSousOngletsReferentiels() {
+    ONGLETS_REFERENTIELS.forEach(function (cle) {
+      document.getElementById('sousOngletReferentiel-' + cle).style.display = (cle === referentielSousOnglet) ? '' : 'none';
+    });
+    document.querySelectorAll('#sousOngletsReferentiels button').forEach(function (btn) {
+      btn.classList.toggle('actif', btn.dataset.onglet === referentielSousOnglet);
+    });
+  }
+
   function rendreProduits() {
     rendreSelectsProduits();
     const peutGerer = peutGererCommerce();
@@ -3420,6 +3446,7 @@
       rendreListeReferentiel('conditionnements', 'listeConditionnements');
       rendreListeReferentiel('suremballages', 'listeSuremballages');
       rendreListeReferentiel('fournisseurs', 'listeFournisseurs');
+      rendreSousOngletsReferentiels();
     }
 
     const corpsProduits = document.getElementById('corpsProduits');
