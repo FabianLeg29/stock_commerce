@@ -927,6 +927,13 @@
   function peutGererCommerce() { return roleCourant === 'commerce' || roleCourant === 'admin'; }
   function estAdmin() { return roleCourant === 'admin'; }
   function peutVoirPrix() { return roleCourant !== 'production'; }
+  // Créer un achat reste ouvert à tout compte commerce (catalogue/historique
+  // partagés), mais MODIFIER ou SUPPRIMER un achat existant n'est permis qu'à son
+  // créateur (a.responsable) ou à l'admin — un commercial ne peut pas toucher à
+  // l'achat saisi par un collègue (même règle côté Firestore, voir firestore.rules).
+  function peutGererCetAchat(a) {
+    return !!utilisateurCourant && (estAdmin() || (peutGererCommerce() && a.responsable === utilisateurCourant.email));
+  }
 
   function libelleRole(r) {
     return { admin: 'Administrateur', commerce: 'Commerce', production: 'Production', viewer: 'Consultation', aucun: 'Non autorisé' }[r] || r;
@@ -2331,14 +2338,19 @@
         tdDetailContenu.appendChild(titreAchats);
 
         if (detailAchats.length) {
-          const peutModifierAchat = peutGererCommerce();
+          // Colonne Actions affichée dès que le rôle gère les achats en général ;
+          // à l'intérieur, chaque ligne ne reçoit ses boutons Modifier/Suppr. que si
+          // peutGererCetAchat(d) l'autorise pour CET achat précis (son créateur, ou
+          // l'admin) — un commercial voit donc la colonne mais pas forcément un
+          // bouton sur chaque ligne.
+          const colonneActionsAchats = peutGererCommerce();
           const tableAchats = document.createElement('table');
           tableAchats.className = 'tableau-cartes tableau-detail';
           tableAchats.innerHTML = '<thead><tr>' +
             '<th>Fournisseur</th><th class="centre">Quantité</th>' +
             (avecPrix ? '<th class="centre">Prix d\'achat</th>' : '') +
             '<th>Heure d\'arrivée prévue</th><th>Transport</th><th>Commercial</th>' +
-            (peutModifierAchat ? '<th style="width:120px;"></th>' : '') +
+            (colonneActionsAchats ? '<th style="width:120px;"></th>' : '') +
             '</tr></thead>';
           const corpsAchats = document.createElement('tbody');
           detailAchats.forEach(function (d) {
@@ -2365,29 +2377,31 @@
             // Modifier/Suppr. agissent sur la LIVRAISON entière (achatsCombinesParId[d.achatId],
             // le document achat complet) — pas seulement sur la ligne de ce produit — comme
             // dans le récapitulatif de l'onglet Achats, pour ne pas avoir à y retourner.
-            if (peutModifierAchat) {
+            if (colonneActionsAchats) {
               const tdActionsAchat = document.createElement('td');
               tdActionsAchat.className = 'centre';
-              const btnModifierAchat = document.createElement('button');
-              btnModifierAchat.className = 'bouton-secondaire';
-              btnModifierAchat.textContent = 'Modifier';
-              btnModifierAchat.style.marginRight = '6px';
-              btnModifierAchat.onclick = function () {
-                const achatComplet = achatsCombinesParId[d.achatId];
-                if (!achatComplet) { afficherToast('Achat introuvable (données pas encore synchronisées)'); return; }
-                chargerAchatPourEdition(achatComplet);
-              };
-              const btnSupprimerAchat = document.createElement('button');
-              btnSupprimerAchat.className = 'bouton-secondaire';
-              btnSupprimerAchat.textContent = 'Suppr.';
-              btnSupprimerAchat.onclick = function () {
-                if (!confirm('Supprimer définitivement cet achat (' + d.fournisseur + ', toutes ses lignes) ?')) return;
-                db.collection('achats').doc(d.achatId).delete().then(function () {
-                  afficherToast('Achat supprimé');
-                }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
-              };
-              tdActionsAchat.appendChild(btnModifierAchat);
-              tdActionsAchat.appendChild(btnSupprimerAchat);
+              if (peutGererCetAchat(d)) {
+                const btnModifierAchat = document.createElement('button');
+                btnModifierAchat.className = 'bouton-secondaire';
+                btnModifierAchat.textContent = 'Modifier';
+                btnModifierAchat.style.marginRight = '6px';
+                btnModifierAchat.onclick = function () {
+                  const achatComplet = achatsCombinesParId[d.achatId];
+                  if (!achatComplet) { afficherToast('Achat introuvable (données pas encore synchronisées)'); return; }
+                  chargerAchatPourEdition(achatComplet);
+                };
+                const btnSupprimerAchat = document.createElement('button');
+                btnSupprimerAchat.className = 'bouton-secondaire';
+                btnSupprimerAchat.textContent = 'Suppr.';
+                btnSupprimerAchat.onclick = function () {
+                  if (!confirm('Supprimer définitivement cet achat (' + d.fournisseur + ', toutes ses lignes) ?')) return;
+                  db.collection('achats').doc(d.achatId).delete().then(function () {
+                    afficherToast('Achat supprimé');
+                  }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+                };
+                tdActionsAchat.appendChild(btnModifierAchat);
+                tdActionsAchat.appendChild(btnSupprimerAchat);
+              }
               trLigne.appendChild(tdActionsAchat);
             }
             corpsAchats.appendChild(trLigne);
@@ -3137,7 +3151,7 @@
 
       const tdActions = document.createElement('td');
       tdActions.className = 'centre';
-      if (peutGererCommerce()) {
+      if (peutGererCetAchat(a)) {
         const btnModifier = document.createElement('button');
         btnModifier.className = 'bouton-secondaire';
         btnModifier.textContent = 'Modifier';

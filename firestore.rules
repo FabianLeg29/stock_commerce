@@ -11,7 +11,9 @@ rules_version = '2';
 //                ces champs sont issus (collection "referentiels"), ventes/réservations
 //                du jour individuellement par commercial (collection "commerce", un
 //                document par produit+jour+commercial — chacun ne peut écrire QUE son
-//                propre document), achats/livraisons (collection "achats"), + validation
+//                propre document), achats/livraisons (collection "achats" — chacun peut
+//                en CRÉER, mais ne peut MODIFIER/SUPPRIMER que ceux dont il est
+//                lui-même le responsable, sauf l'admin qui peut tout), + validation
 //                du stock du soir (champ "importe" de saisieStock) qui met à jour
 //                dernierStock (pas les valeurs saisies par la production) — et,
 //                depuis peu, les mêmes droits que "production" sur le stock du soir
@@ -130,9 +132,15 @@ service cloud.firestore {
     }
 
     // ---- Achats (une livraison = un document, plusieurs lignes produit) ----
+    // Tout compte commerce peut CRÉER un achat (catalogue/historique partagés, lu par
+    // tous). En revanche MODIFIER ou SUPPRIMER un achat existant n'est permis qu'à son
+    // créateur (responsable == son propre email) ou à l'admin — un commercial ne peut
+    // pas toucher à l'achat saisi par un collègue.
     match /achats/{achatId} {
       allow read: if connecte();
-      allow create, update, delete: if estCommerce();
+      allow create: if estCommerce();
+      allow update, delete: if estAdmin() ||
+        (estCommerce() && resource.data.responsable == request.auth.token.email);
     }
 
     // ---- Préférences d'affichage produit par commercial (un document par commercial) ----
