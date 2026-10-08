@@ -562,6 +562,7 @@
                   <th>Fournisseur</th><th>Produit</th><th class="centre">Quantité</th>
                   <th class="centre" id="thPrixAchatConsultation">Prix d'achat</th>
                   <th class="centre">Heure d'arrivée prévue</th><th>Livraison prévue</th><th>Transport</th><th>Responsable</th><th>Commentaire</th>
+                  <th style="width:140px;"></th>
                 </tr>
               </thead>
               <tbody id="corpsConsultationAchats"></tbody>
@@ -3248,7 +3249,7 @@
     db.collection('achats').where('date', '==', date).get().then(function (qs) {
       const lignes = [];
       qs.forEach(function (doc) {
-        const a = doc.data();
+        const a = Object.assign({ id: doc.id }, doc.data());
         (a.lignes || []).forEach(function (l) { lignes.push({ achat: a, ligne: l }); });
       });
       const avecPrix = peutVoirPrix();
@@ -3276,6 +3277,33 @@
         const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
         const tdCommentaire = document.createElement('td'); tdCommentaire.dataset.label = 'Commentaire'; tdCommentaire.textContent = a.commentaire || '—';
         tr.appendChild(tdHeure); tr.appendChild(tdLivraison); tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdCommentaire);
+
+        // Cette consultation est une requête ponctuelle (pas un onSnapshot, voir plus
+        // haut) : contrairement au récapitulatif, un achat trouvé ici (ex. hors du
+        // filtre "livraison du jour", ou plus ancien que les 200 achats du récap)
+        // n'avait jusqu'ici aucun moyen d'être modifié/supprimé depuis cet écran.
+        const tdActionsConsultation = document.createElement('td');
+        tdActionsConsultation.className = 'centre';
+        if (peutGererCetAchat(a)) {
+          const btnModifierConsultation = document.createElement('button');
+          btnModifierConsultation.className = 'bouton-secondaire';
+          btnModifierConsultation.textContent = 'Modifier';
+          btnModifierConsultation.style.marginRight = '6px';
+          btnModifierConsultation.onclick = function () { chargerAchatPourEdition(a); };
+          const btnSupprimerConsultation = document.createElement('button');
+          btnSupprimerConsultation.className = 'bouton-secondaire';
+          btnSupprimerConsultation.textContent = 'Suppr.';
+          btnSupprimerConsultation.onclick = function () {
+            if (!confirm('Supprimer définitivement cet achat (' + a.fournisseur + ', ' + a.date + ', toutes ses lignes) ?')) return;
+            db.collection('achats').doc(a.id).delete().then(function () {
+              afficherToast('Achat supprimé');
+              consulterAchatsDate();
+            }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+          };
+          tdActionsConsultation.appendChild(btnModifierConsultation);
+          tdActionsConsultation.appendChild(btnSupprimerConsultation);
+        }
+        tr.appendChild(tdActionsConsultation);
         corps.appendChild(tr);
       });
       document.getElementById('resultatConsultationAchats').style.display = '';
