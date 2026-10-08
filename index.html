@@ -161,6 +161,11 @@
     text-transform: none; letter-spacing: 0;
   }
 
+  /* Lignes plus basses pour les tableaux longs à parcourir rapidement (ex. Produits) :
+     mêmes colonnes, juste moins de respiration verticale par ligne. */
+  .tableau-compact th, .tableau-compact td { padding: 6px 12px; font-size: 13px; }
+  .tableau-compact td.produit { line-height: 1.25; }
+
   /* Étiquette + annotation (date, bouton +) affichées uniquement en mode carte mobile
      (voir @media plus bas) — regroupées avec le libellé, plutôt qu'à côté de la valeur,
      pour que la valeur elle-même reste seule et alignée dans la même colonne sur
@@ -205,6 +210,8 @@
   .ligne-referentiel input.champ-valeur { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 13px; }
   .lien-supprimer { font-size: 12.5px; color: #8a8072; text-decoration: underline; cursor: pointer; white-space: nowrap; }
   .lien-supprimer:hover { color: var(--danger); }
+  .lien-modifier { font-size: 12.5px; color: #8a8072; text-decoration: underline; cursor: pointer; white-space: nowrap; }
+  .lien-modifier:hover { color: var(--copper); }
   .bouton-nouveau-referentiel { display: block; width: 100%; margin-top: 10px; background: var(--copper); color: white; border: none; border-radius: 20px; padding: 9px 16px; font-weight: 600; font-size: 13px; cursor: pointer; }
 
   .carte-familles { margin-bottom: 16px; }
@@ -716,11 +723,15 @@
         <select id="nouveauSuremballage" onchange="recalculerDesignationAuto()"></select>
         <button onclick="ajouterProduit()">Ajouter</button>
       </div>
+      <div class="barre-outils">
+        <input type="text" id="filtreProduits" placeholder="Rechercher (désignation, famille, variété, origine, conditionnement...)..." oninput="rendreProduits()">
+      </div>
       <div class="carte-tableau">
-        <table>
+        <table class="tableau-cartes tableau-compact">
           <thead><tr><th>Produit</th><th>Famille</th><th>Variété</th><th>Origine</th><th>Conditionnement</th><th>Suremballage</th><th class="centre">Actif</th><th style="width:170px;"></th></tr></thead>
           <tbody id="corpsProduits"></tbody>
         </table>
+        <div class="vide" id="videProduits" style="display:none;">Aucun produit ne correspond à la recherche.</div>
       </div>
 
       <div id="blocListesReference" style="display:none;">
@@ -3316,8 +3327,20 @@
 
     const corpsProduits = document.getElementById('corpsProduits');
     corpsProduits.innerHTML = '';
+
+    const q = (document.getElementById('filtreProduits').value || '').toLowerCase();
+    const produitsFiltres = !q ? produits : produits.filter(function (p) {
+      return (p.nom || '').toLowerCase().indexOf(q) !== -1 ||
+        (p.famille || '').toLowerCase().indexOf(q) !== -1 ||
+        (p.variete || '').toLowerCase().indexOf(q) !== -1 ||
+        (p.origine || '').toLowerCase().indexOf(q) !== -1 ||
+        (p.conditionnement || '').toLowerCase().indexOf(q) !== -1 ||
+        (p.suremballage || '').toLowerCase().indexOf(q) !== -1;
+    });
+    document.getElementById('videProduits').style.display = produitsFiltres.length ? 'none' : 'block';
+
     const groupesProduits = {};
-    produits.forEach(function (p) {
+    produitsFiltres.forEach(function (p) {
       const famille = p.famille || 'Sans famille';
       if (!groupesProduits[famille]) groupesProduits[famille] = [];
       groupesProduits[famille].push(p);
@@ -3358,9 +3381,15 @@
         tdConditionnement = document.createElement('td'); tdConditionnement.textContent = p.conditionnement || '';
         tdSuremballage = document.createElement('td'); tdSuremballage.textContent = p.suremballage || '';
       }
+      tdFamille.dataset.label = 'Famille';
+      tdVariete.dataset.label = 'Variété';
+      tdOrigine.dataset.label = 'Origine';
+      tdConditionnement.dataset.label = 'Conditionnement';
+      tdSuremballage.dataset.label = 'Suremballage';
 
       const tdActif = document.createElement('td');
       tdActif.className = 'centre';
+      tdActif.dataset.label = 'Actif';
       const span = document.createElement('span');
       span.className = 'toggle ' + (p.actif ? 'oui' : 'non') + (peutGerer ? '' : ' lecture-seule');
       span.textContent = p.actif ? 'Actif' : 'Inactif';
@@ -3817,6 +3846,56 @@
     ).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
 
+  // Renomme une valeur d'une liste de référence à plat (origine/conditionnement/
+  // suremballage/fournisseur). Comme pour le déplacement d'une variété entre
+  // familles, arrayUnion/arrayRemove ne peuvent pas cohabiter dans la même écriture
+  // (et laisseraient de toute façon l'ordre d'origine) : le tableau est donc réécrit
+  // en entier à partir de la version déjà en mémoire. Ne modifie aucun produit
+  // existant utilisant déjà l'ancien texte (champs indépendants, comme pour le reste
+  // du référentiel) — seule la liste proposée dans les menus déroulants change.
+  function renommerValeurReferentiel(categorie, idConteneur, ancienneValeur, nouvelleValeur) {
+    if (!peutGererCommerce()) return;
+    if ((referentiels[categorie] || []).indexOf(nouvelleValeur) !== -1) {
+      afficherToast('Cette valeur existe déjà');
+      rendreListeReferentiel(categorie, idConteneur);
+      return;
+    }
+    const nouvelleListe = (referentiels[categorie] || []).map(function (v) { return v === ancienneValeur ? nouvelleValeur : v; });
+    db.collection('referentiels').doc('main').update({ [categorie]: nouvelleListe }).then(function () {
+      afficherToast('Renommé en « ' + nouvelleValeur + ' »');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); rendreListeReferentiel(categorie, idConteneur); });
+  }
+
+  // Bascule une ligne de référentiel (valeur à plat, famille, ou variété) en édition
+  // inline au clic sur "modifier" : remplace le libellé par un champ texte, masque
+  // les liens "modifier"/"supprimer" pendant la saisie. Au blur ou à Entrée, si la
+  // valeur a changé et n'est pas vide, appelle onValider(nouvelleValeur) ; sinon (Échap,
+  // valeur vide ou inchangée) appelle onAnnuler(), qui doit re-rendre la liste pour
+  // restaurer l'affichage (aucune écriture Firestore n'a eu lieu dans ce cas).
+  function commencerRenommage(ligne, span, valeurActuelle, onValider, onAnnuler) {
+    ligne.querySelectorAll('a').forEach(function (a) { a.style.display = 'none'; });
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'champ-valeur';
+    input.value = valeurActuelle;
+    let termine = false;
+    function terminer(validerValeur) {
+      if (termine) return;
+      termine = true;
+      const nouvelleValeur = input.value.trim();
+      if (validerValeur && nouvelleValeur && nouvelleValeur !== valeurActuelle) onValider(nouvelleValeur);
+      else onAnnuler();
+    }
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') terminer(true);
+      else if (e.key === 'Escape') terminer(false);
+    });
+    input.addEventListener('blur', function () { terminer(true); });
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
   function rendreListeReferentiel(categorie, idConteneur) {
     const conteneur = document.getElementById(idConteneur);
     conteneur.innerHTML = '';
@@ -3826,11 +3905,21 @@
       const valeur = document.createElement('span');
       valeur.className = 'valeur-referentiel';
       valeur.textContent = v;
+      const lienModifier = document.createElement('a');
+      lienModifier.className = 'lien-modifier';
+      lienModifier.textContent = 'modifier';
+      lienModifier.onclick = function () {
+        commencerRenommage(ligne, valeur, v,
+          function (nouvelleValeur) { renommerValeurReferentiel(categorie, idConteneur, v, nouvelleValeur); },
+          function () { rendreListeReferentiel(categorie, idConteneur); }
+        );
+      };
       const lien = document.createElement('a');
       lien.className = 'lien-supprimer';
       lien.textContent = 'supprimer';
       lien.onclick = function () { supprimerValeurReferentiel(categorie, v); };
       ligne.appendChild(valeur);
+      ligne.appendChild(lienModifier);
       ligne.appendChild(lien);
       conteneur.appendChild(ligne);
     });
@@ -4112,6 +4201,53 @@
   }
   window.deplacerVariete = deplacerVariete;
 
+  // Renomme une famille : met à jour le libellé dans familles[], répercute le
+  // changement sur le champ "famille" de ses variétés (copies indépendantes, comme
+  // pour deplacerVariete) pour ne pas les rendre orphelines, et déplace son éventuel
+  // plafond vrac (referentiels.plafondsVrac est indexé par nom de famille) vers la
+  // nouvelle clé. Ne modifie aucun produit existant (même limite documentée que
+  // deplacerVariete : famille/variete sont des copies sur chaque produit, pas une
+  // référence vivante au référentiel).
+  function renommerFamille(ancienNom, nouveauNom) {
+    if (!peutGererCommerce()) return;
+    if (referentiels.familles.indexOf(nouveauNom) !== -1) {
+      afficherToast('Cette famille existe déjà');
+      rendreListeFamilles();
+      return;
+    }
+    const nouvellesFamilles = referentiels.familles.map(function (f) { return f === ancienNom ? nouveauNom : f; });
+    const nouvellesVarietes = (referentiels.varietes || []).map(function (v) {
+      return v.famille === ancienNom ? { nom: v.nom, famille: nouveauNom } : v;
+    });
+    const maj = { familles: nouvellesFamilles, varietes: nouvellesVarietes };
+    const plafondActuel = referentiels.plafondsVrac[ancienNom];
+    if (typeof plafondActuel === 'number') {
+      maj['plafondsVrac.' + nouveauNom] = plafondActuel;
+      maj['plafondsVrac.' + ancienNom] = firebase.firestore.FieldValue.delete();
+    }
+    db.collection('referentiels').doc('main').update(maj).then(function () {
+      afficherToast('Famille renommée en « ' + nouveauNom + ' »');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); rendreListeFamilles(); });
+  }
+
+  // Renomme une variété au sein de sa famille (ne change pas son rattachement —
+  // voir deplacerVariete pour ça). Ne modifie aucun produit existant utilisant déjà
+  // l'ancien nom (copie indépendante, comme pour le reste du référentiel).
+  function renommerVariete(nomFamille, ancienNom, nouveauNom) {
+    if (!peutGererCommerce()) return;
+    if ((referentiels.varietes || []).some(function (v) { return v.nom === nouveauNom && v.famille === nomFamille; })) {
+      afficherToast('Cette variété existe déjà pour cette famille');
+      rendreListeFamilles();
+      return;
+    }
+    const nouvellesVarietes = (referentiels.varietes || []).map(function (v) {
+      return (v.nom === ancienNom && v.famille === nomFamille) ? { nom: nouveauNom, famille: nomFamille } : v;
+    });
+    db.collection('referentiels').doc('main').update({ varietes: nouvellesVarietes }).then(function () {
+      afficherToast('Variété renommée en « ' + nouveauNom + ' »');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); rendreListeFamilles(); });
+  }
+
   // Même principe que ajouterLigneReferentielVide, mais la variété créée est
   // directement rattachée à la famille sous laquelle le bouton "+ Nouvelle
   // variété" a été cliqué.
@@ -4168,11 +4304,22 @@
       labelPlafond.style.cssText = 'font-size:11px; color:#a49a89; margin-right:4px;';
       labelPlafond.textContent = 'Plafond vrac (kg)';
 
+      const lienModifierFamille = document.createElement('a');
+      lienModifierFamille.className = 'lien-modifier';
+      lienModifierFamille.textContent = 'modifier';
+      lienModifierFamille.onclick = function () {
+        commencerRenommage(ligneFamille, spanFamille, nomFamille,
+          function (nouveauNom) { renommerFamille(nomFamille, nouveauNom); },
+          function () { rendreListeFamilles(); }
+        );
+      };
+
       const lienSupprFamille = document.createElement('a');
       lienSupprFamille.className = 'lien-supprimer';
       lienSupprFamille.textContent = 'supprimer';
       lienSupprFamille.onclick = function () { supprimerFamille(nomFamille); };
       ligneFamille.appendChild(spanFamille);
+      ligneFamille.appendChild(lienModifierFamille);
       ligneFamille.appendChild(labelPlafond);
       ligneFamille.appendChild(inputPlafond);
       ligneFamille.appendChild(lienSupprFamille);
@@ -4204,11 +4351,22 @@
             varieteEnGlissement = null;
           });
 
+          const lienModifierVariete = document.createElement('a');
+          lienModifierVariete.className = 'lien-modifier';
+          lienModifierVariete.textContent = 'modifier';
+          lienModifierVariete.onclick = function () {
+            commencerRenommage(ligneVariete, spanVariete, v.nom,
+              function (nouveauNom) { renommerVariete(nomFamille, v.nom, nouveauNom); },
+              function () { rendreListeFamilles(); }
+            );
+          };
+
           const lienSupprVariete = document.createElement('a');
           lienSupprVariete.className = 'lien-supprimer';
           lienSupprVariete.textContent = 'supprimer';
           lienSupprVariete.onclick = function () { supprimerVariete(nomFamille, v.nom); };
           ligneVariete.appendChild(spanVariete);
+          ligneVariete.appendChild(lienModifierVariete);
           ligneVariete.appendChild(lienSupprVariete);
           listeVarietes.appendChild(ligneVariete);
         });
