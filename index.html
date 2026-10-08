@@ -869,6 +869,9 @@
   let achatsDocsLivraison = [];          // where('dateLivraisonPrevue','>=',AUJOURD_HUI)
   let achatsDuJourDetailParProduit = {}; // { nom: [ { achatId, fournisseur, quantite, prixAchat, heureDepart, transportType, transporteurNom } ] }
   let achatsAVenirDetailParProduit = {}; // même forme, pour les livraisons futures (stock dispo J+)
+  let achatsCombinesParId = {};          // { achatId: achat complet (toutes ses lignes) } — fusion des deux caches ci-dessus,
+                                          // pour permettre Modifier/Suppr. depuis le panneau "▸ Détail" de l'onglet Commerce
+                                          // (chargerAchatPourEdition() a besoin du document achat complet, pas d'une seule ligne)
   let achats = [];                 // tous les achats chargés (récap) : [{ id, date, fournisseur, responsable, horodatage, lignes: [...] }]
   let achatsCharges = false;
   let achatEnEditionId = null;
@@ -1059,6 +1062,7 @@
     achatsDuJourDetailParProduit = detailsJour;
     achatsAVenirParProduit = totauxFuturs;
     achatsAVenirDetailParProduit = detailsFuturs;
+    achatsCombinesParId = combines;
   }
 
   // ============================================================
@@ -1224,7 +1228,7 @@
           const d = doc.data();
           achatsDocsAujourdhui.push({
             id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
-            fournisseur: d.fournisseur, responsable: d.responsable,
+            fournisseur: d.fournisseur, responsable: d.responsable, commentaire: d.commentaire || '',
             horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null,
             lignes: d.lignes || []
           });
@@ -1244,7 +1248,7 @@
           const d = doc.data();
           achatsDocsLivraison.push({
             id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
-            fournisseur: d.fournisseur, responsable: d.responsable,
+            fournisseur: d.fournisseur, responsable: d.responsable, commentaire: d.commentaire || '',
             horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null,
             lignes: d.lignes || []
           });
@@ -2327,12 +2331,14 @@
         tdDetailContenu.appendChild(titreAchats);
 
         if (detailAchats.length) {
+          const peutModifierAchat = peutGererCommerce();
           const tableAchats = document.createElement('table');
           tableAchats.className = 'tableau-cartes tableau-detail';
           tableAchats.innerHTML = '<thead><tr>' +
             '<th>Fournisseur</th><th class="centre">Quantité</th>' +
             (avecPrix ? '<th class="centre">Prix d\'achat</th>' : '') +
             '<th>Heure d\'arrivée prévue</th><th>Transport</th><th>Commercial</th>' +
+            (peutModifierAchat ? '<th style="width:120px;"></th>' : '') +
             '</tr></thead>';
           const corpsAchats = document.createElement('tbody');
           detailAchats.forEach(function (d) {
@@ -2356,6 +2362,34 @@
             const tdCommercial = document.createElement('td');
             tdCommercial.dataset.label = 'Commercial'; tdCommercial.textContent = libelleCommercial(d.responsable);
             trLigne.appendChild(tdHeure); trLigne.appendChild(tdTransport); trLigne.appendChild(tdCommercial);
+            // Modifier/Suppr. agissent sur la LIVRAISON entière (achatsCombinesParId[d.achatId],
+            // le document achat complet) — pas seulement sur la ligne de ce produit — comme
+            // dans le récapitulatif de l'onglet Achats, pour ne pas avoir à y retourner.
+            if (peutModifierAchat) {
+              const tdActionsAchat = document.createElement('td');
+              tdActionsAchat.className = 'centre';
+              const btnModifierAchat = document.createElement('button');
+              btnModifierAchat.className = 'bouton-secondaire';
+              btnModifierAchat.textContent = 'Modifier';
+              btnModifierAchat.style.marginRight = '6px';
+              btnModifierAchat.onclick = function () {
+                const achatComplet = achatsCombinesParId[d.achatId];
+                if (!achatComplet) { afficherToast('Achat introuvable (données pas encore synchronisées)'); return; }
+                chargerAchatPourEdition(achatComplet);
+              };
+              const btnSupprimerAchat = document.createElement('button');
+              btnSupprimerAchat.className = 'bouton-secondaire';
+              btnSupprimerAchat.textContent = 'Suppr.';
+              btnSupprimerAchat.onclick = function () {
+                if (!confirm('Supprimer définitivement cet achat (' + d.fournisseur + ', toutes ses lignes) ?')) return;
+                db.collection('achats').doc(d.achatId).delete().then(function () {
+                  afficherToast('Achat supprimé');
+                }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+              };
+              tdActionsAchat.appendChild(btnModifierAchat);
+              tdActionsAchat.appendChild(btnSupprimerAchat);
+              trLigne.appendChild(tdActionsAchat);
+            }
             corpsAchats.appendChild(trLigne);
           });
           tableAchats.appendChild(corpsAchats);
