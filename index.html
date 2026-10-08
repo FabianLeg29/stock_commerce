@@ -583,7 +583,8 @@
         <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
           <div style="flex:1 1 220px;">
             <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Fournisseur</label>
-            <select id="achatFournisseur" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; background:white;"></select>
+            <select id="achatFournisseur" onchange="basculerFournisseurAutre()" style="width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px; background:white;"></select>
+            <input type="text" id="achatFournisseurAutre" placeholder="Précisez le nom du fournisseur..." style="display:none; width:100%; margin-top:8px; padding:11px 14px; border-radius:10px; border:1.5px solid var(--line); font-size:14px;">
           </div>
           <div style="flex:1 1 160px;">
             <label style="display:block; font-size:13px; color:#746a5e; margin-bottom:6px;">Date</label>
@@ -2713,6 +2714,23 @@
   }
   window.fermerModalAchat = fermerModalAchat;
 
+  // « AUTRE » est une valeur normale de referentiels.fournisseurs (gérée comme les
+  // autres depuis Produits > Listes de référence), mais traitée ici comme un cas
+  // spécial : plutôt que d'enregistrer littéralement "AUTRE" comme fournisseur
+  // (inexploitable pour le suivi/la compta), elle révèle un champ texte libre dont la
+  // valeur saisie devient le véritable fournisseur de l'achat (voir enregistrerAchat()).
+  function estFournisseurAutre(valeur) {
+    return (valeur || '').trim().toUpperCase() === 'AUTRE';
+  }
+
+  function basculerFournisseurAutre() {
+    const champAutre = document.getElementById('achatFournisseurAutre');
+    const estAutre = estFournisseurAutre(document.getElementById('achatFournisseur').value);
+    champAutre.style.display = estAutre ? '' : 'none';
+    if (!estAutre) champAutre.value = '';
+  }
+  window.basculerFournisseurAutre = basculerFournisseurAutre;
+
   function annulerEditionAchat() {
     achatEnEditionId = null;
     lignesAchatEnCours = [ligneAchatVide()];
@@ -2722,6 +2740,7 @@
     document.getElementById('boutonAnnulerAchat').style.display = 'none';
     document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
     document.getElementById('achatFournisseur').value = '';
+    basculerFournisseurAutre();
     rendreFormulaireAchat();
     fermerModalAchat();
   }
@@ -2741,6 +2760,7 @@
     document.getElementById('boutonAnnulerAchat').style.display = 'none';
     document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
     document.getElementById('achatFournisseur').value = '';
+    basculerFournisseurAutre();
     rendreFormulaireAchat();
     document.getElementById('modalAchat').style.display = 'flex';
   }
@@ -2771,20 +2791,29 @@
       selectFournisseur.appendChild(opt);
     }
     selectFournisseur.value = a.fournisseur;
+    basculerFournisseurAutre();
     document.getElementById('modalAchat').style.display = 'flex';
   }
 
   function enregistrerAchat() {
     if (!peutGererCommerce()) return;
     const selectFournisseur = document.getElementById('achatFournisseur');
-    const fournisseur = selectFournisseur.value;
-    const date = document.getElementById('achatDate').value || AUJOURD_HUI;
-    const dateLivraisonPrevue = document.getElementById('achatDateLivraison').value || null;
-    const commentaire = document.getElementById('achatCommentaire').value.trim();
-    if (!fournisseur) {
+    const valeurFournisseur = selectFournisseur.value;
+    if (!valeurFournisseur) {
       afficherToast('Choisissez un fournisseur');
       return;
     }
+    let fournisseur = valeurFournisseur;
+    if (estFournisseurAutre(valeurFournisseur)) {
+      fournisseur = document.getElementById('achatFournisseurAutre').value.trim();
+      if (!fournisseur) {
+        afficherToast('Précisez le nom du fournisseur');
+        return;
+      }
+    }
+    const date = document.getElementById('achatDate').value || AUJOURD_HUI;
+    const dateLivraisonPrevue = document.getElementById('achatDateLivraison').value || null;
+    const commentaire = document.getElementById('achatCommentaire').value.trim();
     if (!dateLivraisonPrevue) {
       afficherToast('La date de livraison prévue est obligatoire');
       return;
@@ -2852,6 +2881,7 @@
     if (Array.from(selectFournisseur.options).some(function (o) { return o.value === valeurFournisseurActuelle; })) {
       selectFournisseur.value = valeurFournisseurActuelle;
     }
+    basculerFournisseurAutre();
 
     const champDate = document.getElementById('achatDate');
     if (!champDate.value) champDate.value = AUJOURD_HUI;
