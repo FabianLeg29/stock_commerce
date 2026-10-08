@@ -1046,10 +1046,15 @@
 
     Object.keys(combines).forEach(function (id) {
       const d = combines[id];
-      if (clotureAujourdhui && clotureAujourdhui.heure && d.horodatageMillis !== null &&
-        d.horodatageMillis <= clotureAujourdhui.heure.toMillis()) return;
       const arrivee = d.dateLivraisonPrevue || d.date;
       const futur = arrivee > AUJOURD_HUI;
+      // Le seuil de clôture ne doit exclure que les achats arrivés AUJOURD'HUI (déjà
+      // comptés dans l'ancien stock réel, remplacé par le nouveau dernierStock validé) —
+      // jamais les livraisons futures : celles-ci n'ont jamais été comptées dans le
+      // stock réel du jour, donc aucun risque de double-comptage, et doivent continuer
+      // à alimenter "Stock dispo J+" même si elles ont été saisies avant la clôture.
+      if (!futur && clotureAujourdhui && clotureAujourdhui.heure && d.horodatageMillis !== null &&
+        d.horodatageMillis <= clotureAujourdhui.heure.toMillis()) return;
       const totaux = futur ? totauxFuturs : totauxJour;
       const details = futur ? detailsFuturs : detailsJour;
       d.lignes.forEach(function (ligne) {
