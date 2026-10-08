@@ -3665,6 +3665,7 @@
   function libelleUnitePrix(unite) {
     if (unite === 'colis') return 'colis';
     if (unite === 'kilo') return 'kg';
+    if (unite === 'piece') return 'pièce';
     return '';
   }
 
@@ -3758,7 +3759,7 @@
     td.className = 'centre';
     if (!peutVoirPrix()) { td.textContent = '—'; return td; }
     const select = document.createElement('select');
-    [['', '— Choisir —'], ['colis', 'Colis'], ['kilo', 'Kilo']].forEach(function (opt) {
+    [['', '— Choisir —'], ['colis', 'Colis'], ['kilo', 'Kilo'], ['piece', 'Pièce']].forEach(function (opt) {
       const option = document.createElement('option');
       option.value = opt[0];
       option.textContent = opt[1];
