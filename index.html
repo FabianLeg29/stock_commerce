@@ -743,6 +743,7 @@
           <button data-onglet="conditionnements" onclick="basculerSousOngletReferentiels('conditionnements')">Conditionnement</button>
           <button data-onglet="suremballages" onclick="basculerSousOngletReferentiels('suremballages')">Suremballage</button>
           <button data-onglet="fournisseurs" onclick="basculerSousOngletReferentiels('fournisseurs')">Fournisseur</button>
+          <button data-onglet="transporteurs" onclick="basculerSousOngletReferentiels('transporteurs')">Transporteur</button>
         </div>
         <div class="carte-referentiel carte-familles" id="sousOngletReferentiel-familles">
           <h4>Famille &amp; variétés</h4>
@@ -768,6 +769,12 @@
           <h4>Fournisseur</h4>
           <div class="liste-referentiel" id="listeFournisseurs"></div>
           <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('fournisseurs', 'listeFournisseurs')">+ Nouveau fournisseur</button>
+        </div>
+        <div class="carte-referentiel" id="sousOngletReferentiel-transporteurs" style="max-width:480px;">
+          <h4>Transporteur</h4>
+          <p class="sous-titre-section">Alimente la liste déroulante Transport de la modale de saisie d'achat (en plus de « Ramasse » et « Autre », qui restent toujours proposés).</p>
+          <div class="liste-referentiel" id="listeTransporteurs"></div>
+          <button class="bouton-nouveau-referentiel" onclick="ajouterLigneReferentielVide('transporteurs', 'listeTransporteurs')">+ Nouveau transporteur</button>
         </div>
       </div>
     </div>
@@ -837,7 +844,7 @@
   let utilisateurCourant = null;   // { uid, email }
   let roleCourant = 'aucun';       // 'admin' | 'commerce' | 'production' | 'viewer' | 'aucun'
   let produits = [];               // [{ nom, actif, prixAchatDefaut, prixAchatUnite, ordre }]
-  let referentiels = { familles: [], varietes: [], origines: [], conditionnements: [], suremballages: [] }; // listes gérées depuis l'onglet Produits (admin + commerce)
+  let referentiels = { familles: [], varietes: [], origines: [], conditionnements: [], suremballages: [], fournisseurs: [], transporteurs: [], plafondsVrac: {} }; // listes gérées depuis l'onglet Produits (admin + commerce)
   let produitEnEdition = null; // id du produit dont la ligne est actuellement en édition dans l'onglet Produits
   let referentielSousOnglet = 'familles'; // onglet actif de la section "Listes de référence" (Produits)
   let operateurs = [];           // personnes réalisant les contrôles de stock du soir, gérées depuis Paramètres (admin)
@@ -1112,6 +1119,7 @@
           conditionnements: (d.conditionnements || []).slice().sort(),
           suremballages: (d.suremballages || []).slice().sort(),
           fournisseurs: (d.fournisseurs || []).slice().sort(),
+          transporteurs: (d.transporteurs || []).slice().sort(),
           plafondsVrac: d.plafondsVrac || {}
         };
         rendreVueActive();
@@ -2958,11 +2966,14 @@
     const champDate = document.getElementById('achatDate');
     if (!champDate.value) champDate.value = AUJOURD_HUI;
 
+    // Union de la liste de référence (Produits > Listes de référence > Transporteur) et
+    // des transporteurs déjà utilisés dans l'historique des achats (saisis via "Autre"
+    // avant l'introduction de cette liste, ou depuis), pour ne rien perdre.
     const transporteurs = Array.from(new Set(
-      achats.reduce(function (acc, a) {
+      (referentiels.transporteurs || []).concat(achats.reduce(function (acc, a) {
         (a.lignes || []).forEach(function (l) { if (l.transportType === 'transporteur' && l.transporteurNom) acc.push(l.transporteurNom); });
         return acc;
-      }, [])
+      }, []))
     )).sort();
 
     const produitsTries = produits.slice().sort(function (a, b) { return a.nom.localeCompare(b.nom); });
@@ -3028,7 +3039,7 @@
         selectTransport.appendChild(o);
       });
       const optAutreT = document.createElement('option');
-      optAutreT.value = '__autre__'; optAutreT.textContent = '+ Nouveau transporteur...';
+      optAutreT.value = '__autre__'; optAutreT.textContent = 'Autre';
       selectTransport.appendChild(optAutreT);
       if (ligne.transportType === 'ramasse') {
         selectTransport.value = 'ramasse';
@@ -3416,9 +3427,9 @@
   // ============================================================
 
   // Sous-onglets de la section "Listes de référence" (Famille & variétés / Origine /
-  // Conditionnement / Suremballage / Fournisseur) — un seul affiché à la fois, pour
-  // une liste plus lisible qu'avec les 5 cartes empilées/juxtaposées en même temps.
-  const ONGLETS_REFERENTIELS = ['familles', 'origines', 'conditionnements', 'suremballages', 'fournisseurs'];
+  // Conditionnement / Suremballage / Fournisseur / Transporteur) — un seul affiché à la
+  // fois, pour une liste plus lisible qu'avec les 6 cartes empilées/juxtaposées en même temps.
+  const ONGLETS_REFERENTIELS = ['familles', 'origines', 'conditionnements', 'suremballages', 'fournisseurs', 'transporteurs'];
 
   function basculerSousOngletReferentiels(cle) {
     referentielSousOnglet = cle;
@@ -3446,6 +3457,7 @@
       rendreListeReferentiel('conditionnements', 'listeConditionnements');
       rendreListeReferentiel('suremballages', 'listeSuremballages');
       rendreListeReferentiel('fournisseurs', 'listeFournisseurs');
+      rendreListeReferentiel('transporteurs', 'listeTransporteurs');
       rendreSousOngletsReferentiels();
     }
 
