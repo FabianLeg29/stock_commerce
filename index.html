@@ -479,14 +479,14 @@
       </div>
 
       <div class="carte-tableau">
-        <table class="tableau-cartes">
+        <table>
           <thead>
             <tr>
               <th>Produit</th>
-              <th class="centre" style="width:100px;">Haut</th>
-              <th class="centre" style="width:100px;">Bas</th>
+              <th class="centre" style="width:100px;" id="thColHaut">Haut</th>
+              <th class="centre" style="width:100px;" id="thColBas">Bas</th>
               <th class="centre" style="width:100px;">Total</th>
-              <th class="centre" style="width:120px;" title="Dernier stock connu + achats du jour − ventes du jour">Stock théorique</th>
+              <th class="centre" style="width:140px;" title="Dernier stock connu + achats du jour − ventes du jour">Stock théorique fin de journée</th>
               <th class="centre" style="width:90px;">Écart</th>
             </tr>
           </thead>
@@ -1886,6 +1886,15 @@
     // rapport avec le jour réellement compté, voire un total erroné en "Haut + Bas".
     const sourceAffichage = (sessionStockSoir && sessionStockSoir.date !== AUJOURD_HUI) ? saisieDateSession : saisieDuJour;
 
+    // Pendant une session mono-côté (Stock Haut seul ou Stock Bas seul), la colonne de
+    // l'autre côté n'apporte rien à cette session précise — la masquer entièrement
+    // (pas juste la lecture seule) réduit le nombre de colonnes à l'écran, surtout utile
+    // sur téléphone. Les deux colonnes restent visibles hors session et en mode Haut + Bas.
+    const masquerColonneHaut = !!sessionStockSoir && sessionStockSoir.cote === 'bas';
+    const masquerColonneBas = !!sessionStockSoir && sessionStockSoir.cote === 'haut';
+    document.getElementById('thColHaut').style.display = masquerColonneHaut ? 'none' : '';
+    document.getElementById('thColBas').style.display = masquerColonneBas ? 'none' : '';
+
     const groupes = {};
     actifs.forEach(function (p) {
       const famille = p.famille || 'Sans famille';
@@ -1927,7 +1936,7 @@
 
         const tdTheorique = document.createElement('td');
         tdTheorique.className = 'centre mono';
-        tdTheorique.dataset.label = 'Stock théorique';
+        tdTheorique.dataset.label = 'Stock théorique fin de journée';
         tdTheorique.textContent = stockTheorique;
 
         const tdEcart = document.createElement('td');
@@ -1971,6 +1980,8 @@
         const editableBas = !!sessionStockSoir && (sessionStockSoir.cote === 'bas' || sessionStockSoir.cote === 'les2');
         const blocHaut = editableHaut ? champSession('haut', 'Haut') : texteLectureSeule(saisie.stockHaut, 'Haut');
         const blocBas = editableBas ? champSession('bas', 'Bas') : texteLectureSeule(saisie.stockBas, 'Bas');
+        blocHaut.td.style.display = masquerColonneHaut ? 'none' : '';
+        blocBas.td.style.display = masquerColonneBas ? 'none' : '';
 
         function majTotal() {
           const h = blocHaut.input ? sommerExpression(blocHaut.input.value) : (typeof saisie.stockHaut === 'number' ? saisie.stockHaut : null);
