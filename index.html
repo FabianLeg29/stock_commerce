@@ -231,6 +231,8 @@
     background: var(--copper-soft); color: var(--copper); font-weight: 700;
     font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; padding: 8px 14px;
   }
+  tr.entete-groupe-cliquable { cursor: pointer; }
+  tr.entete-groupe-cliquable:hover td { filter: brightness(0.95); }
 
   select.select-role {
     padding: 6px 10px; border-radius: 8px; border: 1.5px solid var(--line); font-size: 13px; background: white;
@@ -865,6 +867,10 @@
   let formulaireDemarrageOuvert = false; // affichage du formulaire (heure/côté/opérateur) sous le bouton "Démarrer un stock du soir"
   let varieteEnGlissement = null;        // { nom, famille } — variété en cours de glisser-déposer vers une autre famille
   let dateConsultee = null;              // date actuellement affichée dans "Consulter un stock antérieur" (pour Supprimer)
+  let familleOuverteStockSoir = null;    // famille actuellement dépliée dans le tableau du Stock du soir (accordéon : une seule
+                                          // à la fois, ouvrir une famille replie celle qui l'était) ; null = tout replié. Ignoré
+                                          // tant que la recherche (#filtreProduction) n'est pas vide — toutes les familles
+                                          // correspondantes restent alors dépliées pour ne pas gêner la recherche.
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: { haut: valeurTexte, bas: valeurTexte } } — comptage local de la session, écrit en une fois à la fin
   let saisieDateSession = {};     // snapshot ponctuel de saisieStock pour sessionStockSoir.date, UNIQUEMENT quand cette date
@@ -1904,14 +1910,29 @@
       groupes[famille].push(p);
     });
 
+    // Pendant une recherche, toutes les familles correspondantes restent dépliées — un
+    // repli par défaut cacherait les résultats cherchés. Hors recherche, accordéon : une
+    // seule famille dépliée à la fois, pour une liste plus courte à l'écran pendant le
+    // comptage (demande explicite : seul le nom de la famille visible par défaut).
+    const rechercheActive = !!q;
+
     Object.keys(groupes).sort().forEach(function (famille) {
+      const ouverte = rechercheActive || familleOuverteStockSoir === famille;
       const trTitre = document.createElement('tr');
-      trTitre.className = 'entete-groupe';
+      trTitre.className = 'entete-groupe' + (rechercheActive ? '' : ' entete-groupe-cliquable');
       const tdTitre = document.createElement('td');
       tdTitre.colSpan = 6;
-      tdTitre.textContent = famille;
+      tdTitre.textContent = rechercheActive ? famille : ((ouverte ? '▾ ' : '▸ ') + famille);
       trTitre.appendChild(tdTitre);
+      if (!rechercheActive) {
+        trTitre.addEventListener('click', function () {
+          familleOuverteStockSoir = (familleOuverteStockSoir === famille) ? null : famille;
+          rendreProduction();
+        });
+      }
       corps.appendChild(trTitre);
+
+      if (!ouverte) return;
 
       groupes[famille].sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
         const saisie = sourceAffichage[p.nom] || {};
