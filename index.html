@@ -486,6 +486,8 @@
               <th class="centre" style="width:100px;">Haut</th>
               <th class="centre" style="width:100px;">Bas</th>
               <th class="centre" style="width:100px;">Total</th>
+              <th class="centre" style="width:120px;" title="Dernier stock connu + achats du jour − ventes du jour">Stock théorique</th>
+              <th class="centre" style="width:90px;">Écart</th>
             </tr>
           </thead>
           <tbody id="corpsProduction"></tbody>
@@ -1895,7 +1897,7 @@
       const trTitre = document.createElement('tr');
       trTitre.className = 'entete-groupe';
       const tdTitre = document.createElement('td');
-      tdTitre.colSpan = 4;
+      tdTitre.colSpan = 6;
       tdTitre.textContent = famille;
       trTitre.appendChild(tdTitre);
       corps.appendChild(trTitre);
@@ -1910,6 +1912,27 @@
         const tdTotal = document.createElement('td');
         tdTotal.className = 'centre mono';
         tdTotal.dataset.label = 'Total';
+
+        // Stock théorique = dernier stock validé + achats du jour − ventes du jour (même
+        // formule que le "Stock réel" de l'onglet Commerce), pour comparer en un coup d'œil
+        // avec le total réellement compté ci-dessus. Toujours basé sur les achats/ventes
+        // D'AUJOURD'HUI (dernierStockParProduit/achatsDuJourParProduit/commerceDuJour, déjà
+        // à jour en temps réel quel que soit l'onglet actif) — non pertinent pendant une
+        // session de rattrapage sur une date passée (voir CLAUDE.md).
+        const cacheDernierStock = dernierStockParProduit[p.nom] || {};
+        const stockVeille = typeof cacheDernierStock.valeur === 'number' ? cacheDernierStock.valeur : 0;
+        const achatsAujourdhui = achatsDuJourParProduit[p.nom] || 0;
+        const ventesAujourdhui = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
+        const stockTheorique = stockVeille + achatsAujourdhui - ventesAujourdhui;
+
+        const tdTheorique = document.createElement('td');
+        tdTheorique.className = 'centre mono';
+        tdTheorique.dataset.label = 'Stock théorique';
+        tdTheorique.textContent = stockTheorique;
+
+        const tdEcart = document.createElement('td');
+        tdEcart.className = 'centre mono';
+        tdEcart.dataset.label = 'Écart';
 
         function texteLectureSeule(valeur, libelle) {
           const td = document.createElement('td');
@@ -1953,7 +1976,16 @@
           const h = blocHaut.input ? sommerExpression(blocHaut.input.value) : (typeof saisie.stockHaut === 'number' ? saisie.stockHaut : null);
           const b = blocBas.input ? sommerExpression(blocBas.input.value) : (typeof saisie.stockBas === 'number' ? saisie.stockBas : null);
           const rien = h === null && b === null;
-          tdTotal.textContent = rien ? '' : ((h || 0) + (b || 0));
+          const total = rien ? null : ((h || 0) + (b || 0));
+          tdTotal.textContent = rien ? '' : total;
+          if (total === null) {
+            tdEcart.textContent = '—';
+            tdEcart.className = 'centre mono';
+          } else {
+            const ecart = total - stockTheorique;
+            tdEcart.textContent = (ecart > 0 ? '+' : '') + ecart;
+            tdEcart.className = 'centre mono pastille-stock' + (ecart !== 0 ? ' negatif' : '');
+          }
         }
         majTotal();
 
@@ -1961,6 +1993,8 @@
         tr.appendChild(blocHaut.td);
         tr.appendChild(blocBas.td);
         tr.appendChild(tdTotal);
+        tr.appendChild(tdTheorique);
+        tr.appendChild(tdEcart);
         corps.appendChild(tr);
       });
     });
