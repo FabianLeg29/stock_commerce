@@ -1446,6 +1446,7 @@
     sessionStockSoir = { date: date, heure: heure, cote: cote, operateur: operateur };
     saisieDateSession = (date === AUJOURD_HUI) ? {} : (saisieDate || {});
     saisieSessionEnCours = Object.assign({}, valeursInitiales || {});
+    familleOuverteStockSoir = null; // repart tout replié à chaque nouvelle session de comptage
     idBrouillonActuel = idBrouillonStockSoir(date, cote, operateur);
     db.collection('brouillonsStockSoir').doc(idBrouillonActuel).set({
       date: date, cote: cote, operateur: operateur, heure: heure,
@@ -1477,6 +1478,51 @@
       const out = {};
       qs.forEach(function (doc) { out[doc.data().produit] = doc.data(); });
       return out;
+    });
+  }
+
+  // Ensemble des produits ayant eu un achat (arrivée effective ce jour-là) ou une vente ce
+  // jour-là — utilisé par l'export PDF du Stock du soir pour ne jamais masquer un produit
+  // mouvementé même si son stock du soir compté retombe à 0 (ex. tout vendu). Réutilise les
+  // caches temps réel déjà tenus à jour (achatsDuJourParProduit/commerceDuJour) si la date
+  // demandée est aujourd'hui, sinon fait des requêtes ponctuelles (même principe que
+  // chargerSaisiePourDate()) — ces caches ne portent que sur AUJOURD_HUI.
+  function chargerMouvementsPourDate(date) {
+    if (date === AUJOURD_HUI) {
+      const produits = new Set();
+      Object.keys(achatsDuJourParProduit).forEach(function (nom) { if (achatsDuJourParProduit[nom] > 0) produits.add(nom); });
+      Object.keys(commerceDuJour).forEach(function (nom) { if ((commerceDuJour[nom].ventes || 0) > 0) produits.add(nom); });
+      return Promise.resolve(produits);
+    }
+    const pAchats = Promise.all([
+      db.collection('achats').where('date', '==', date).get(),
+      db.collection('achats').where('dateLivraisonPrevue', '==', date).get()
+    ]).then(function (snaps) {
+      const produits = new Set();
+      const vus = {};
+      snaps.forEach(function (qs) {
+        qs.forEach(function (doc) {
+          if (vus[doc.id]) return;
+          vus[doc.id] = true;
+          const d = doc.data();
+          const arrivee = d.dateLivraisonPrevue || d.date;
+          if (arrivee !== date) return;
+          (d.lignes || []).forEach(function (l) { if ((Number(l.quantite) || 0) > 0) produits.add(l.produit); });
+        });
+      });
+      return produits;
+    });
+    const pVentes = db.collection('commerce').where('date', '==', date).get().then(function (qs) {
+      const produits = new Set();
+      qs.forEach(function (doc) {
+        const d = doc.data();
+        if ((d.ventes || 0) > 0) produits.add(d.produit);
+      });
+      return produits;
+    });
+    return Promise.all([pAchats, pVentes]).then(function (res) {
+      res[1].forEach(function (nom) { res[0].add(nom); });
+      return res[0];
     });
   }
 
@@ -1910,21 +1956,22 @@
       groupes[famille].push(p);
     });
 
-    // Pendant une recherche, toutes les familles correspondantes restent dépliées — un
-    // repli par défaut cacherait les résultats cherchés. Hors recherche, accordéon : une
-    // seule famille dépliée à la fois, pour une liste plus courte à l'écran pendant le
-    // comptage (demande explicite : seul le nom de la famille visible par défaut).
-    const rechercheActive = !!q;
+    // Accordéon des familles : uniquement PENDANT une session de comptage active (demande
+    // explicite : pas sur le simple écran de consultation/démarrage, où on veut tout voir
+    // d'un coup) et pas pendant une recherche (un repli par défaut cacherait les résultats
+    // cherchés) — une seule famille dépliée à la fois pour une liste plus courte à l'écran
+    // pendant le comptage.
+    const accordeonActif = !!sessionStockSoir && !q;
 
     Object.keys(groupes).sort().forEach(function (famille) {
-      const ouverte = rechercheActive || familleOuverteStockSoir === famille;
+      const ouverte = !accordeonActif || familleOuverteStockSoir === famille;
       const trTitre = document.createElement('tr');
-      trTitre.className = 'entete-groupe' + (rechercheActive ? '' : ' entete-groupe-cliquable');
+      trTitre.className = 'entete-groupe' + (accordeonActif ? ' entete-groupe-cliquable' : '');
       const tdTitre = document.createElement('td');
       tdTitre.colSpan = 6;
-      tdTitre.textContent = rechercheActive ? famille : ((ouverte ? '▾ ' : '▸ ') + famille);
+      tdTitre.textContent = accordeonActif ? ((ouverte ? '▾ ' : '▸ ') + famille) : famille;
       trTitre.appendChild(tdTitre);
-      if (!rechercheActive) {
+      if (accordeonActif) {
         trTitre.addEventListener('click', function () {
           familleOuverteStockSoir = (familleOuverteStockSoir === famille) ? null : famille;
           rendreProduction();
@@ -2045,6 +2092,8 @@
       });
   }
 
+  // La famille est un en-tête de ligne (une ligne "FAMILLE" avant ses produits, comme le
+  // tableau à l'écran) plutôt qu'une colonne répétée sur chaque ligne — plus court à lire.
   function exporterStockSoirExcel() {
     if (typeof XLSX === 'undefined') {
       afficherToast('Bibliothèque Excel indisponible, réessayez.');
@@ -2053,11 +2102,17 @@
     const date = document.getElementById('dateExportStockSoir').value || AUJOURD_HUI;
     chargerSaisiePourDate(date).then(function (source) {
       const actifs = produitsActifsTriesParFamille();
-      const feuille = [['Famille', 'Produit', 'Haut', 'Bas', 'Total']];
+      const feuille = [['Produit', 'Haut', 'Bas', 'Total']];
+      let familleCourante = null;
       actifs.forEach(function (p) {
+        const famille = p.famille || 'Sans famille';
+        if (famille !== familleCourante) {
+          feuille.push([famille.toUpperCase()]);
+          familleCourante = famille;
+        }
         const saisie = source[p.nom] || {};
         feuille.push([
-          p.famille || 'Sans famille', p.nom,
+          p.nom,
           (saisie.stockHaut === null || typeof saisie.stockHaut === 'undefined') ? '' : saisie.stockHaut,
           (saisie.stockBas === null || typeof saisie.stockBas === 'undefined') ? '' : saisie.stockBas,
           (saisie.stockSoir === null || typeof saisie.stockSoir === 'undefined') ? '' : saisie.stockSoir
@@ -2075,34 +2130,45 @@
   // Portrait (plutôt que le paysage partagé par défaut avec l'export PDF des achats,
   // voir @page en tête de fichier) : un style injecté dans la zone d'impression elle-même
   // prévaut sur la règle @page globale pour CE print précis, sans affecter les autres
-  // exports qui partagent #zoneImpression. Ne garde que les produits ayant effectivement
-  // une quantité en stock ce soir (demande explicite : une feuille plus courte, pas une
-  // ligne par produit actif même à vide) et met Haut/Bas/Total en couleur pour une lecture
-  // plus rapide sur la feuille imprimée.
+  // exports qui partagent #zoneImpression. La famille est un en-tête de ligne (comme le
+  // tableau à l'écran), pas une colonne. Ne garde que les produits ayant effectivement une
+  // quantité en stock ce soir OU ayant eu un mouvement (achat/vente) ce jour-là — un produit
+  // entièrement vendu (stock à 0 après un mouvement réel) ne doit pas disparaître de la
+  // feuille, voir chargerMouvementsPourDate() — et met Haut/Bas/Total en couleur pour une
+  // lecture plus rapide sur la feuille imprimée.
   function exporterStockSoirPDF() {
     const date = document.getElementById('dateExportStockSoir').value || AUJOURD_HUI;
-    chargerSaisiePourDate(date).then(function (source) {
+    Promise.all([chargerSaisiePourDate(date), chargerMouvementsPourDate(date)]).then(function (res) {
+      const source = res[0], produitsAvecMouvement = res[1];
       const lignes = produitsActifsTriesParFamille()
         .map(function (p) { return { p: p, saisie: source[p.nom] || {} }; })
-        .filter(function (item) { return typeof item.saisie.stockSoir === 'number' && item.saisie.stockSoir > 0; });
+        .filter(function (item) {
+          return (typeof item.saisie.stockSoir === 'number' && item.saisie.stockSoir > 0) || produitsAvecMouvement.has(item.p.nom);
+        });
 
       let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
       html += '<h2>Stock du soir — La Légumière</h2>';
       html += '<div style="margin-bottom:10px;">Soir du ' + date + '</div>';
-      html += '<table><thead><tr><th>Famille</th><th>Produit</th>' +
+      html += '<table><thead><tr><th>Produit</th>' +
         '<th style="background:#E3F2FD; color:#1565C0;">Haut</th>' +
         '<th style="background:#FFF3E0; color:#E65100;">Bas</th>' +
         '<th style="background:var(--copper-soft); color:var(--copper);">Total</th></tr></thead><tbody>';
+      let familleCourante = null;
       lignes.forEach(function (item) {
+        const famille = item.p.famille || 'Sans famille';
+        if (famille !== familleCourante) {
+          html += '<tr><td colspan="4" style="background:var(--copper-soft); color:var(--copper); font-weight:700; text-transform:uppercase; letter-spacing:0.03em; font-size:12px;">' + famille + '</td></tr>';
+          familleCourante = famille;
+        }
         const saisie = item.saisie;
         const vide = function (v) { return (v === null || typeof v === 'undefined') ? '—' : v; };
-        html += '<tr><td>' + (item.p.famille || 'Sans famille') + '</td><td>' + item.p.nom + '</td>' +
+        html += '<tr><td>' + item.p.nom + '</td>' +
           '<td style="background:#E3F2FD; color:#1565C0;">' + vide(saisie.stockHaut) + '</td>' +
           '<td style="background:#FFF3E0; color:#E65100;">' + vide(saisie.stockBas) + '</td>' +
           '<td style="background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + vide(saisie.stockSoir) + '</td></tr>';
       });
       if (!lignes.length) {
-        html += '<tr><td colspan="5" style="text-align:center; color:#888;">Aucune quantité en stock ce soir.</td></tr>';
+        html += '<tr><td colspan="4" style="text-align:center; color:#888;">Aucune quantité en stock ni mouvement ce soir-là.</td></tr>';
       }
       html += '</tbody></table>';
       document.getElementById('zoneImpression').innerHTML = html;
