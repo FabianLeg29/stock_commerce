@@ -421,6 +421,7 @@
       <div class="barre-outils">
         <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
         <span class="date-du-jour" id="dateProduction"></span>
+        <input type="date" id="dateExportStockSoir" title="Date du stock du soir à exporter" style="max-width:150px;">
         <button class="bouton-secondaire" onclick="exporterStockSoirExcel()">Exporter le stock du soir (.xlsx)</button>
         <button class="bouton-secondaire" onclick="exporterStockSoirPDF()">Exporter le stock du soir (.pdf)</button>
       </div>
@@ -1819,6 +1820,15 @@
       noteConsultation.style.display = 'none';
     }
 
+    const inputExport = document.getElementById('dateExportStockSoir');
+    inputExport.max = AUJOURD_HUI;
+    if (joursConservationStockSoir !== null) {
+      inputExport.min = dateMoinsJours(AUJOURD_HUI, joursConservationStockSoir);
+    } else {
+      inputExport.removeAttribute('min');
+    }
+    if (!inputExport.value) inputExport.value = AUJOURD_HUI;
+
     if (!sessionStockSoir) {
       document.getElementById('blocDemarrerStockSoir').style.display = '';
       document.getElementById('blocSessionStockSoir').style.display = 'none';
@@ -1972,39 +1982,64 @@
       afficherToast('Bibliothèque Excel indisponible, réessayez.');
       return;
     }
-    const actifs = produitsActifsTriesParFamille();
-    const feuille = [['Famille', 'Produit', 'Haut', 'Bas', 'Total']];
-    actifs.forEach(function (p) {
-      const saisie = saisieDuJour[p.nom] || {};
-      feuille.push([
-        p.famille || 'Sans famille', p.nom,
-        (saisie.stockHaut === null || typeof saisie.stockHaut === 'undefined') ? '' : saisie.stockHaut,
-        (saisie.stockBas === null || typeof saisie.stockBas === 'undefined') ? '' : saisie.stockBas,
-        (saisie.stockSoir === null || typeof saisie.stockSoir === 'undefined') ? '' : saisie.stockSoir
-      ]);
-    });
-    const classeur = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuille), 'Stock du soir');
-    XLSX.writeFile(classeur, 'stock_du_soir_' + AUJOURD_HUI + '.xlsx');
+    const date = document.getElementById('dateExportStockSoir').value || AUJOURD_HUI;
+    chargerSaisiePourDate(date).then(function (source) {
+      const actifs = produitsActifsTriesParFamille();
+      const feuille = [['Famille', 'Produit', 'Haut', 'Bas', 'Total']];
+      actifs.forEach(function (p) {
+        const saisie = source[p.nom] || {};
+        feuille.push([
+          p.famille || 'Sans famille', p.nom,
+          (saisie.stockHaut === null || typeof saisie.stockHaut === 'undefined') ? '' : saisie.stockHaut,
+          (saisie.stockBas === null || typeof saisie.stockBas === 'undefined') ? '' : saisie.stockBas,
+          (saisie.stockSoir === null || typeof saisie.stockSoir === 'undefined') ? '' : saisie.stockSoir
+        ]);
+      });
+      const classeur = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuille), 'Stock du soir');
+      XLSX.writeFile(classeur, 'stock_du_soir_' + date + '.xlsx');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.exporterStockSoirExcel = exporterStockSoirExcel;
 
   // Même principe que exporterAchatsPDF() : construit une vue imprimable dans la zone
   // dédiée puis déclenche l'impression navigateur (orientation paysage par défaut).
+  // Portrait (plutôt que le paysage partagé par défaut avec l'export PDF des achats,
+  // voir @page en tête de fichier) : un style injecté dans la zone d'impression elle-même
+  // prévaut sur la règle @page globale pour CE print précis, sans affecter les autres
+  // exports qui partagent #zoneImpression. Ne garde que les produits ayant effectivement
+  // une quantité en stock ce soir (demande explicite : une feuille plus courte, pas une
+  // ligne par produit actif même à vide) et met Haut/Bas/Total en couleur pour une lecture
+  // plus rapide sur la feuille imprimée.
   function exporterStockSoirPDF() {
-    const actifs = produitsActifsTriesParFamille();
-    let html = '<h2>Stock du soir — La Légumière</h2>';
-    html += '<div style="margin-bottom:10px;">Soir du ' + AUJOURD_HUI + '</div>';
-    html += '<table><thead><tr><th>Famille</th><th>Produit</th><th>Haut</th><th>Bas</th><th>Total</th></tr></thead><tbody>';
-    actifs.forEach(function (p) {
-      const saisie = saisieDuJour[p.nom] || {};
-      const vide = function (v) { return (v === null || typeof v === 'undefined') ? '—' : v; };
-      html += '<tr><td>' + (p.famille || 'Sans famille') + '</td><td>' + p.nom + '</td>' +
-        '<td>' + vide(saisie.stockHaut) + '</td><td>' + vide(saisie.stockBas) + '</td><td>' + vide(saisie.stockSoir) + '</td></tr>';
-    });
-    html += '</tbody></table>';
-    document.getElementById('zoneImpression').innerHTML = html;
-    window.print();
+    const date = document.getElementById('dateExportStockSoir').value || AUJOURD_HUI;
+    chargerSaisiePourDate(date).then(function (source) {
+      const lignes = produitsActifsTriesParFamille()
+        .map(function (p) { return { p: p, saisie: source[p.nom] || {} }; })
+        .filter(function (item) { return typeof item.saisie.stockSoir === 'number' && item.saisie.stockSoir > 0; });
+
+      let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
+      html += '<h2>Stock du soir — La Légumière</h2>';
+      html += '<div style="margin-bottom:10px;">Soir du ' + date + '</div>';
+      html += '<table><thead><tr><th>Famille</th><th>Produit</th>' +
+        '<th style="background:#E3F2FD; color:#1565C0;">Haut</th>' +
+        '<th style="background:#FFF3E0; color:#E65100;">Bas</th>' +
+        '<th style="background:var(--copper-soft); color:var(--copper);">Total</th></tr></thead><tbody>';
+      lignes.forEach(function (item) {
+        const saisie = item.saisie;
+        const vide = function (v) { return (v === null || typeof v === 'undefined') ? '—' : v; };
+        html += '<tr><td>' + (item.p.famille || 'Sans famille') + '</td><td>' + item.p.nom + '</td>' +
+          '<td style="background:#E3F2FD; color:#1565C0;">' + vide(saisie.stockHaut) + '</td>' +
+          '<td style="background:#FFF3E0; color:#E65100;">' + vide(saisie.stockBas) + '</td>' +
+          '<td style="background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + vide(saisie.stockSoir) + '</td></tr>';
+      });
+      if (!lignes.length) {
+        html += '<tr><td colspan="5" style="text-align:center; color:#888;">Aucune quantité en stock ce soir.</td></tr>';
+      }
+      html += '</tbody></table>';
+      document.getElementById('zoneImpression').innerHTML = html;
+      window.print();
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.exporterStockSoirPDF = exporterStockSoirPDF;
 
