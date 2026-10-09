@@ -561,6 +561,32 @@
       </div>
 
       <div style="margin-top:24px;">
+        <h3 class="section-titre">Achats à venir (livraison différée)</h3>
+        <p class="sous-titre-section">Achats déjà commandés dont la livraison est prévue un autre jour (ni aujourd'hui, ni déjà arrivée) — ne comptent pas dans le récapitulatif ci-dessus ni dans le stock réel/disponible du jour (voir « Stock dispo J+ » dans l'onglet Commerce), mais restent visibles ici pour ne pas les perdre de vue. Limité aux 200 achats les plus récents déjà chargés, comme le récapitulatif.</p>
+        <div class="carte-tableau">
+          <table class="tableau-cartes">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Fournisseur</th>
+                <th>Produit</th>
+                <th class="centre">Quantité</th>
+                <th class="centre" id="thPrixAchatAVenir">Prix d'achat</th>
+                <th class="centre">Heure d'arrivée prévue</th>
+                <th>Livraison prévue</th>
+                <th>Transport</th>
+                <th>Responsable</th>
+                <th>Commentaire</th>
+                <th style="width:140px;"></th>
+              </tr>
+            </thead>
+            <tbody id="corpsAchatsAVenir"></tbody>
+          </table>
+          <div class="vide" id="videAchatsAVenir" style="display:none;">Aucun achat à livraison différée.</div>
+        </div>
+      </div>
+
+      <div style="margin-top:24px;">
         <h3 class="section-titre">Consulter les achats d'une date</h3>
         <div class="ligne-ajout">
           <input type="date" id="dateConsultationAchats">
@@ -2410,6 +2436,7 @@
       const stockVeille = typeof cache.valeur === 'number' ? cache.valeur : 0;
       const achatsAujourdhui = achatsDuJourParProduit[p.nom] || 0;
       const detailAchats = achatsDuJourDetailParProduit[p.nom] || [];
+      const detailAchatsAVenir = achatsAVenirDetailParProduit[p.nom] || [];
       const sommeGlobale = commerceDuJour[p.nom] || { ventes: 0, reservations: 0 };
       const detailCommerciaux = commerceDuJourDetailParProduit[p.nom] || [];
 
@@ -2670,6 +2697,85 @@
           videAchats.style.cssText = 'margin:6px 0 14px 0; color:#a49a89;';
           videAchats.textContent = 'Aucun achat aujourd\'hui.';
           tdDetailContenu.appendChild(videAchats);
+        }
+
+        // Achats à venir (livraison différée) : commandés mais dont l'arrivée est prévue
+        // un autre jour — ne comptent pas dans "Achats aujourd'hui" ni dans le stock réel/
+        // disponible du jour (voir "Stock dispo J+"), mais doivent rester visibles ici pour
+        // ne pas perdre de vue une livraison déjà commandée.
+        const titreAchatsAVenir = document.createElement('strong');
+        titreAchatsAVenir.style.cssText = 'display:block; margin-top:14px;';
+        titreAchatsAVenir.textContent = 'Achats à venir (livraison différée) (' + detailAchatsAVenir.length + ')';
+        tdDetailContenu.appendChild(titreAchatsAVenir);
+
+        if (detailAchatsAVenir.length) {
+          const colonneActionsAVenir = peutGererCommerce();
+          const tableAVenir = document.createElement('table');
+          tableAVenir.className = 'tableau-cartes tableau-detail';
+          tableAVenir.innerHTML = '<thead><tr>' +
+            '<th>Fournisseur</th><th class="centre">Quantité</th>' +
+            (avecPrix ? '<th class="centre">Prix d\'achat</th>' : '') +
+            '<th>Livraison prévue</th><th>Transport</th><th>Commercial</th>' +
+            (colonneActionsAVenir ? '<th style="width:120px;"></th>' : '') +
+            '</tr></thead>';
+          const corpsAVenir = document.createElement('tbody');
+          detailAchatsAVenir.forEach(function (d) {
+            const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
+            const prix = (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
+            const trLigne = document.createElement('tr');
+            const tdFournisseur = document.createElement('td');
+            tdFournisseur.className = 'produit'; tdFournisseur.textContent = d.fournisseur;
+            const tdQuantite = document.createElement('td');
+            tdQuantite.className = 'centre mono'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = d.quantite;
+            trLigne.appendChild(tdFournisseur); trLigne.appendChild(tdQuantite);
+            if (avecPrix) {
+              const tdPrixLigne = document.createElement('td');
+              tdPrixLigne.className = 'centre mono'; tdPrixLigne.dataset.label = "Prix d'achat"; tdPrixLigne.textContent = prix;
+              trLigne.appendChild(tdPrixLigne);
+            }
+            const tdLivraison = document.createElement('td');
+            tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = d.dateLivraisonPrevue || '—';
+            const tdTransport = document.createElement('td');
+            tdTransport.dataset.label = 'Transport'; tdTransport.textContent = transport;
+            const tdCommercial = document.createElement('td');
+            tdCommercial.dataset.label = 'Commercial'; tdCommercial.textContent = libelleCommercial(d.responsable);
+            trLigne.appendChild(tdLivraison); trLigne.appendChild(tdTransport); trLigne.appendChild(tdCommercial);
+            if (colonneActionsAVenir) {
+              const tdActionsAVenir = document.createElement('td');
+              tdActionsAVenir.className = 'centre';
+              if (peutGererCetAchat(d)) {
+                const btnModifierAVenir = document.createElement('button');
+                btnModifierAVenir.className = 'bouton-secondaire';
+                btnModifierAVenir.textContent = 'Modifier';
+                btnModifierAVenir.style.marginRight = '6px';
+                btnModifierAVenir.onclick = function () {
+                  const achatComplet = achatsCombinesParId[d.achatId];
+                  if (!achatComplet) { afficherToast('Achat introuvable (données pas encore synchronisées)'); return; }
+                  chargerAchatPourEdition(achatComplet);
+                };
+                const btnSupprimerAVenir = document.createElement('button');
+                btnSupprimerAVenir.className = 'bouton-secondaire';
+                btnSupprimerAVenir.textContent = 'Suppr.';
+                btnSupprimerAVenir.onclick = function () {
+                  if (!confirm('Supprimer définitivement cet achat (' + d.fournisseur + ', toutes ses lignes) ?')) return;
+                  db.collection('achats').doc(d.achatId).delete().then(function () {
+                    afficherToast('Achat supprimé');
+                  }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+                };
+                tdActionsAVenir.appendChild(btnModifierAVenir);
+                tdActionsAVenir.appendChild(btnSupprimerAVenir);
+              }
+              trLigne.appendChild(tdActionsAVenir);
+            }
+            corpsAVenir.appendChild(trLigne);
+          });
+          tableAVenir.appendChild(corpsAVenir);
+          tdDetailContenu.appendChild(tableAVenir);
+        } else {
+          const videAVenir = document.createElement('div');
+          videAVenir.style.cssText = 'margin:6px 0 14px 0; color:#a49a89;';
+          videAVenir.textContent = 'Aucun achat à livraison différée.';
+          tdDetailContenu.appendChild(videAVenir);
         }
 
         const titreVentes = document.createElement('strong');
@@ -3374,6 +3480,77 @@
     });
   }
 
+  // Achats déjà commandés dont l'arrivée effective est un autre jour (future) — jamais
+  // inclus dans lignesAchatsFiltrees() par défaut (filtrée sur "aujourd'hui uniquement"),
+  // et noyés dans l'historique si on coche "Afficher aussi les achats des jours
+  // précédents" (qui, malgré son nom, lève aussi le filtre sur les achats futurs) : une
+  // section dédiée les garde visibles sans manipulation. Non affectée par la recherche
+  // #filtreAchats ni par la case à cocher, volontairement — toujours la liste complète des
+  // livraisons différées encore à venir, parmi les achats déjà chargés (200 plus récents).
+  function lignesAchatsAVenir() {
+    const lignesAffichees = [];
+    achats.forEach(function (a) {
+      const arrivee = a.dateLivraisonPrevue || a.date;
+      if (arrivee <= AUJOURD_HUI) return;
+      (a.lignes || []).forEach(function (l) { lignesAffichees.push({ achat: a, ligne: l }); });
+    });
+    return lignesAffichees;
+  }
+
+  // Une ligne du récapitulatif Achats et de la section "Achats à venir (livraison
+  // différée)" ont exactement la même forme (Date/Fournisseur/Produit/Quantité/Prix
+  // d'achat/Heure d'arrivée prévue/Livraison prévue/Transport/Responsable/Commentaire/
+  // Actions) — factorisé pour ne pas dupliquer la construction de ligne entre les deux.
+  function genererLigneAchat(item) {
+    const a = item.achat, l = item.ligne;
+    const tr = document.createElement('tr');
+
+    const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.dataset.label = 'Date'; tdDate.textContent = a.date;
+    const tdFournisseur = document.createElement('td'); tdFournisseur.dataset.label = 'Fournisseur'; tdFournisseur.textContent = a.fournisseur;
+    const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
+    const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = l.quantite;
+    const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = l.heureDepart || '—';
+    const tdLivraison = document.createElement('td'); tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
+    const tdTransport = document.createElement('td');
+    tdTransport.dataset.label = 'Transport';
+    tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
+    const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
+    const tdCommentaire = document.createElement('td'); tdCommentaire.dataset.label = 'Commentaire'; tdCommentaire.textContent = a.commentaire || '—';
+
+    const tdActions = document.createElement('td');
+    tdActions.className = 'centre';
+    if (peutGererCetAchat(a)) {
+      const btnModifier = document.createElement('button');
+      btnModifier.className = 'bouton-secondaire';
+      btnModifier.textContent = 'Modifier';
+      btnModifier.style.marginRight = '6px';
+      btnModifier.onclick = function () { chargerAchatPourEdition(a); };
+      const btnSupprimer = document.createElement('button');
+      btnSupprimer.className = 'bouton-secondaire';
+      btnSupprimer.textContent = 'Suppr.';
+      btnSupprimer.onclick = function () {
+        if (!confirm('Supprimer définitivement cet achat (' + a.fournisseur + ', ' + a.date + ', toutes ses lignes) ?')) return;
+        db.collection('achats').doc(a.id).delete().then(function () {
+          afficherToast('Achat supprimé');
+        }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+      };
+      tdActions.appendChild(btnModifier);
+      tdActions.appendChild(btnSupprimer);
+    }
+
+    tr.appendChild(tdDate); tr.appendChild(tdFournisseur); tr.appendChild(tdProduit);
+    tr.appendChild(tdQuantite);
+    if (peutVoirPrix()) {
+      const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono'; tdPrix.dataset.label = "Prix d'achat";
+      tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+      tr.appendChild(tdPrix);
+    }
+    tr.appendChild(tdHeure);
+    tr.appendChild(tdLivraison);
+    tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdCommentaire); tr.appendChild(tdActions);
+    return tr;
+  }
+
   function rendreAchats() {
     // N'appelle volontairement PAS rendreFormulaireAchat() ici : cette fonction est
     // déclenchée par tous les listeners Firestore (rendreVueActive) et par la recherche
@@ -3394,53 +3571,16 @@
       : 'Aucun achat enregistré pour le moment.';
 
     filtrees.forEach(function (item) {
-      const a = item.achat, l = item.ligne;
-      const tr = document.createElement('tr');
+      corps.appendChild(genererLigneAchat(item));
+    });
 
-      const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.dataset.label = 'Date'; tdDate.textContent = a.date;
-      const tdFournisseur = document.createElement('td'); tdFournisseur.dataset.label = 'Fournisseur'; tdFournisseur.textContent = a.fournisseur;
-      const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
-      const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = l.quantite;
-      const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = l.heureDepart || '—';
-      const tdLivraison = document.createElement('td'); tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
-      const tdTransport = document.createElement('td');
-      tdTransport.dataset.label = 'Transport';
-      tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
-      const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
-      const tdCommentaire = document.createElement('td'); tdCommentaire.dataset.label = 'Commentaire'; tdCommentaire.textContent = a.commentaire || '—';
-
-      const tdActions = document.createElement('td');
-      tdActions.className = 'centre';
-      if (peutGererCetAchat(a)) {
-        const btnModifier = document.createElement('button');
-        btnModifier.className = 'bouton-secondaire';
-        btnModifier.textContent = 'Modifier';
-        btnModifier.style.marginRight = '6px';
-        btnModifier.onclick = function () { chargerAchatPourEdition(a); };
-        const btnSupprimer = document.createElement('button');
-        btnSupprimer.className = 'bouton-secondaire';
-        btnSupprimer.textContent = 'Suppr.';
-        btnSupprimer.onclick = function () {
-          if (!confirm('Supprimer définitivement cet achat (' + a.fournisseur + ', ' + a.date + ', toutes ses lignes) ?')) return;
-          db.collection('achats').doc(a.id).delete().then(function () {
-            afficherToast('Achat supprimé');
-          }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
-        };
-        tdActions.appendChild(btnModifier);
-        tdActions.appendChild(btnSupprimer);
-      }
-
-      tr.appendChild(tdDate); tr.appendChild(tdFournisseur); tr.appendChild(tdProduit);
-      tr.appendChild(tdQuantite);
-      if (peutVoirPrix()) {
-        const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono'; tdPrix.dataset.label = "Prix d'achat";
-        tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
-        tr.appendChild(tdPrix);
-      }
-      tr.appendChild(tdHeure);
-      tr.appendChild(tdLivraison);
-      tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdCommentaire); tr.appendChild(tdActions);
-      corps.appendChild(tr);
+    const corpsAVenir = document.getElementById('corpsAchatsAVenir');
+    corpsAVenir.innerHTML = '';
+    document.getElementById('thPrixAchatAVenir').style.display = peutVoirPrix() ? '' : 'none';
+    const aVenir = lignesAchatsAVenir();
+    document.getElementById('videAchatsAVenir').style.display = aVenir.length ? 'none' : 'block';
+    aVenir.forEach(function (item) {
+      corpsAVenir.appendChild(genererLigneAchat(item));
     });
   }
   window.rendreAchats = rendreAchats;
