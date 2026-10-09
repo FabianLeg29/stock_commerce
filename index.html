@@ -508,6 +508,11 @@
             </table>
             <div class="vide" id="videConsultationStock" style="display:none;">Aucune saisie enregistrée pour cette date.</div>
           </div>
+          <div id="ligneModifierDateConsultation" style="display:none; margin-top:10px;" class="ligne-ajout">
+            <span class="date-du-jour">Corriger la date de ce stock (ex. comptage de la veille enregistré par erreur sous le mauvais jour)</span>
+            <input type="date" id="nouvelleDateConsultation">
+            <button class="bouton-secondaire" onclick="deplacerStockDate()">Déplacer vers cette date</button>
+          </div>
           <div id="ligneSupprimerConsultation" style="display:none; margin-top:10px;">
             <button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerStockDate()">Supprimer ce stock du soir</button>
           </div>
@@ -4303,9 +4308,17 @@
       });
       document.getElementById('resultatConsultationStock').style.display = '';
       document.getElementById('boutonFermerConsultation').style.display = '';
-      // Suppression réservée à l'admin (comme les autres suppressions d'historique),
-      // et seulement s'il y a effectivement quelque chose à supprimer pour cette date.
+      // Suppression et correction de date réservées à l'admin (comme les autres actions
+      // destructrices/correctives d'historique), et seulement s'il y a effectivement
+      // quelque chose pour cette date.
       document.getElementById('ligneSupprimerConsultation').style.display = (estAdmin() && lignes.length) ? '' : 'none';
+      const ligneModifierDate = document.getElementById('ligneModifierDateConsultation');
+      ligneModifierDate.style.display = (estAdmin() && lignes.length) ? '' : 'none';
+      if (estAdmin() && lignes.length) {
+        const inputNouvelleDate = document.getElementById('nouvelleDateConsultation');
+        inputNouvelleDate.max = AUJOURD_HUI;
+        inputNouvelleDate.value = date;
+      }
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.consulterStockDate = consulterStockDate;
@@ -4324,6 +4337,51 @@
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.supprimerStockDate = supprimerStockDate;
+
+  // Corrige la date d'un stock du soir entier (ex. comptage de la veille enregistré par
+  // erreur sous le jour de la frappe plutôt que sous la date réelle) : recrée chaque ligne
+  // sous le nouvel id (idJourProduit(nouvelleDate, produit)) avec le même contenu — seul le
+  // champ "date" change — puis supprime les anciennes lignes. Réservé à l'admin, comme
+  // supprimerStockDate() ci-dessus. Si des lignes existent déjà à la nouvelle date pour les
+  // mêmes produits (un vrai stock de ce jour-là), prévient avant de les écraser.
+  function deplacerStockDate() {
+    if (!estAdmin() || !dateConsultee) return;
+    const nouvelleDate = document.getElementById('nouvelleDateConsultation').value;
+    if (!nouvelleDate) { afficherToast('Choisissez la nouvelle date'); return; }
+    if (nouvelleDate > AUJOURD_HUI) { afficherToast('La date ne peut pas être dans le futur'); return; }
+    if (nouvelleDate === dateConsultee) { afficherToast('Choisissez une date différente'); return; }
+
+    db.collection('saisieStock').where('date', '==', dateConsultee).get().then(function (qsAncien) {
+      if (qsAncien.empty) { afficherToast('Aucune ligne à déplacer'); return; }
+      const anciens = [];
+      qsAncien.forEach(function (doc) { anciens.push(doc.data()); });
+
+      db.collection('saisieStock').where('date', '==', nouvelleDate).get().then(function (qsNouveau) {
+        const produitsExistants = [];
+        qsNouveau.forEach(function (doc) {
+          const d = doc.data();
+          if (anciens.some(function (a) { return a.produit === d.produit; })) produitsExistants.push(d.produit);
+        });
+        const messageEcrasement = produitsExistants.length
+          ? ' Un stock existe déjà le ' + nouvelleDate + ' pour : ' + produitsExistants.join(', ') + ' — ces lignes seront écrasées.'
+          : '';
+        if (!confirm('Déplacer le stock du soir du ' + dateConsultee + ' (' + anciens.length + ' produit(s)) vers le ' + nouvelleDate + ' ?' + messageEcrasement)) return;
+
+        const lot = db.batch();
+        anciens.forEach(function (s) {
+          const donnees = Object.assign({}, s, { date: nouvelleDate });
+          lot.set(db.collection('saisieStock').doc(idJourProduit(nouvelleDate, s.produit)), donnees);
+          lot.delete(db.collection('saisieStock').doc(idJourProduit(dateConsultee, s.produit)));
+        });
+        lot.commit().then(function () {
+          afficherToast('Stock du soir déplacé vers le ' + nouvelleDate);
+          document.getElementById('dateConsultationStock').value = nouvelleDate;
+          consulterStockDate();
+        }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+      }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.deplacerStockDate = deplacerStockDate;
 
   function fermerConsultationStock() {
     document.getElementById('resultatConsultationStock').style.display = 'none';
