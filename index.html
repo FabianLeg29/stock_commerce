@@ -451,8 +451,9 @@
         </div>
         <div id="formulaireDemarrageStockSoir" style="display:none;">
           <h3 class="section-titre" style="margin-top:0;">Démarrer un stock du soir</h3>
+          <p class="sous-titre-section">Date d'aujourd'hui par défaut — à changer uniquement pour rattraper un stock du soir oublié la veille (ex. comptage fait le lendemain matin, avant tout achat/vente du nouveau jour).</p>
           <div class="ligne-ajout">
-            <span class="date-du-jour" id="dateDemarrerStockSoir"></span>
+            <input type="date" id="dateDemarrerStockSoir">
             <input type="time" id="heureDemarrerStockSoir">
             <select id="coteDemarrerStockSoir">
               <option value="haut">Stock Haut</option>
@@ -856,6 +857,11 @@
   let dateConsultee = null;              // date actuellement affichée dans "Consulter un stock antérieur" (pour Supprimer)
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: { haut: valeurTexte, bas: valeurTexte } } — comptage local de la session, écrit en une fois à la fin
+  let saisieDateSession = {};     // snapshot ponctuel de saisieStock pour sessionStockSoir.date, UNIQUEMENT quand cette date
+                                   // n'est pas aujourd'hui (rattrapage d'un stock du soir oublié la veille) — permet à la
+                                   // colonne en lecture seule et à terminerStockSoir() de se baser sur l'existant du bon
+                                   // jour plutôt que sur saisieDuJour (toujours scopé à aujourd'hui). Non utilisé si la
+                                   // session porte sur aujourd'hui (saisieDuJour, déjà à jour en temps réel, suffit).
   let terminaisonEnCours = false; // true pendant l'écriture Firestore de "Terminer et enregistrer" (anti double-clic)
   let brouillonsStockSoir = {};   // { docId: { date, cote, operateur, heure, valeurs } } — sessions en cours (persistées), tous opérateurs, pour le jour
   let idBrouillonActuel = null;   // docId du brouillon Firestore de la session en cours (pour l'auto-sauvegarde et le nettoyage)
@@ -1417,13 +1423,16 @@
   // Démarre (ou reprend depuis un point de départ donné) une session de comptage,
   // et persiste immédiatement un brouillon Firestore — pour que la session survive
   // à la fermeture de l'onglet et que d'autres opérateurs voient qu'elle est "en cours".
-  function demarrerSessionStockSoir(cote, operateur, heure, valeursInitiales) {
+  // saisieDate (optionnel) : snapshot déjà chargé de l'existant pour cette date (voir
+  // chargerSaisiePourDate()) — ignoré si la date est aujourd'hui, saisieDuJour suffit alors.
+  function demarrerSessionStockSoir(date, cote, operateur, heure, valeursInitiales, saisieDate) {
     formulaireDemarrageOuvert = false;
-    sessionStockSoir = { date: AUJOURD_HUI, heure: heure, cote: cote, operateur: operateur };
+    sessionStockSoir = { date: date, heure: heure, cote: cote, operateur: operateur };
+    saisieDateSession = (date === AUJOURD_HUI) ? {} : (saisieDate || {});
     saisieSessionEnCours = Object.assign({}, valeursInitiales || {});
-    idBrouillonActuel = idBrouillonStockSoir(AUJOURD_HUI, cote, operateur);
+    idBrouillonActuel = idBrouillonStockSoir(date, cote, operateur);
     db.collection('brouillonsStockSoir').doc(idBrouillonActuel).set({
-      date: AUJOURD_HUI, cote: cote, operateur: operateur, heure: heure,
+      date: date, cote: cote, operateur: operateur, heure: heure,
       valeurs: saisieSessionEnCours,
       miseAJour: firebase.firestore.FieldValue.serverTimestamp()
     }).catch(function (e) { afficherToast('Erreur (brouillon) : ' + e.message); });
@@ -1442,16 +1451,31 @@
     }, 800);
   }
 
-  // Valeurs déjà enregistrées aujourd'hui pour un côté donné, au format attendu par
-  // saisieSessionEnCours ({ [produit]: { haut: '...' } } ou { bas: '...' }) — factorisé
-  // pour être utilisé aussi bien par "Modifier le stock enregistré" (un seul côté) que
-  // par le contrôle d'écrasement de demarrerStockSoir() (potentiellement les deux côtés
-  // en mode "Haut + Bas").
-  function valeursExistantesPourCote(cote) {
+  // Snapshot ponctuel de saisieStock pour une date donnée — réutilise saisieDuJour (déjà
+  // à jour en temps réel) si c'est aujourd'hui, sinon fait une requête ponctuelle (même
+  // principe que consulterStockDate()). Sert au contrôle d'écrasement et au pré-remplissage
+  // de demarrerStockSoir() quand on choisit une date différente d'aujourd'hui (rattrapage).
+  function chargerSaisiePourDate(date) {
+    if (date === AUJOURD_HUI) return Promise.resolve(saisieDuJour);
+    return db.collection('saisieStock').where('date', '==', date).get().then(function (qs) {
+      const out = {};
+      qs.forEach(function (doc) { out[doc.data().produit] = doc.data(); });
+      return out;
+    });
+  }
+
+  // Valeurs déjà enregistrées pour un côté donné à la date de "source" (saisieDuJour par
+  // défaut, c'est-à-dire aujourd'hui), au format attendu par saisieSessionEnCours
+  // ({ [produit]: { haut: '...' } } ou { bas: '...' }) — factorisé pour être utilisé aussi
+  // bien par "Modifier le stock enregistré" (un seul côté, toujours aujourd'hui) que par le
+  // contrôle d'écrasement de demarrerStockSoir() (potentiellement les deux côtés en mode
+  // "Haut + Bas", pour la date choisie dans le formulaire).
+  function valeursExistantesPourCote(cote, source) {
     const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
+    const donneesSource = source || saisieDuJour;
     const valeurs = {};
     produits.filter(function (p) { return p.actif; }).forEach(function (p) {
-      const s = saisieDuJour[p.nom];
+      const s = donneesSource[p.nom];
       if (s && typeof s[champValeur] === 'number') {
         valeurs[p.nom] = {};
         valeurs[p.nom][cote] = String(s[champValeur]);
@@ -1469,48 +1493,61 @@
   }
 
   // Avant de démarrer une session vierge, vérifie si le ou les côtés choisis ont déjà
-  // une saisie enregistrée aujourd'hui (ex. Stock Haut déjà fait à 17:48 par Eric) — un
-  // "Démarrer" sur un côté déjà fait écraserait silencieusement ces valeurs au clic sur
+  // une saisie enregistrée à la date choisie (ex. Stock Haut déjà fait à 17:48 par Eric) —
+  // un "Démarrer" sur un côté déjà fait écraserait silencieusement ces valeurs au clic sur
   // "Terminer" (tout produit non retapé est mis à 0). Prévient l'utilisateur et propose
   // soit de reprendre le stock existant en modification (pré-rempli), soit de continuer
-  // quand même avec une session vierge en toute connaissance de cause.
+  // quand même avec une session vierge en toute connaissance de cause. La date est
+  // normalement aujourd'hui, mais reste modifiable pour rattraper un stock du soir oublié
+  // la veille — ce qui impose de charger l'existant de CETTE date (chargerSaisiePourDate())
+  // plutôt que de supposer saisieDuJour, d'où le passage en asynchrone.
   function demarrerStockSoir() {
+    const date = document.getElementById('dateDemarrerStockSoir').value;
     const heure = document.getElementById('heureDemarrerStockSoir').value;
     const cote = document.getElementById('coteDemarrerStockSoir').value;
     const operateur = document.getElementById('operateurDemarrerStockSoir').value;
+    if (!date) { afficherToast('Choisissez une date'); return; }
+    if (date > AUJOURD_HUI) { afficherToast('La date ne peut pas être dans le futur'); return; }
     if (!operateur) { afficherToast('Choisissez un opérateur'); return; }
     if (!heure) { afficherToast("Renseignez l'heure du contrôle"); return; }
 
-    const cotesAVerifier = cote === 'les2' ? ['haut', 'bas'] : [cote];
-    const existants = cotesAVerifier
-      .map(function (c) { return { cote: c, info: saisieExistanteCote(c) }; })
-      .filter(function (e) { return e.info; });
+    chargerSaisiePourDate(date).then(function (saisieDate) {
+      const cotesAVerifier = cote === 'les2' ? ['haut', 'bas'] : [cote];
+      const existants = cotesAVerifier
+        .map(function (c) { return { cote: c, info: saisieExistanteCote(c, saisieDate) }; })
+        .filter(function (e) { return e.info; });
 
-    if (!existants.length) {
-      demarrerSessionStockSoir(cote, operateur, heure, {});
-      return;
-    }
+      if (!existants.length) {
+        demarrerSessionStockSoir(date, cote, operateur, heure, {}, saisieDate);
+        return;
+      }
 
-    const detail = existants.map(function (e) {
-      return libelleCoteStockSoir(e.cote) + ' (enregistré à ' + e.info.heure + ' par ' + e.info.operateur + ')';
-    }).join(' et ');
+      const detail = existants.map(function (e) {
+        return libelleCoteStockSoir(e.cote) + ' (enregistré à ' + e.info.heure + ' par ' + e.info.operateur + ')';
+      }).join(' et ');
+      const libelleJour = date === AUJOURD_HUI ? 'aujourd\'hui' : 'le ' + date;
 
-    if (confirm('Un stock a déjà été enregistré aujourd\'hui pour : ' + detail +
-      '.\n\nCliquez sur OK pour MODIFIER le stock déjà enregistré (recommandé), ou sur Annuler pour choisir une autre action.')) {
-      let valeurs = {};
-      existants.forEach(function (e) { valeurs = fusionnerValeursSessions(valeurs, valeursExistantesPourCote(e.cote)); });
-      demarrerSessionStockSoir(cote, operateur, heure, valeurs);
-      return;
-    }
+      if (confirm('Un stock a déjà été enregistré ' + libelleJour + ' pour : ' + detail +
+        '.\n\nCliquez sur OK pour MODIFIER le stock déjà enregistré (recommandé), ou sur Annuler pour choisir une autre action.')) {
+        let valeurs = {};
+        existants.forEach(function (e) { valeurs = fusionnerValeursSessions(valeurs, valeursExistantesPourCote(e.cote, saisieDate)); });
+        demarrerSessionStockSoir(date, cote, operateur, heure, valeurs, saisieDate);
+        return;
+      }
 
-    if (confirm('Démarrer quand même une nouvelle session vierge pour ce côté ? Les produits non retapés seront écrits à 0 au clic sur « Terminer et enregistrer », écrasant les valeurs déjà enregistrées.')) {
-      demarrerSessionStockSoir(cote, operateur, heure, {});
-    }
+      if (confirm('Démarrer quand même une nouvelle session vierge pour ce côté ? Les produits non retapés seront écrits à 0 au clic sur « Terminer et enregistrer », écrasant les valeurs déjà enregistrées.')) {
+        demarrerSessionStockSoir(date, cote, operateur, heure, {}, saisieDate);
+      }
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.demarrerStockSoir = demarrerStockSoir;
 
   function ouvrirFormulaireDemarrage() {
     formulaireDemarrageOuvert = true;
+    // Toujours réinitialisée à aujourd'hui à l'ouverture du formulaire — la date n'est à
+    // changer que ponctuellement pour un rattrapage, jamais un réglage qui doit persister
+    // d'une session à l'autre (risque de recommencer par erreur sur la date de la veille).
+    document.getElementById('dateDemarrerStockSoir').value = AUJOURD_HUI;
     rendreProduction();
   }
   window.ouvrirFormulaireDemarrage = ouvrirFormulaireDemarrage;
@@ -1538,7 +1575,13 @@
         : Object.assign({ haut: '', bas: '' }, v);
     });
     idBrouillonActuel = docId;
-    rendreProduction();
+    // Un brouillon peut porter sur une date antérieure à aujourd'hui (rattrapage) : charge
+    // alors l'existant de CETTE date pour que la colonne en lecture seule et "Terminer et
+    // enregistrer" ne se basent pas à tort sur saisieDuJour (toujours scopé à aujourd'hui).
+    chargerSaisiePourDate(brouillon.date).then(function (saisieDate) {
+      saisieDateSession = (brouillon.date === AUJOURD_HUI) ? {} : saisieDate;
+      rendreProduction();
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.reprendreStockEnCours = reprendreStockEnCours;
 
@@ -1596,6 +1639,10 @@
   function terminerStockSoir() {
     if (!sessionStockSoir || terminaisonEnCours) return;
     const cote = sessionStockSoir.cote;
+    const dateSession = sessionStockSoir.date;
+    // En rattrapage (dateSession ≠ aujourd'hui), l'existant à préserver pour le côté non
+    // retapé doit venir du snapshot de CETTE date (saisieDateSession), pas de saisieDuJour.
+    const sourceExistant = (dateSession === AUJOURD_HUI) ? saisieDuJour : saisieDateSession;
     const toucheHaut = cote === 'haut' || cote === 'les2';
     const toucheBas = cote === 'bas' || cote === 'les2';
 
@@ -1642,11 +1689,11 @@
     produitsAEcrire.forEach(function (p) {
       const nom = p.nom;
       const v = valeursSessionProduit(nom);
-      const saisieExistante = saisieDuJour[nom] || {};
+      const saisieExistante = sourceExistant[nom] || {};
       const ecrireHaut = cote === 'les2' ? v.haut !== '' : toucheHaut;
       const ecrireBas = cote === 'les2' ? v.bas !== '' : toucheBas;
       const donnees = {
-        date: AUJOURD_HUI, produit: nom,
+        date: dateSession, produit: nom,
         horodatage: firebase.firestore.FieldValue.serverTimestamp(),
         responsable: utilisateurCourant.email,
         importe: false
@@ -1670,7 +1717,7 @@
       }
       donnees.stockSoir = valeurHaut + valeurBas;
       totauxParProduit[nom] = { haut: valeurHaut, bas: valeurBas, total: donnees.stockSoir };
-      lot.set(db.collection('saisieStock').doc(idJourProduit(AUJOURD_HUI, nom)), donnees, { merge: true });
+      lot.set(db.collection('saisieStock').doc(idJourProduit(dateSession, nom)), donnees, { merge: true });
     });
 
     lot.commit().then(function () {
@@ -1680,8 +1727,9 @@
         const valeurLoguee = cote === 'les2' ? totauxParProduit[nom].total : totauxParProduit[nom][cote];
         enregistrerTransaction('stock_soir', nom, valeurLoguee);
       });
+      const suffixeDate = dateSession === AUJOURD_HUI ? '' : ' — ' + dateSession;
       afficherToast(produitsAEcrire.length + ' produit(s) enregistré(s) — ' + sessionStockSoir.operateur +
-        ' (' + libelleCoteStockSoir(cote) + ')');
+        ' (' + libelleCoteStockSoir(cote) + ')' + suffixeDate);
       sessionStockSoir = null;
       saisieSessionEnCours = {};
       idBrouillonActuel = null;
@@ -1698,14 +1746,15 @@
   }
   window.terminerStockSoir = terminerStockSoir;
 
-  // Renvoie { operateur, heure } du dernier enregistrement du jour pour ce côté
-  // (haut ou bas), déduit des saisieStock du jour — ou null si rien n'a encore
-  // été enregistré aujourd'hui pour ce côté.
-  function saisieExistanteCote(cote) {
+  // Renvoie { operateur, heure } du dernier enregistrement pour ce côté (haut ou bas) à
+  // la date de "source" (saisieDuJour par défaut, c'est-à-dire aujourd'hui) — ou null si
+  // rien n'a encore été enregistré pour ce côté à cette date.
+  function saisieExistanteCote(cote, source) {
     const champOperateur = cote === 'haut' ? 'stockHautOperateur' : 'stockBasOperateur';
     const champHeure = cote === 'haut' ? 'stockHautHeure' : 'stockBasHeure';
-    for (const nom in saisieDuJour) {
-      const s = saisieDuJour[nom];
+    const donneesSource = source || saisieDuJour;
+    for (const nom in donneesSource) {
+      const s = donneesSource[nom];
       if (s && s[champOperateur]) {
         return { operateur: s[champOperateur], heure: s[champHeure] || '' };
       }
@@ -1717,7 +1766,7 @@
     if (!peutSaisirProduction()) return;
     const existant = saisieExistanteCote(cote);
     if (!existant) return;
-    demarrerSessionStockSoir(cote, existant.operateur, existant.heure, valeursExistantesPourCote(cote));
+    demarrerSessionStockSoir(AUJOURD_HUI, cote, existant.operateur, existant.heure, valeursExistantesPourCote(cote));
   }
   window.modifierStockSoir = modifierStockSoir;
 
@@ -1770,13 +1819,21 @@
       document.getElementById('blocSessionStockSoir').style.display = 'none';
       document.getElementById('boutonOuvrirDemarrage').style.display = formulaireDemarrageOuvert ? 'none' : '';
       document.getElementById('formulaireDemarrageStockSoir').style.display = formulaireDemarrageOuvert ? '' : 'none';
-      document.getElementById('dateDemarrerStockSoir').textContent = "Aujourd'hui " + AUJOURD_HUI;
+      const inputDateDemarrage = document.getElementById('dateDemarrerStockSoir');
+      inputDateDemarrage.max = AUJOURD_HUI;
+      if (joursConservationStockSoir !== null) {
+        inputDateDemarrage.min = dateMoinsJours(AUJOURD_HUI, joursConservationStockSoir);
+      } else {
+        inputDateDemarrage.removeAttribute('min');
+      }
+      if (!inputDateDemarrage.value) inputDateDemarrage.value = AUJOURD_HUI;
       const inputHeure = document.getElementById('heureDemarrerStockSoir');
       if (!inputHeure.value) {
         const maintenant = new Date();
         inputHeure.value = String(maintenant.getHours()).padStart(2, '0') + ':' + String(maintenant.getMinutes()).padStart(2, '0');
       }
       const peutDemarrer = peutSaisirProduction();
+      inputDateDemarrage.disabled = !peutDemarrer;
       inputHeure.disabled = !peutDemarrer;
       document.getElementById('coteDemarrerStockSoir').disabled = !peutDemarrer;
       document.getElementById('operateurDemarrerStockSoir').disabled = !peutDemarrer;
@@ -1789,8 +1846,9 @@
       document.getElementById('carteBrouillonsStockSoir').style.display = 'none';
       document.getElementById('blocSessionStockSoir').style.display = '';
       const libelleCote = libelleCoteStockSoir(sessionStockSoir.cote);
+      const suffixeDateSession = sessionStockSoir.date === AUJOURD_HUI ? '' : ' — ' + sessionStockSoir.date + ' (rattrapage)';
       document.getElementById('resumeSessionStockSoir').textContent =
-        'Session en cours — ' + libelleCote + ' — ' + sessionStockSoir.operateur + ' — ' + sessionStockSoir.heure;
+        'Session en cours — ' + libelleCote + ' — ' + sessionStockSoir.operateur + ' — ' + sessionStockSoir.heure + suffixeDateSession;
       document.getElementById('boutonTerminerStockSoir').disabled = terminaisonEnCours;
       document.getElementById('boutonAnnulerStockSoir').disabled = terminaisonEnCours;
     }
@@ -1804,6 +1862,12 @@
     const saisieEnCours = capturerSaisieEnCours(corps);
     corps.innerHTML = '';
     document.getElementById('videProduction').style.display = actifs.length ? 'none' : 'block';
+
+    // Pendant une session active portant sur une date de rattrapage (≠ aujourd'hui), la
+    // colonne en lecture seule doit refléter l'existant de CETTE date (saisieDateSession),
+    // pas saisieDuJour (toujours aujourd'hui) — sinon elle afficherait des valeurs sans
+    // rapport avec le jour réellement compté, voire un total erroné en "Haut + Bas".
+    const sourceAffichage = (sessionStockSoir && sessionStockSoir.date !== AUJOURD_HUI) ? saisieDateSession : saisieDuJour;
 
     const groupes = {};
     actifs.forEach(function (p) {
@@ -1822,7 +1886,7 @@
       corps.appendChild(trTitre);
 
       groupes[famille].sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
-        const saisie = saisieDuJour[p.nom] || {};
+        const saisie = sourceAffichage[p.nom] || {};
         const tr = document.createElement('tr');
         const tdNom = document.createElement('td');
         tdNom.className = 'produit';
