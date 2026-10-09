@@ -419,7 +419,6 @@
     <!-- ---------------- PRODUCTION ---------------- -->
     <div class="vue" id="vueProduction">
       <div class="barre-outils">
-        <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
         <span class="date-du-jour" id="dateProduction"></span>
         <input type="date" id="dateExportStockSoir" title="Date du stock du soir à exporter" style="max-width:150px;">
         <button class="bouton-secondaire" onclick="exporterStockSoirExcel()">Exporter le stock du soir (.xlsx)</button>
@@ -478,6 +477,9 @@
         </div>
       </div>
 
+      <div class="barre-outils" style="margin-bottom:10px;">
+        <input type="text" id="filtreProduction" placeholder="Rechercher un produit..." oninput="rendreProduction()">
+      </div>
       <div class="carte-tableau">
         <table>
           <thead>
