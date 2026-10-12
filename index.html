@@ -488,6 +488,7 @@
       <div id="blocSessionStockSoir" style="display:none;">
         <div class="ligne-ajout">
           <span class="date-du-jour" id="resumeSessionStockSoir"></span>
+          <button class="bouton-secondaire" onclick="changerCoteSessionStockSoir()" id="boutonChangerCoteStockSoir" style="display:none;"></button>
           <button onclick="terminerStockSoir()" id="boutonTerminerStockSoir">Terminer et enregistrer</button>
           <button class="bouton-secondaire" onclick="annulerStockSoir()" id="boutonAnnulerStockSoir">Annuler</button>
         </div>
@@ -1563,6 +1564,46 @@
     }, 800);
   }
 
+  // Corrige un démarrage de session sur le mauvais côté (ex. "Stock Haut" choisi par
+  // erreur au lieu de "Stock Bas") sans perdre la saisie déjà tapée : déplace les
+  // valeurs en mémoire du côté actuel vers l'autre côté, bascule sessionStockSoir.cote,
+  // et migre le brouillon Firestore vers son nouvel id (qui porte le côté — voir
+  // idBrouillonStockSoir()) puisque l'ancien id ne correspond plus à cette session.
+  // N'agit que sur une session mono-côté : "Haut + Bas" couvre déjà les deux colonnes.
+  function changerCoteSessionStockSoir() {
+    if (!sessionStockSoir || sessionStockSoir.cote === 'les2' || terminaisonEnCours) return;
+    const ancienCote = sessionStockSoir.cote;
+    const nouveauCote = ancienCote === 'haut' ? 'bas' : 'haut';
+    if (!confirm(
+      'Changer cette session de « ' + libelleCoteStockSoir(ancienCote) + ' » vers « ' + libelleCoteStockSoir(nouveauCote) + ' » ?\n\n' +
+      'Les valeurs déjà tapées seront déplacées vers la colonne ' + libelleCoteStockSoir(nouveauCote) + '.'
+    )) return;
+
+    Object.keys(saisieSessionEnCours).forEach(function (nom) {
+      const v = saisieSessionEnCours[nom];
+      if (!v) return;
+      v[nouveauCote] = v[ancienCote] || '';
+      v[ancienCote] = '';
+    });
+
+    clearTimeout(minuteurBrouillon);
+    const ancienBrouillonId = idBrouillonActuel;
+    sessionStockSoir.cote = nouveauCote;
+    idBrouillonActuel = idBrouillonStockSoir(sessionStockSoir.date, nouveauCote, sessionStockSoir.operateur);
+    if (ancienBrouillonId && ancienBrouillonId !== idBrouillonActuel) {
+      db.collection('brouillonsStockSoir').doc(ancienBrouillonId).delete().catch(function (e) { console.error(e); });
+    }
+    db.collection('brouillonsStockSoir').doc(idBrouillonActuel).set({
+      date: sessionStockSoir.date, cote: nouveauCote, operateur: sessionStockSoir.operateur,
+      heure: sessionStockSoir.heure, valeurs: saisieSessionEnCours,
+      miseAJour: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(function (e) { afficherToast('Erreur (brouillon) : ' + e.message); });
+
+    afficherToast('Session basculée vers ' + libelleCoteStockSoir(nouveauCote));
+    rendreProduction();
+  }
+  window.changerCoteSessionStockSoir = changerCoteSessionStockSoir;
+
   // Snapshot ponctuel de saisieStock pour une date donnée — réutilise saisieDuJour (déjà
   // à jour en temps réel) si c'est aujourd'hui, sinon fait une requête ponctuelle (même
   // principe que consulterStockDate()). Sert au contrôle d'écrasement et au pré-remplissage
@@ -2015,6 +2056,18 @@
       const suffixeDateSession = sessionStockSoir.date === AUJOURD_HUI ? '' : ' — ' + sessionStockSoir.date + ' (rattrapage)';
       document.getElementById('resumeSessionStockSoir').textContent =
         'Session en cours — ' + libelleCote + ' — ' + sessionStockSoir.operateur + ' — ' + sessionStockSoir.heure + suffixeDateSession;
+      // Permet de corriger un démarrage sur le mauvais côté sans perdre la saisie déjà
+      // tapée (voir changerCoteSessionStockSoir()) — seulement pour une session mono-côté
+      // (Haut seul ou Bas seul) : "Haut + Bas" couvre déjà les deux colonnes, rien à basculer.
+      const boutonChangerCote = document.getElementById('boutonChangerCoteStockSoir');
+      if (sessionStockSoir.cote === 'les2') {
+        boutonChangerCote.style.display = 'none';
+      } else {
+        const autreCote = sessionStockSoir.cote === 'haut' ? 'bas' : 'haut';
+        boutonChangerCote.style.display = '';
+        boutonChangerCote.textContent = 'Changer pour ' + libelleCoteStockSoir(autreCote);
+        boutonChangerCote.disabled = terminaisonEnCours;
+      }
       document.getElementById('boutonTerminerStockSoir').disabled = terminaisonEnCours;
       document.getElementById('boutonAnnulerStockSoir').disabled = terminaisonEnCours;
     }
