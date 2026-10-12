@@ -525,7 +525,7 @@
         <div id="resultatConsultationStock" style="display:none;">
           <div class="carte-tableau" style="margin-top:10px;">
             <table>
-              <thead><tr><th>Produit</th><th class="centre col-bas" style="width:100px;">Bas</th><th class="centre col-haut" style="width:100px;">Haut</th><th class="centre" style="width:100px;">Total</th></tr></thead>
+              <thead><tr><th>Produit</th><th class="centre col-bas" style="width:100px;">Bas</th><th class="centre col-haut" style="width:100px;">Haut</th><th class="centre" style="width:100px;">Total</th><th style="width:140px;"></th></tr></thead>
               <tbody id="corpsConsultationStock"></tbody>
             </table>
             <div class="vide" id="videConsultationStock" style="display:none;">Aucune saisie enregistrée pour cette date.</div>
@@ -4900,6 +4900,68 @@
     });
   }
 
+  // Corrige directement les valeurs Bas/Haut d'une ligne de saisieStock déjà enregistrée
+  // (ex. Gilles qui a saisi ses quantités du mauvais côté) — réservée à l'admin, depuis
+  // « Consulter un stock antérieur » (fonctionne aussi pour aujourd'hui, le sélecteur de
+  // date acceptant jusqu'à aujourd'hui). Bascule les deux cellules Bas/Haut en champs de
+  // saisie (même parsing d'addition tapée via sommerExpression() que les autres champs de
+  // quantité), recalcule le Total, demande une confirmation récapitulant le changement,
+  // puis écrit stockBas/stockHaut/stockSoir sur le document (id = idJourProduit(s.date,
+  // s.produit)) sans toucher aux autres champs (operateurs/heures/importe/responsable/
+  // horodatage d'origine, conservés tels quels) et archive la correction dans l'Historique.
+  function commencerCorrectionStockSoirLigne(s, tdBas, tdHaut, tdAction) {
+    const basActuel = typeof s.stockBas === 'number' ? s.stockBas : 0;
+    const hautActuel = typeof s.stockHaut === 'number' ? s.stockHaut : 0;
+
+    tdBas.innerHTML = '';
+    const inputBas = document.createElement('input');
+    inputBas.type = 'tel'; inputBas.className = 'champ-valeur'; inputBas.style.width = '65px';
+    inputBas.value = basActuel;
+    tdBas.appendChild(inputBas);
+
+    tdHaut.innerHTML = '';
+    const inputHaut = document.createElement('input');
+    inputHaut.type = 'tel'; inputHaut.className = 'champ-valeur'; inputHaut.style.width = '65px';
+    inputHaut.value = hautActuel;
+    tdHaut.appendChild(inputHaut);
+
+    tdAction.innerHTML = '';
+    const btnEnregistrer = document.createElement('button');
+    btnEnregistrer.className = 'bouton-secondaire';
+    btnEnregistrer.style.marginRight = '6px';
+    btnEnregistrer.textContent = 'Enregistrer';
+    btnEnregistrer.onclick = function () {
+      const nouveauBas = sommerExpression(inputBas.value);
+      const nouveauHaut = sommerExpression(inputHaut.value);
+      if (nouveauBas === null || nouveauHaut === null || nouveauBas < 0 || nouveauHaut < 0) {
+        afficherToast('Valeurs invalides');
+        return;
+      }
+      if (nouveauBas === basActuel && nouveauHaut === hautActuel) { consulterStockDate(); return; }
+      const nouveauTotal = nouveauBas + nouveauHaut;
+      if (!confirm(
+        'Corriger le stock du ' + s.date + ' pour « ' + s.produit + ' » ?\n\n' +
+        'Bas : ' + basActuel + ' → ' + nouveauBas + '\n' +
+        'Haut : ' + hautActuel + ' → ' + nouveauHaut + '\n' +
+        'Total : ' + (typeof s.stockSoir === 'number' ? s.stockSoir : 0) + ' → ' + nouveauTotal + '\n\n' +
+        'Cette correction est immédiate et définitive.'
+      )) return;
+      db.collection('saisieStock').doc(idJourProduit(s.date, s.produit)).update({
+        stockBas: nouveauBas, stockHaut: nouveauHaut, stockSoir: nouveauTotal
+      }).then(function () {
+        enregistrerTransaction('stock_soir_corrige', s.produit, nouveauTotal);
+        afficherToast('Stock du soir corrigé pour ' + s.produit);
+        consulterStockDate();
+      }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+    };
+    const btnAnnuler = document.createElement('button');
+    btnAnnuler.className = 'bouton-secondaire';
+    btnAnnuler.textContent = 'Annuler';
+    btnAnnuler.onclick = function () { consulterStockDate(); };
+    tdAction.appendChild(btnEnregistrer);
+    tdAction.appendChild(btnAnnuler);
+  }
+
   function consulterStockDate() {
     const date = document.getElementById('dateConsultationStock').value;
     if (!date) { afficherToast('Choisissez une date'); return; }
@@ -4920,7 +4982,18 @@
         tdBas.textContent = typeof s.stockBas === 'number' ? s.stockBas : '—';
         const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono';
         tdTotal.textContent = typeof s.stockSoir === 'number' ? s.stockSoir : '—';
-        tr.appendChild(tdNom); tr.appendChild(tdBas); tr.appendChild(tdHaut); tr.appendChild(tdTotal);
+        // Correction ligne par ligne d'un stock déjà enregistré (ex. une valeur saisie du
+        // mauvais côté, voir commencerCorrectionStockSoirLigne()) — réservée à l'admin,
+        // comme les autres actions correctives de cette section (Supprimer/Déplacer).
+        const tdAction = document.createElement('td'); tdAction.className = 'centre';
+        if (estAdmin()) {
+          const btnModifier = document.createElement('button');
+          btnModifier.className = 'bouton-secondaire';
+          btnModifier.textContent = 'Modifier';
+          btnModifier.onclick = function () { commencerCorrectionStockSoirLigne(s, tdBas, tdHaut, tdAction); };
+          tdAction.appendChild(btnModifier);
+        }
+        tr.appendChild(tdNom); tr.appendChild(tdBas); tr.appendChild(tdHaut); tr.appendChild(tdTotal); tr.appendChild(tdAction);
         corps.appendChild(tr);
       });
       document.getElementById('resultatConsultationStock').style.display = '';
