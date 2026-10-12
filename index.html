@@ -917,17 +917,32 @@
   let panneauProduitsAffichesOuvert = false;  // état local (non persisté) du panneau "Choisir mes produits affichés"
   let commerciaux = [];             // comptes ayant le rôle commerce : [{ uid, email }]
   let commerceSousOnglet = 'global'; // 'global' ou l'email d'un commercial (sous-onglet actif de l'onglet Commerce)
-  let achatsDuJourParProduit = {};       // { nom: quantiteTotale } — livraison arrivée aujourd'hui (dateLivraisonPrevue||date === AUJOURD_HUI)
+  let achatsDuJourParProduit = {};       // { nom: quantiteTotale } — livraison déjà arrivée (dateLivraisonPrevue||date <= AUJOURD_HUI) et pas
+                                          // encore absorbée par une clôture (voir clotureAnterieureAuChargement/clotureAujourdhui)
   let achatsAVenirParProduit = {};       // { nom: quantiteTotale } — livraison future (dateLivraisonPrevue > AUJOURD_HUI), pour le "stock dispo J+"
-  let clotureAujourdhui = null;          // { heure, responsable } si la journée a déjà été clôturée — voir clotures/{date}
+  let clotureAujourdhui = null;          // { heure, responsable } si la journée a déjà été clôturée — voir clotures/{date} — réservé à
+                                          // l'affichage/la confirmation de "Intégrer et clôturer" (strictement la clôture D'AUJOURD'HUI)
+  // Dernière clôture connue À LA CONNEXION (n'importe quelle date, pas forcément aujourd'hui),
+  // récupérée une seule fois dans attacherListeners() avant d'ouvrir les écouteurs achats/
+  // commerce ci-dessous — sert à la fois à borner ces requêtes et de seuil de repli pour le
+  // filtre clôture dans recalculerAchatsDuJour()/recalculerCommerceDuJour() (voir ces
+  // fonctions) quand aucune clôture n'a encore eu lieu aujourd'hui (ex. lundi matin, avant
+  // toute clôture, la dernière clôture connue est celle de vendredi).
+  let clotureAnterieureAuChargement = null;
+  let generationListeners = 0;           // incrémenté à chaque attacherListeners(), pour ignorer la réponse tardive d'un appel
+                                          // précédent après une déconnexion/reconnexion rapide (voir ci-dessous)
   let commerceDocsAujourdhui = [];       // cache brut des documents commerce du jour (avant filtre clôture), pour recalculer sans refaire une requête
   // Deux caches bruts d'achats à fusionner (un même achat peut apparaître dans les deux,
-  // dédoublonné par id lors du recalcul) : les achats COMMANDÉS aujourd'hui (repli pour
-  // ceux sans date de livraison prévue) et ceux dont la LIVRAISON est prévue aujourd'hui
-  // ou plus tard (peu importe le jour de commande — un achat "livraison différée" commandé
-  // hier ne doit pas disparaître du jour au lendemain, voir CLAUDE.md).
-  let achatsDocsAujourdhui = [];         // where('date','==',AUJOURD_HUI)
-  let achatsDocsLivraison = [];          // where('dateLivraisonPrevue','>=',AUJOURD_HUI)
+  // dédoublonné par id lors du recalcul) : les achats COMMANDÉS depuis la dernière clôture
+  // connue (repli pour ceux sans date de livraison prévue) et ceux dont la LIVRAISON est
+  // prévue depuis cette même date ou plus tard (peu importe le jour de commande — un achat
+  // "livraison différée" commandé hier ne doit pas disparaître du jour au lendemain, voir
+  // CLAUDE.md). Bornés sur la dernière clôture plutôt que sur AUJOURD_HUI : un achat arrivé
+  // un jour où personne ne clôture (ex. le week-end, sans saisie de stock) ne doit pas
+  // disparaître du stock réel/théorique de la reprise tant qu'il n'a pas été absorbé par une
+  // clôture (voir CLAUDE.md, "Achats sur un jour non clôturé").
+  let achatsDocsAujourdhui = [];         // where('date','>=', <date de la dernière clôture>)
+  let achatsDocsLivraison = [];          // where('dateLivraisonPrevue','>=', <date de la dernière clôture>)
   let achatsDuJourDetailParProduit = {}; // { nom: [ { achatId, fournisseur, quantite, prixAchat, heureDepart, transportType, transporteurNom } ] }
   let achatsAVenirDetailParProduit = {}; // même forme, pour les livraisons futures (stock dispo J+)
   let achatsCombinesParId = {};          // { achatId: achat complet (toutes ses lignes) } — fusion des deux caches ci-dessus,
@@ -1067,9 +1082,13 @@
   }
 
   // Recalcule commerceDuJour/commerceDuJourDetailParProduit à partir du cache brut
-  // commerceDocsAujourdhui et de clotureAujourdhui — appelée après chaque mise à jour
-  // de l'un ou l'autre, sans réinterroger Firestore.
+  // commerceDocsAujourdhui et du seuil de clôture — appelée après chaque mise à jour de
+  // l'un ou l'autre, sans réinterroger Firestore.
   function recalculerCommerceDuJour() {
+    // Seuil = la clôture d'aujourd'hui si elle a déjà eu lieu pendant cette session,
+    // sinon la dernière clôture connue à la connexion (potentiellement un autre jour,
+    // ex. vendredi si rien n'a été clôturé depuis) — voir clotureAnterieureAuChargement.
+    const seuilCloture = clotureAujourdhui || clotureAnterieureAuChargement;
     const sommes = {};
     const details = {};
     commerceDocsAujourdhui.forEach(function (d) {
@@ -1077,8 +1096,8 @@
       // clôture ne comptent plus dans le stock réel (déjà reflétées dans le stock du
       // soir validé qui devient le nouveau stock initial) — seules celles saisies
       // après continuent de s'additionner normalement.
-      if (clotureAujourdhui && clotureAujourdhui.heure && d.horodatageMillis !== null &&
-        d.horodatageMillis <= clotureAujourdhui.heure.toMillis()) return;
+      if (seuilCloture && seuilCloture.heure && d.horodatageMillis !== null &&
+        d.horodatageMillis <= seuilCloture.heure.toMillis()) return;
       const ventes = d.ventes || 0;
       const reservations = d.reservations || 0;
       if (!sommes[d.produit]) sommes[d.produit] = { ventes: 0, reservations: 0 };
@@ -1098,6 +1117,8 @@
   // renseignée, sinon date de commande). Un achat dont l'arrivée est déjà passée sans
   // avoir été explicitement clôturé (cas limite) est traité comme arrivé aujourd'hui.
   function recalculerAchatsDuJour() {
+    // Même seuil combiné que recalculerCommerceDuJour() — voir ce commentaire.
+    const seuilCloture = clotureAujourdhui || clotureAnterieureAuChargement;
     const combines = {};
     achatsDocsAujourdhui.forEach(function (d) { combines[d.id] = d; });
     achatsDocsLivraison.forEach(function (d) { combines[d.id] = d; });
@@ -1109,13 +1130,14 @@
       const d = combines[id];
       const arrivee = d.dateLivraisonPrevue || d.date;
       const futur = arrivee > AUJOURD_HUI;
-      // Le seuil de clôture ne doit exclure que les achats arrivés AUJOURD'HUI (déjà
-      // comptés dans l'ancien stock réel, remplacé par le nouveau dernierStock validé) —
-      // jamais les livraisons futures : celles-ci n'ont jamais été comptées dans le
-      // stock réel du jour, donc aucun risque de double-comptage, et doivent continuer
-      // à alimenter "Stock dispo J+" même si elles ont été saisies avant la clôture.
-      if (!futur && clotureAujourdhui && clotureAujourdhui.heure && d.horodatageMillis !== null &&
-        d.horodatageMillis <= clotureAujourdhui.heure.toMillis()) return;
+      // Le seuil de clôture ne doit exclure que les achats déjà arrivés (déjà comptés
+      // dans l'ancien stock réel, remplacé par le nouveau dernierStock validé lors de
+      // cette clôture) — jamais les livraisons futures : celles-ci n'ont jamais été
+      // comptées dans le stock réel du jour, donc aucun risque de double-comptage, et
+      // doivent continuer à alimenter "Stock dispo J+" même si elles ont été saisies
+      // avant la clôture.
+      if (!futur && seuilCloture && seuilCloture.heure && d.horodatageMillis !== null &&
+        d.horodatageMillis <= seuilCloture.heure.toMillis()) return;
       const totaux = futur ? totauxFuturs : totauxJour;
       const details = futur ? detailsFuturs : detailsJour;
       d.lignes.forEach(function (ligne) {
@@ -1256,22 +1278,6 @@
     );
 
     desabonnements.push(
-      db.collection('commerce').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
-        commerceDocsAujourdhui = [];
-        qs.forEach(function (doc) {
-          const d = doc.data();
-          commerceDocsAujourdhui.push({
-            id: doc.id, produit: d.produit, commercial: d.commercial,
-            ventes: d.ventes, reservations: d.reservations,
-            horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null
-          });
-        });
-        recalculerCommerceDuJour();
-        rendreVueActive();
-      })
-    );
-
-    desabonnements.push(
       db.collection('users').where('role', '==', 'commerce').onSnapshot(function (qs) {
         const out = [];
         qs.forEach(function (doc) { out.push({ uid: doc.id, email: doc.data().email }); });
@@ -1295,42 +1301,75 @@
       })
     );
 
-    desabonnements.push(
-      db.collection('achats').where('date', '==', AUJOURD_HUI).onSnapshot(function (qs) {
-        achatsDocsAujourdhui = [];
-        qs.forEach(function (doc) {
-          const d = doc.data();
-          achatsDocsAujourdhui.push({
-            id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
-            fournisseur: d.fournisseur, responsable: d.responsable, commentaire: d.commentaire || '',
-            horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null,
-            lignes: d.lignes || []
-          });
-        });
-        recalculerAchatsDuJour();
-        rendreVueActive();
-      })
-    );
+    // Les écouteurs achats/commerce "du jour" doivent en réalité couvrir tout ce qui n'a
+    // pas encore été absorbé par une clôture, pas seulement ce qui est daté d'aujourd'hui —
+    // sinon un achat livré un jour où personne ne clôture (ex. le week-end, où aucun stock
+    // n'est pris) disparaîtrait purement et simplement du stock réel/théorique au retour,
+    // sans jamais avoir été intégré à dernierStock (voir CLAUDE.md, "Achats sur un jour non
+    // clôturé"). On récupère donc une seule fois, à la connexion, la date de la dernière
+    // clôture connue (quelle qu'elle soit) pour servir de borne basse à ces 3 écouteurs —
+    // une clôture faite PENDANT cette session est déjà gérée en direct par le seuil
+    // "clotureAujourdhui" ci-dessus pour tout ce qui est daté d'aujourd'hui.
+    const maGenerationListeners = ++generationListeners;
+    db.collection('clotures').orderBy('date', 'desc').limit(1).get().then(function (qsCloture) {
+      if (maGenerationListeners !== generationListeners) return; // reconnexion entre-temps : listeners déjà remplacés
+      clotureAnterieureAuChargement = qsCloture.empty ? null : qsCloture.docs[0].data();
+      const borneCalcul = clotureAnterieureAuChargement ? clotureAnterieureAuChargement.date : '0000-01-01';
 
-    // Livraisons prévues aujourd'hui ou plus tard, quel que soit le jour de commande —
-    // un achat "livraison différée" commandé un autre jour ne doit pas disparaître du
-    // calcul du stock tant qu'il n'est pas arrivé (voir recalculerAchatsDuJour()).
-    desabonnements.push(
-      db.collection('achats').where('dateLivraisonPrevue', '>=', AUJOURD_HUI).onSnapshot(function (qs) {
-        achatsDocsLivraison = [];
-        qs.forEach(function (doc) {
-          const d = doc.data();
-          achatsDocsLivraison.push({
-            id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
-            fournisseur: d.fournisseur, responsable: d.responsable, commentaire: d.commentaire || '',
-            horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null,
-            lignes: d.lignes || []
+      desabonnements.push(
+        db.collection('commerce').where('date', '>=', borneCalcul).onSnapshot(function (qs) {
+          commerceDocsAujourdhui = [];
+          qs.forEach(function (doc) {
+            const d = doc.data();
+            commerceDocsAujourdhui.push({
+              id: doc.id, produit: d.produit, commercial: d.commercial,
+              ventes: d.ventes, reservations: d.reservations,
+              horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null
+            });
           });
-        });
-        recalculerAchatsDuJour();
-        rendreVueActive();
-      })
-    );
+          recalculerCommerceDuJour();
+          rendreVueActive();
+        })
+      );
+
+      desabonnements.push(
+        db.collection('achats').where('date', '>=', borneCalcul).onSnapshot(function (qs) {
+          achatsDocsAujourdhui = [];
+          qs.forEach(function (doc) {
+            const d = doc.data();
+            achatsDocsAujourdhui.push({
+              id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
+              fournisseur: d.fournisseur, responsable: d.responsable, commentaire: d.commentaire || '',
+              horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null,
+              lignes: d.lignes || []
+            });
+          });
+          recalculerAchatsDuJour();
+          rendreVueActive();
+        })
+      );
+
+      // Livraisons prévues depuis la dernière clôture ou plus tard, quel que soit le jour
+      // de commande — un achat "livraison différée" commandé un autre jour ne doit pas
+      // disparaître du calcul du stock tant qu'il n'est pas arrivé (voir
+      // recalculerAchatsDuJour()).
+      desabonnements.push(
+        db.collection('achats').where('dateLivraisonPrevue', '>=', borneCalcul).onSnapshot(function (qs) {
+          achatsDocsLivraison = [];
+          qs.forEach(function (doc) {
+            const d = doc.data();
+            achatsDocsLivraison.push({
+              id: doc.id, date: d.date, dateLivraisonPrevue: d.dateLivraisonPrevue || null,
+              fournisseur: d.fournisseur, responsable: d.responsable, commentaire: d.commentaire || '',
+              horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null,
+              lignes: d.lignes || []
+            });
+          });
+          recalculerAchatsDuJour();
+          rendreVueActive();
+        })
+      );
+    }).catch(function (e) { console.error('Dernière clôture : ' + e.message); });
 
     if (estAdmin()) {
       desabonnements.push(
