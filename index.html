@@ -653,6 +653,7 @@
       <div class="barre-outils">
         <input type="text" id="filtreCommerce" placeholder="Rechercher un produit..." oninput="rendreCommerce()">
         <span class="date-du-jour" id="dateCommerce"></span>
+        <button class="bouton-secondaire" onclick="exporterStockTheoriquePDF()">Exporter stock théorique (.pdf)</button>
       </div>
       <div class="sous-onglets" id="sousOngletsCommerce"></div>
       <div style="margin-bottom:14px;">
@@ -2241,6 +2242,53 @@
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.exporterStockSoirPDF = exporterStockSoirPDF;
+
+  // Même principe que exporterStockSoirPDF() : vue imprimable dans #zoneImpression,
+  // famille en en-tête de ligne, portrait, colonnes en couleur. Affiche le Stock initial
+  // (dernier stock connu), les Achats et Ventes TOTAUX du jour (tous commerciaux
+  // confondus, indépendamment du sous-onglet actuellement affiché à l'écran — "total"
+  // demandé explicitement) et le Stock théorique fin de journée (= stock initial +
+  // achats − ventes, identique à la colonne "Stock réel" du tableau à l'écran et à la
+  // colonne "Stock théorique fin de journée" de l'onglet Stock du soir). Toujours pour
+  // aujourd'hui — l'onglet Commerce n'a pas de consultation historique comme le Stock du
+  // soir, donc pas de sélecteur de date ici.
+  function exporterStockTheoriquePDF() {
+    const lignes = produitsActifsTriesParFamille().map(function (p) {
+      const cache = dernierStockParProduit[p.nom] || {};
+      const stockInitial = typeof cache.valeur === 'number' ? cache.valeur : 0;
+      const achats = achatsDuJourParProduit[p.nom] || 0;
+      const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
+      return { p: p, stockInitial: stockInitial, achats: achats, ventes: ventes, stockTheorique: stockInitial + achats - ventes };
+    });
+
+    let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
+    html += '<h2>Stock théorique — La Légumière</h2>';
+    html += '<div style="margin-bottom:10px;">Aujourd\'hui ' + AUJOURD_HUI + '</div>';
+    html += '<table><thead><tr><th>Produit</th><th>Stock initial</th>' +
+      '<th style="background:var(--ok-soft); color:var(--ok);">Achats</th>' +
+      '<th style="background:var(--danger-soft); color:var(--danger);">Ventes</th>' +
+      '<th style="background:var(--copper-soft); color:var(--copper);">Stock théorique fin de journée</th></tr></thead><tbody>';
+    let familleCourante = null;
+    lignes.forEach(function (item) {
+      const famille = item.p.famille || 'Sans famille';
+      if (famille !== familleCourante) {
+        html += '<tr><td colspan="5" style="background:var(--copper-soft); color:var(--copper); font-weight:700; text-transform:uppercase; letter-spacing:0.03em; font-size:12px;">' + famille + '</td></tr>';
+        familleCourante = famille;
+      }
+      html += '<tr><td>' + item.p.nom + '</td>' +
+        '<td>' + item.stockInitial + '</td>' +
+        '<td style="background:var(--ok-soft); color:var(--ok);">' + item.achats + '</td>' +
+        '<td style="background:var(--danger-soft); color:var(--danger);">' + item.ventes + '</td>' +
+        '<td style="background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + item.stockTheorique + '</td></tr>';
+    });
+    if (!lignes.length) {
+      html += '<tr><td colspan="5" style="text-align:center; color:#888;">Aucun produit actif.</td></tr>';
+    }
+    html += '</tbody></table>';
+    document.getElementById('zoneImpression').innerHTML = html;
+    window.print();
+  }
+  window.exporterStockTheoriquePDF = exporterStockTheoriquePDF;
 
   function prochainOrdreProduit() {
     return produits.reduce(function (m, p) { return Math.max(m, p.ordre || 0); }, 0) + 1;
