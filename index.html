@@ -138,6 +138,10 @@
     flex: 1; min-width: 200px; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line);
     font-size: 14px; background: var(--panel);
   }
+  .barre-outils select {
+    flex: 1 1 150px; min-width: 130px; padding: 11px 14px; border-radius: 10px; border: 1.5px solid var(--line);
+    font-size: 14px; background: var(--panel);
+  }
   .date-du-jour { font-size: 13px; color: #746a5e; }
 
   .carte-tableau {
@@ -658,7 +662,7 @@
       <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:0;">
         <div class="sous-onglets" id="sousOngletsCommerce"></div>
         <div id="groupeCorrectionStockInitial" style="display:none; gap:8px;">
-          <button class="bouton-secondaire" id="boutonModifierStockInitial" onclick="basculerCorrectionStockInitial(true)">Modifier</button>
+          <button class="bouton-secondaire" id="boutonModifierStockInitial" onclick="basculerCorrectionStockInitial(true)">Modifier/corriger le stock initial</button>
           <button id="boutonValiderStockInitial" style="display:none;" onclick="validerCorrectionStockInitial()">Valider</button>
           <button class="bouton-secondaire" id="boutonAnnulerStockInitial" style="display:none;" onclick="basculerCorrectionStockInitial(false)">Annuler</button>
         </div>
@@ -720,6 +724,11 @@
     <div class="vue" id="vuePrixAchat">
       <div class="barre-outils">
         <input type="text" id="filtrePrixAchat" placeholder="Rechercher un produit..." oninput="rendrePrixAchat()">
+        <select id="filtreTaxoFamillePrixAchat" onchange="rendrePrixAchat()"></select>
+        <select id="filtreTaxoVarietePrixAchat" onchange="rendrePrixAchat()"></select>
+        <select id="filtreTaxoOriginePrixAchat" onchange="rendrePrixAchat()"></select>
+        <select id="filtreTaxoConditionnementPrixAchat" onchange="rendrePrixAchat()"></select>
+        <select id="filtreTaxoSuremballagePrixAchat" onchange="rendrePrixAchat()"></select>
       </div>
       <div class="carte-tableau">
         <table>
@@ -773,6 +782,11 @@
       </div>
       <div class="barre-outils">
         <input type="text" id="filtreProduits" placeholder="Rechercher (désignation, famille, variété, origine, conditionnement...)..." oninput="rendreProduits()">
+        <select id="filtreTaxoFamilleProduits" onchange="rendreProduits()"></select>
+        <select id="filtreTaxoVarieteProduits" onchange="rendreProduits()"></select>
+        <select id="filtreTaxoOrigineProduits" onchange="rendreProduits()"></select>
+        <select id="filtreTaxoConditionnementProduits" onchange="rendreProduits()"></select>
+        <select id="filtreTaxoSuremballageProduits" onchange="rendreProduits()"></select>
       </div>
       <div class="carte-tableau">
         <table class="tableau-cartes tableau-compact">
@@ -2643,12 +2657,16 @@
       }
       tdVeille.appendChild(libelleVeille);
       // Correction groupée du stock initial (voir basculerCorrectionStockInitial()/
-      // validerCorrectionStockInitial(), déclenchées par le bouton "Modifier" au-dessus du
-      // tableau) : un champ de saisie remplace la valeur en lecture seule pour tous les
-      // produits à la fois tant que le mode est actif — l'input prend la même place que le
-      // span qu'il remplace (toujours 2 enfants visibles dans la cellule, voir la règle
-      // d'alignement des cartes mobiles plus haut).
+      // validerCorrectionStockInitial(), déclenchées par le bouton "Modifier/corriger le
+      // stock initial" au-dessus du tableau) : un champ de saisie remplace la valeur en
+      // lecture seule pour tous les produits à la fois tant que le mode est actif. L'input
+      // et son avertissement de modification sont regroupés dans un seul conteneur, qui
+      // prend la même place que le span qu'il remplace (toujours 2 enfants visibles dans la
+      // cellule, voir la règle d'alignement des cartes mobiles plus haut) — sans ce
+      // regroupement, l'avertissement formerait un 3ᵉ enfant et casserait l'alignement en
+      // mode carte.
       if (correctionStockInitialActive && peutGererCommerce()) {
+        const conteneurEditionVeille = document.createElement('div');
         const inputValeurVeille = document.createElement('input');
         inputValeurVeille.type = 'tel';
         inputValeurVeille.className = 'champ-valeur';
@@ -2657,10 +2675,21 @@
         inputValeurVeille.style.width = '70px';
         inputValeurVeille.value = (typeof correctionStockInitialValeurs[p.nom] !== 'undefined')
           ? correctionStockInitialValeurs[p.nom] : stockVeille;
+        const avertissementVeille = document.createElement('div');
+        avertissementVeille.style.cssText = 'display:none; color:var(--danger); font-size:11px; margin-top:4px; text-align:right; max-width:170px; font-weight:600;';
+        avertissementVeille.textContent = 'Attention, vous avez modifié la quantité pour l’article : ' + p.nom + ' !';
+        function majAvertissementVeille() {
+          const nouvelleValeur = sommerExpression(inputValeurVeille.value);
+          avertissementVeille.style.display = (nouvelleValeur !== null && nouvelleValeur !== stockVeille) ? 'block' : 'none';
+        }
         inputValeurVeille.addEventListener('input', function () {
           correctionStockInitialValeurs[p.nom] = inputValeurVeille.value;
+          majAvertissementVeille();
         });
-        tdVeille.appendChild(inputValeurVeille);
+        majAvertissementVeille();
+        conteneurEditionVeille.appendChild(inputValeurVeille);
+        conteneurEditionVeille.appendChild(avertissementVeille);
+        tdVeille.appendChild(conteneurEditionVeille);
       } else {
         const spanValeurVeille = document.createElement('span');
         spanValeurVeille.textContent = stockVeille;
@@ -3225,8 +3254,12 @@
   window.integrerStocksEtCloturerJourneeVeille = integrerStocksEtCloturerJourneeVeille;
 
   function rendrePrixAchat() {
+    remplirFiltresTaxonomie('PrixAchat');
     const q = (document.getElementById('filtrePrixAchat').value || '').toLowerCase();
-    const filtres = produits.filter(function (p) { return p.nom.toLowerCase().indexOf(q) !== -1; });
+    const filtresTaxoPrixAchat = lireFiltresTaxonomie('PrixAchat');
+    const filtres = produits.filter(function (p) {
+      return p.nom.toLowerCase().indexOf(q) !== -1 && produitCorrespondFiltresTaxonomie(p, filtresTaxoPrixAchat);
+    });
     const corps = document.getElementById('corpsGestionProduits');
     const saisieEnCours = capturerSaisieEnCours(corps);
     corps.innerHTML = '';
@@ -4032,6 +4065,7 @@
 
   function rendreProduits() {
     rendreSelectsProduits();
+    remplirFiltresTaxonomie('Produits');
     const peutGerer = peutGererCommerce();
     document.getElementById('ligneAjoutProduit').style.display = peutGerer ? '' : 'none';
     document.getElementById('blocListesReference').style.display = peutGerer ? '' : 'none';
@@ -4049,13 +4083,16 @@
     corpsProduits.innerHTML = '';
 
     const q = (document.getElementById('filtreProduits').value || '').toLowerCase();
-    const produitsFiltres = !q ? produits : produits.filter(function (p) {
-      return (p.nom || '').toLowerCase().indexOf(q) !== -1 ||
+    const filtresTaxoProduits = lireFiltresTaxonomie('Produits');
+    const produitsFiltres = produits.filter(function (p) {
+      const matchTexte = !q ||
+        (p.nom || '').toLowerCase().indexOf(q) !== -1 ||
         (p.famille || '').toLowerCase().indexOf(q) !== -1 ||
         (p.variete || '').toLowerCase().indexOf(q) !== -1 ||
         (p.origine || '').toLowerCase().indexOf(q) !== -1 ||
         (p.conditionnement || '').toLowerCase().indexOf(q) !== -1 ||
         (p.suremballage || '').toLowerCase().indexOf(q) !== -1;
+      return matchTexte && produitCorrespondFiltresTaxonomie(p, filtresTaxoProduits);
     });
     document.getElementById('videProduits').style.display = produitsFiltres.length ? 'none' : 'block';
 
@@ -4427,6 +4464,93 @@
     { idSelect: 'nouveauConditionnement', champ: 'conditionnement', champReferentiel: 'conditionnements', texteVide: 'Conditionnement...' },
     { idSelect: 'nouveauSuremballage', champ: 'suremballage', champReferentiel: 'suremballages', texteVide: 'Suremballage...' }
   ];
+
+  function capitaliser(mot) { return mot.charAt(0).toUpperCase() + mot.slice(1); }
+
+  const CHAMPS_FILTRE_TAXONOMIE = [
+    { champ: 'famille', champReferentiel: 'familles', texteToutes: 'Toutes les familles' },
+    { champ: 'origine', champReferentiel: 'origines', texteToutes: 'Toutes les origines' },
+    { champ: 'conditionnement', champReferentiel: 'conditionnements', texteToutes: 'Tous les conditionnements' },
+    { champ: 'suremballage', champReferentiel: 'suremballages', texteToutes: 'Tous les suremballages' }
+  ];
+
+  // Remplit les listes déroulantes de filtre par taxonomie des onglets Produits et Prix
+  // d'achat (ids suffixés, ex. "filtreTaxoFamilleProduits"/"filtreTaxoFamillePrixAchat") —
+  // même source de valeurs (union des produits existants et des référentiels) que les
+  // listes de la fiche produit (CHAMPS_LISTES_PRODUIT/rendreSelectsProduits()), mais avec
+  // une option "Toutes/Tous" au lieu d'une valeur à choisir obligatoirement, et sans
+  // effet sur une désignation (ce sont des filtres, pas une saisie).
+  function remplirFiltresTaxonomie(suffixe) {
+    CHAMPS_FILTRE_TAXONOMIE.forEach(function (c) {
+      const select = document.getElementById('filtreTaxo' + capitaliser(c.champ) + suffixe);
+      if (!select) return;
+      const valeurActuelle = select.value;
+      const depuisProduits = produits.map(function (p) { return p[c.champ]; }).filter(Boolean);
+      const depuisReferentiels = referentiels[c.champReferentiel] || [];
+      const valeurs = Array.from(new Set(depuisProduits.concat(depuisReferentiels))).sort();
+      select.innerHTML = '';
+      const optToutes = document.createElement('option');
+      optToutes.value = '';
+      optToutes.textContent = c.texteToutes;
+      select.appendChild(optToutes);
+      valeurs.forEach(function (v) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        select.appendChild(opt);
+      });
+      if (valeurs.indexOf(valeurActuelle) !== -1) select.value = valeurActuelle;
+    });
+    remplirFiltreVarieteTaxonomie(suffixe);
+  }
+
+  // Variété dépend de la Famille déjà filtrée (cascading select, comme dans la fiche
+  // produit) : si une famille est choisie, ne propose que ses variétés ; sinon (filtre
+  // "Toutes les familles"), propose toutes les variétés connues — contrairement au
+  // formulaire de création, un filtre n'impose pas de choisir la famille d'abord.
+  function remplirFiltreVarieteTaxonomie(suffixe) {
+    const select = document.getElementById('filtreTaxoVariete' + suffixe);
+    if (!select) return;
+    const selectFamille = document.getElementById('filtreTaxoFamille' + suffixe);
+    const familleChoisie = selectFamille ? selectFamille.value : '';
+    const valeurActuelle = select.value;
+    const depuisProduits = produits.filter(function (p) { return !familleChoisie || p.famille === familleChoisie; })
+      .map(function (p) { return p.variete; }).filter(Boolean);
+    const depuisReferentiels = (referentiels.varietes || [])
+      .filter(function (v) { return !familleChoisie || v.famille === familleChoisie; })
+      .map(function (v) { return v.nom; });
+    const valeurs = Array.from(new Set(depuisProduits.concat(depuisReferentiels))).sort();
+    select.innerHTML = '';
+    const optToutes = document.createElement('option');
+    optToutes.value = '';
+    optToutes.textContent = 'Toutes les variétés';
+    select.appendChild(optToutes);
+    valeurs.forEach(function (v) {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      select.appendChild(opt);
+    });
+    if (valeurs.indexOf(valeurActuelle) !== -1) select.value = valeurActuelle;
+  }
+
+  function lireFiltresTaxonomie(suffixe) {
+    return {
+      famille: (document.getElementById('filtreTaxoFamille' + suffixe) || {}).value || '',
+      variete: (document.getElementById('filtreTaxoVariete' + suffixe) || {}).value || '',
+      origine: (document.getElementById('filtreTaxoOrigine' + suffixe) || {}).value || '',
+      conditionnement: (document.getElementById('filtreTaxoConditionnement' + suffixe) || {}).value || '',
+      suremballage: (document.getElementById('filtreTaxoSuremballage' + suffixe) || {}).value || ''
+    };
+  }
+
+  function produitCorrespondFiltresTaxonomie(p, filtres) {
+    return (!filtres.famille || p.famille === filtres.famille) &&
+      (!filtres.variete || p.variete === filtres.variete) &&
+      (!filtres.origine || p.origine === filtres.origine) &&
+      (!filtres.conditionnement || p.conditionnement === filtres.conditionnement) &&
+      (!filtres.suremballage || p.suremballage === filtres.suremballage);
+  }
 
   // Les listes déroulantes de la fiche produit ne proposent QUE des valeurs déjà
   // déclarées dans les référentiels (section Listes de référence) ou déjà utilisées
