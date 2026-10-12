@@ -655,7 +655,14 @@
         <span class="date-du-jour" id="dateCommerce"></span>
         <button class="bouton-secondaire" onclick="exporterStockTheoriquePDF()">Exporter stock théorique (.pdf)</button>
       </div>
-      <div class="sous-onglets" id="sousOngletsCommerce"></div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:0;">
+        <div class="sous-onglets" id="sousOngletsCommerce"></div>
+        <div id="groupeCorrectionStockInitial" style="display:none; gap:8px;">
+          <button class="bouton-secondaire" id="boutonModifierStockInitial" onclick="basculerCorrectionStockInitial(true)">Modifier</button>
+          <button id="boutonValiderStockInitial" style="display:none;" onclick="validerCorrectionStockInitial()">Valider</button>
+          <button class="bouton-secondaire" id="boutonAnnulerStockInitial" style="display:none;" onclick="basculerCorrectionStockInitial(false)">Annuler</button>
+        </div>
+      </div>
       <div style="margin-bottom:14px;">
         <button class="bouton-secondaire" id="boutonProduitsAffiches" style="display:none;" onclick="basculerPanneauProduitsAffiches()">Choisir mes produits affichés</button>
         <div id="panneauProduitsAffiches" style="display:none; margin-top:10px;"></div>
@@ -918,6 +925,11 @@
   let panneauProduitsAffichesOuvert = false;  // état local (non persisté) du panneau "Choisir mes produits affichés"
   let commerciaux = [];             // comptes ayant le rôle commerce : [{ uid, email }]
   let commerceSousOnglet = 'global'; // 'global' ou l'email d'un commercial (sous-onglet actif de l'onglet Commerce)
+  let correctionStockInitialActive = false; // bascule la colonne "Stock initial" en édition groupée (bouton "Modifier" au-dessus du tableau Commerce)
+  let correctionStockInitialValeurs = {};   // { nom: valeurTapeeTexte } — brouillon des champs en cours d'édition, relu à chaque rendreCommerce()
+                                             // pour survivre aux re-rendus déclenchés par les listeners Firestore en tâche de fond (plusieurs
+                                             // champs peuvent être en cours de frappe en même temps, contrairement à saisieEnCours qui ne
+                                             // préserve qu'un seul champ actuellement focalisé)
   let achatsDuJourParProduit = {};       // { nom: quantiteTotale } — livraison déjà arrivée (dateLivraisonPrevue||date <= AUJOURD_HUI) et pas
                                           // encore absorbée par une clôture (voir clotureAnterieureAuChargement/clotureAujourdhui)
   let achatsAVenirParProduit = {};       // { nom: quantiteTotale } — livraison future (dateLivraisonPrevue > AUJOURD_HUI), pour le "stock dispo J+"
@@ -2460,57 +2472,55 @@
     });
   }
 
-  // Corrige directement le "Stock initial" (dernierStock/main) d'un produit — pour une
-  // saisie déjà validée mais erronée (ex. un comptage mal réparti entre deux
-  // conditionnements différents du même produit). Bascule la valeur en champ de saisie
-  // au clic sur "modifier" (même mécanique que commencerRenommage(), en dehors du module
-  // Produits), écrit directement dans dernierStock/main à la confirmation — un
+  // Bascule toute la colonne "Stock initial" (dernierStock/main) en édition groupée —
+  // pour corriger une saisie déjà validée mais erronée (ex. un comptage mal réparti
+  // entre deux conditionnements différents du même produit). Déclenché par le bouton
+  // "Modifier" au-dessus du tableau Commerce (à droite des sous-onglets commerciaux) ;
+  // "Annuler" abandonne le brouillon sans rien écrire. L'écriture effective se fait au
+  // clic sur "Valider" (voir validerCorrectionStockInitial()), jamais au simple
+  // changement de valeur d'un champ.
+  function basculerCorrectionStockInitial(active) {
+    correctionStockInitialActive = active;
+    correctionStockInitialValeurs = {};
+    rendreCommerce();
+  }
+
+  // Lit les valeurs tapées dans correctionStockInitialValeurs, ne garde que celles qui
+  // diffèrent réellement de dernierStockParProduit, demande une confirmation unique
+  // listant tous les changements, puis écrit en un seul appel (merge) dans
+  // dernierStock/main et archive chaque correction dans l'Historique — un
   // contournement volontaire du circuit normal (comptage → validation), réservé au
   // rôle `commerce`/admin comme la validation elle-même (même règle Firestore :
-  // dernierStock n'est écrit que par estCommerce()). Une confirmation explicite prévient
-  // que la correction est immédiate et visible par toute l'équipe, et une ligne est
-  // ajoutée à l'Historique pour garder une trace. Le champ accepte une addition tapée
-  // directement (ex. "133+130"), comme les autres champs de quantité de l'app.
-  function commencerCorrectionStockInitial(tdVeille, spanValeur, nomProduit, valeurActuelle) {
-    tdVeille.querySelectorAll('a').forEach(function (a) { a.style.display = 'none'; });
-    const input = document.createElement('input');
-    input.type = 'tel';
-    input.className = 'champ-valeur';
-    input.style.width = '70px';
-    input.value = valeurActuelle;
-    let termine = false;
-    function terminer(valider) {
-      if (termine) return;
-      termine = true;
-      if (!valider) { rendreCommerce(); return; }
-      const nouvelleValeur = sommerExpression(input.value);
-      if (nouvelleValeur === null || nouvelleValeur < 0) {
-        afficherToast('Valeur invalide');
-        rendreCommerce();
-        return;
-      }
-      if (nouvelleValeur === valeurActuelle) { rendreCommerce(); return; }
-      if (!confirm(
-        'Corriger le stock initial de « ' + nomProduit + ' » : ' + valeurActuelle + ' → ' + nouvelleValeur + ' ?\n\n' +
-        "Cette correction est immédiate et visible par toute l'équipe, en dehors du circuit normal de comptage/validation."
-      )) { rendreCommerce(); return; }
-      db.collection('dernierStock').doc('main').set(
-        { [nomProduit]: { valeur: nouvelleValeur, date: AUJOURD_HUI } },
-        { merge: true }
-      ).then(function () {
-        enregistrerTransaction('stock_initial_corrige', nomProduit, nouvelleValeur);
-        afficherToast('Stock initial corrigé');
-      }).catch(function (e) { afficherToast('Erreur : ' + e.message); rendreCommerce(); });
-    }
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') terminer(true);
-      else if (e.key === 'Escape') terminer(false);
+  // dernierStock n'est écrit que par estCommerce()). Chaque champ accepte une addition
+  // tapée directement (ex. "133+130"), comme les autres champs de quantité de l'app.
+  function validerCorrectionStockInitial() {
+    const changements = [];
+    const maj = {};
+    Object.keys(correctionStockInitialValeurs).forEach(function (nomProduit) {
+      const texte = correctionStockInitialValeurs[nomProduit];
+      if (typeof texte === 'undefined') return;
+      const nouvelleValeur = sommerExpression(texte);
+      if (nouvelleValeur === null || nouvelleValeur < 0) return;
+      const cache = dernierStockParProduit[nomProduit] || {};
+      const valeurActuelle = typeof cache.valeur === 'number' ? cache.valeur : 0;
+      if (nouvelleValeur === valeurActuelle) return;
+      changements.push({ nom: nomProduit, avant: valeurActuelle, apres: nouvelleValeur });
+      maj[nomProduit] = { valeur: nouvelleValeur, date: AUJOURD_HUI };
     });
-    input.addEventListener('blur', function () { terminer(true); });
-    spanValeur.replaceWith(input);
-    input.focus();
-    input.select();
+    if (!changements.length) { afficherToast('Aucune modification à valider'); return; }
+    const recap = changements.map(function (c) { return '• ' + c.nom + ' : ' + c.avant + ' → ' + c.apres; }).join('\n');
+    if (!confirm(
+      'Valider la correction du stock initial pour ' + changements.length + ' produit(s) ?\n\n' + recap + '\n\n' +
+      "Cette correction est immédiate et visible par toute l'équipe, en dehors du circuit normal de comptage/validation."
+    )) return;
+    db.collection('dernierStock').doc('main').set(maj, { merge: true }).then(function () {
+      changements.forEach(function (c) { enregistrerTransaction('stock_initial_corrige', c.nom, c.apres); });
+      afficherToast('Stock initial corrigé');
+      basculerCorrectionStockInitial(false);
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
+  window.basculerCorrectionStockInitial = basculerCorrectionStockInitial;
+  window.validerCorrectionStockInitial = validerCorrectionStockInitial;
 
   function rendreCommerce() {
     document.getElementById('dateCommerce').textContent = "Aujourd'hui " + AUJOURD_HUI;
@@ -2529,6 +2539,14 @@
     const peutPersonnaliserIci = !estGlobal && peutGererCommerce() && !!utilisateurCourant &&
       (estAdmin() || utilisateurCourant.email === commerceSousOnglet);
     document.getElementById('boutonProduitsAffiches').style.display = peutPersonnaliserIci ? '' : 'none';
+
+    // Bouton "Modifier" (correction groupée du stock initial, voir
+    // basculerCorrectionStockInitial()/validerCorrectionStockInitial()) : visible pour
+    // commerce/admin, bascule vers "Valider"/"Annuler" une fois le mode actif.
+    document.getElementById('groupeCorrectionStockInitial').style.display = peutGererCommerce() ? 'flex' : 'none';
+    document.getElementById('boutonModifierStockInitial').style.display = correctionStockInitialActive ? 'none' : '';
+    document.getElementById('boutonValiderStockInitial').style.display = correctionStockInitialActive ? '' : 'none';
+    document.getElementById('boutonAnnulerStockInitial').style.display = correctionStockInitialActive ? '' : 'none';
 
     const q = (document.getElementById('filtreCommerce').value || '').toLowerCase();
     const actifs = produits.filter(function (p) {
@@ -2624,31 +2642,29 @@
         libelleVeille.appendChild(badgeDateVeille);
       }
       tdVeille.appendChild(libelleVeille);
-      const spanValeurVeille = document.createElement('span');
-      spanValeurVeille.textContent = stockVeille;
-      tdVeille.appendChild(spanValeurVeille);
-      // Corriger une saisie déjà validée mais erronée (ex. un comptage mal réparti entre
-      // deux conditionnements) — voir commencerCorrectionStockInitial(). Même duplication
-      // desktop/carte que le bouton "+" d'ajout d'achat ci-dessous : un lien à côté de la
-      // valeur sur desktop, le même lien dans le libellé en mode carte mobile, pour ne
-      // jamais avoir plus de 2 enfants visibles dans la cellule (voir plus haut).
-      if (peutGererCommerce()) {
-        const lienModifierVeille = document.createElement('a');
-        lienModifierVeille.className = 'lien-modifier bouton-mini-desktop';
-        lienModifierVeille.style.marginLeft = '6px';
-        lienModifierVeille.textContent = 'modifier';
-        lienModifierVeille.onclick = function () {
-          commencerCorrectionStockInitial(tdVeille, spanValeurVeille, p.nom, stockVeille);
-        };
-        tdVeille.appendChild(lienModifierVeille);
-
-        const lienModifierVeilleCarte = document.createElement('a');
-        lienModifierVeilleCarte.className = 'lien-modifier bouton-mini-carte';
-        lienModifierVeilleCarte.textContent = 'modifier';
-        lienModifierVeilleCarte.onclick = function () {
-          commencerCorrectionStockInitial(tdVeille, spanValeurVeille, p.nom, stockVeille);
-        };
-        libelleVeille.appendChild(lienModifierVeilleCarte);
+      // Correction groupée du stock initial (voir basculerCorrectionStockInitial()/
+      // validerCorrectionStockInitial(), déclenchées par le bouton "Modifier" au-dessus du
+      // tableau) : un champ de saisie remplace la valeur en lecture seule pour tous les
+      // produits à la fois tant que le mode est actif — l'input prend la même place que le
+      // span qu'il remplace (toujours 2 enfants visibles dans la cellule, voir la règle
+      // d'alignement des cartes mobiles plus haut).
+      if (correctionStockInitialActive && peutGererCommerce()) {
+        const inputValeurVeille = document.createElement('input');
+        inputValeurVeille.type = 'tel';
+        inputValeurVeille.className = 'champ-valeur';
+        inputValeurVeille.dataset.produit = p.nom;
+        inputValeurVeille.dataset.champ = 'stockInitial';
+        inputValeurVeille.style.width = '70px';
+        inputValeurVeille.value = (typeof correctionStockInitialValeurs[p.nom] !== 'undefined')
+          ? correctionStockInitialValeurs[p.nom] : stockVeille;
+        inputValeurVeille.addEventListener('input', function () {
+          correctionStockInitialValeurs[p.nom] = inputValeurVeille.value;
+        });
+        tdVeille.appendChild(inputValeurVeille);
+      } else {
+        const spanValeurVeille = document.createElement('span');
+        spanValeurVeille.textContent = stockVeille;
+        tdVeille.appendChild(spanValeurVeille);
       }
       if (cache.date) {
         const spanDateVeille = document.createElement('span');
