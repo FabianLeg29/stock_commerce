@@ -525,7 +525,7 @@
         <div id="resultatConsultationStock" style="display:none;">
           <div class="carte-tableau" style="margin-top:10px;">
             <table>
-              <thead><tr><th>Produit</th><th class="centre col-bas" style="width:100px;">Bas</th><th class="centre col-haut" style="width:100px;">Haut</th><th class="centre" style="width:100px;">Total</th><th style="width:140px;"></th></tr></thead>
+              <thead><tr><th>Produit</th><th class="centre col-bas" style="width:100px;">Bas</th><th class="centre col-haut" style="width:100px;">Haut</th><th class="centre" style="width:100px;">Total</th><th style="width:190px;"></th></tr></thead>
               <tbody id="corpsConsultationStock"></tbody>
             </table>
             <div class="vide" id="videConsultationStock" style="display:none;">Aucune saisie enregistrée pour cette date.</div>
@@ -4926,9 +4926,33 @@
     tdHaut.appendChild(inputHaut);
 
     tdAction.innerHTML = '';
+    tdAction.style.cssText = 'display:flex; flex-direction:column; gap:5px; align-items:center;';
+
+    // Boutons de transfert en un clic : remplissent les deux champs d'un coup (valeur
+    // déplacée + source remise à 0) plutôt que de laisser retaper les deux à la main — une
+    // correction manuelle des deux champs avait laissé la même valeur dans les deux
+    // colonnes (Haut recopié dans Bas sans être remis à 0), une vraie copie au lieu du
+    // transfert voulu. "Enregistrer" reste nécessaire pour confirmer et écrire.
+    const ligneTransfert = document.createElement('div');
+    ligneTransfert.style.cssText = 'display:flex; gap:4px; flex-wrap:wrap; justify-content:center;';
+    const btnVersBas = document.createElement('button');
+    btnVersBas.className = 'bouton-mini';
+    btnVersBas.textContent = 'Tout en Bas';
+    btnVersBas.title = 'Déplace la valeur de Haut vers Bas (Haut remis à 0)';
+    btnVersBas.onclick = function () { inputBas.value = inputHaut.value; inputHaut.value = 0; };
+    const btnVersHaut = document.createElement('button');
+    btnVersHaut.className = 'bouton-mini';
+    btnVersHaut.textContent = 'Tout en Haut';
+    btnVersHaut.title = 'Déplace la valeur de Bas vers Haut (Bas remis à 0)';
+    btnVersHaut.onclick = function () { inputHaut.value = inputBas.value; inputBas.value = 0; };
+    ligneTransfert.appendChild(btnVersBas);
+    ligneTransfert.appendChild(btnVersHaut);
+    tdAction.appendChild(ligneTransfert);
+
+    const ligneValidation = document.createElement('div');
+    ligneValidation.style.cssText = 'display:flex; gap:6px;';
     const btnEnregistrer = document.createElement('button');
     btnEnregistrer.className = 'bouton-secondaire';
-    btnEnregistrer.style.marginRight = '6px';
     btnEnregistrer.textContent = 'Enregistrer';
     btnEnregistrer.onclick = function () {
       const nouveauBas = sommerExpression(inputBas.value);
@@ -4958,8 +4982,9 @@
     btnAnnuler.className = 'bouton-secondaire';
     btnAnnuler.textContent = 'Annuler';
     btnAnnuler.onclick = function () { consulterStockDate(); };
-    tdAction.appendChild(btnEnregistrer);
-    tdAction.appendChild(btnAnnuler);
+    ligneValidation.appendChild(btnEnregistrer);
+    ligneValidation.appendChild(btnAnnuler);
+    tdAction.appendChild(ligneValidation);
   }
 
   function consulterStockDate() {
