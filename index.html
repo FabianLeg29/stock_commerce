@@ -3185,7 +3185,7 @@
     achatEnEditionId = null;
     lignesAchatEnCours = [ligneAchatVide()];
     document.getElementById('achatDate').value = AUJOURD_HUI;
-    document.getElementById('achatDateLivraison').value = '';
+    document.getElementById('achatDateLivraison').value = AUJOURD_HUI;
     document.getElementById('achatCommentaire').value = '';
     document.getElementById('boutonAnnulerAchat').style.display = 'none';
     document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
@@ -3205,7 +3205,7 @@
     lignesAchatEnCours = [ligneAchatVide()];
     if (produitPreselectionne) lignesAchatEnCours[0].produit = produitPreselectionne;
     document.getElementById('achatDate').value = AUJOURD_HUI;
-    document.getElementById('achatDateLivraison').value = '';
+    document.getElementById('achatDateLivraison').value = AUJOURD_HUI;
     document.getElementById('achatCommentaire').value = '';
     document.getElementById('boutonAnnulerAchat').style.display = 'none';
     document.getElementById('boutonEnregistrerAchat').textContent = "Enregistrer l'achat";
