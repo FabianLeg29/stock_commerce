@@ -150,6 +150,20 @@
   td.produit { font-weight: 600; }
   td.centre, th.centre { text-align: center; }
 
+  /* Mise en évidence des colonnes Stock Haut / Stock Bas (tableau Stock du soir, sa
+     consultation historique, le détail de validation dans Commerce, et les exports
+     .xlsx/.pdf) — mêmes couleurs partout pour que Haut et Bas restent reconnaissables
+     au premier coup d'œil, qu'on les lise à l'écran ou sur une feuille imprimée.
+     Bas est désormais affiché à GAUCHE de Haut (demande explicite). */
+  .col-haut { background: #E3F2FD; color: #1565C0; }
+  .col-bas { background: #FFF3E0; color: #E65100; }
+  /* La couleur de fond ne teinte que la cellule, pas le champ de saisie lui-même (qui a
+     son propre fond blanc/vert "enregistre" une fois rempli, voir .champ-valeur plus
+     bas) — seule sa bordure reprend la couleur, pour ne pas entrer en conflit avec cet
+     état "déjà saisi". */
+  .col-haut input.champ-valeur { border-color: #1565C0; }
+  .col-bas input.champ-valeur { border-color: #E65100; }
+
   /* Sous-tableau du panneau "▸ Détail" (Commerce) : plus compact que les tableaux
      principaux, sans défilement forcé (déjà dans une cellule qui peut faire défiler
      .carte-tableau au besoin sur desktop, et convertie en cartes sous 640px comme
@@ -487,8 +501,8 @@
           <thead>
             <tr>
               <th>Produit</th>
-              <th class="centre" style="width:100px;" id="thColHaut">Haut</th>
-              <th class="centre" style="width:100px;" id="thColBas">Bas</th>
+              <th class="centre col-bas" style="width:100px;" id="thColBas">Bas</th>
+              <th class="centre col-haut" style="width:100px;" id="thColHaut">Haut</th>
               <th class="centre" style="width:100px;">Total</th>
               <th class="centre" style="width:140px;" title="Dernier stock connu + achats du jour − ventes du jour">Stock théorique fin de journée</th>
               <th class="centre" style="width:90px;">Écart</th>
@@ -510,7 +524,7 @@
         <div id="resultatConsultationStock" style="display:none;">
           <div class="carte-tableau" style="margin-top:10px;">
             <table>
-              <thead><tr><th>Produit</th><th class="centre" style="width:100px;">Haut</th><th class="centre" style="width:100px;">Bas</th><th class="centre" style="width:100px;">Total</th></tr></thead>
+              <thead><tr><th>Produit</th><th class="centre col-bas" style="width:100px;">Bas</th><th class="centre col-haut" style="width:100px;">Haut</th><th class="centre" style="width:100px;">Total</th></tr></thead>
               <tbody id="corpsConsultationStock"></tbody>
             </table>
             <div class="vide" id="videConsultationStock" style="display:none;">Aucune saisie enregistrée pour cette date.</div>
@@ -2094,17 +2108,17 @@
         tdEcart.className = 'centre mono';
         tdEcart.dataset.label = 'Écart';
 
-        function texteLectureSeule(valeur, libelle) {
+        function texteLectureSeule(valeur, libelle, classeCouleur) {
           const td = document.createElement('td');
-          td.className = 'centre mono';
+          td.className = 'centre mono' + (classeCouleur ? ' ' + classeCouleur : '');
           td.dataset.label = libelle;
           td.textContent = (valeur === null || typeof valeur === 'undefined') ? '—' : valeur;
           return { td: td, input: null };
         }
 
-        function champSession(coteChamp, libelle) {
+        function champSession(coteChamp, libelle, classeCouleur) {
           const td = document.createElement('td');
-          td.className = 'centre';
+          td.className = 'centre' + (classeCouleur ? ' ' + classeCouleur : '');
           td.dataset.label = libelle;
           const input = document.createElement('input');
           input.type = 'tel';
@@ -2129,8 +2143,8 @@
 
         const editableHaut = !!sessionStockSoir && (sessionStockSoir.cote === 'haut' || sessionStockSoir.cote === 'les2');
         const editableBas = !!sessionStockSoir && (sessionStockSoir.cote === 'bas' || sessionStockSoir.cote === 'les2');
-        const blocHaut = editableHaut ? champSession('haut', 'Haut') : texteLectureSeule(saisie.stockHaut, 'Haut');
-        const blocBas = editableBas ? champSession('bas', 'Bas') : texteLectureSeule(saisie.stockBas, 'Bas');
+        const blocHaut = editableHaut ? champSession('haut', 'Haut', 'col-haut') : texteLectureSeule(saisie.stockHaut, 'Haut', 'col-haut');
+        const blocBas = editableBas ? champSession('bas', 'Bas', 'col-bas') : texteLectureSeule(saisie.stockBas, 'Bas', 'col-bas');
         blocHaut.td.style.display = masquerColonneHaut ? 'none' : '';
         blocBas.td.style.display = masquerColonneBas ? 'none' : '';
 
@@ -2152,8 +2166,8 @@
         majTotal();
 
         tr.appendChild(tdNom);
-        tr.appendChild(blocHaut.td);
         tr.appendChild(blocBas.td);
+        tr.appendChild(blocHaut.td);
         tr.appendChild(tdTotal);
         tr.appendChild(tdTheorique);
         tr.appendChild(tdEcart);
@@ -2183,7 +2197,7 @@
     const date = document.getElementById('dateExportStockSoir').value || AUJOURD_HUI;
     chargerSaisiePourDate(date).then(function (source) {
       const actifs = produitsActifsTriesParFamille();
-      const feuille = [['Produit', 'Haut', 'Bas', 'Total']];
+      const feuille = [['Produit', 'Bas', 'Haut', 'Total']];
       let familleCourante = null;
       actifs.forEach(function (p) {
         const famille = p.famille || 'Sans famille';
@@ -2194,8 +2208,8 @@
         const saisie = source[p.nom] || {};
         feuille.push([
           p.nom,
-          (saisie.stockHaut === null || typeof saisie.stockHaut === 'undefined') ? '' : saisie.stockHaut,
           (saisie.stockBas === null || typeof saisie.stockBas === 'undefined') ? '' : saisie.stockBas,
+          (saisie.stockHaut === null || typeof saisie.stockHaut === 'undefined') ? '' : saisie.stockHaut,
           (saisie.stockSoir === null || typeof saisie.stockSoir === 'undefined') ? '' : saisie.stockSoir
         ]);
       });
@@ -2231,8 +2245,8 @@
       html += '<h2>Stock du soir — La Légumière</h2>';
       html += '<div style="margin-bottom:10px;">Soir du ' + date + '</div>';
       html += '<table><thead><tr><th>Produit</th>' +
-        '<th style="background:#E3F2FD; color:#1565C0;">Haut</th>' +
         '<th style="background:#FFF3E0; color:#E65100;">Bas</th>' +
+        '<th style="background:#E3F2FD; color:#1565C0;">Haut</th>' +
         '<th style="background:var(--copper-soft); color:var(--copper);">Total</th></tr></thead><tbody>';
       let familleCourante = null;
       lignes.forEach(function (item) {
@@ -2244,8 +2258,8 @@
         const saisie = item.saisie;
         const vide = function (v) { return (v === null || typeof v === 'undefined') ? '—' : v; };
         html += '<tr><td>' + item.p.nom + '</td>' +
-          '<td style="background:#E3F2FD; color:#1565C0;">' + vide(saisie.stockHaut) + '</td>' +
           '<td style="background:#FFF3E0; color:#E65100;">' + vide(saisie.stockBas) + '</td>' +
+          '<td style="background:#E3F2FD; color:#1565C0;">' + vide(saisie.stockHaut) + '</td>' +
           '<td style="background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + vide(saisie.stockSoir) + '</td></tr>';
       });
       if (!lignes.length) {
@@ -3137,17 +3151,17 @@
         tdDetailContenu.innerHTML = '';
         const tableDetail = document.createElement('table');
         tableDetail.className = 'tableau-cartes tableau-detail';
-        tableDetail.innerHTML = '<thead><tr><th>Produit</th><th class="centre">Haut</th><th class="centre">Bas</th><th class="centre">Total</th></tr></thead>';
+        tableDetail.innerHTML = '<thead><tr><th>Produit</th><th class="centre col-bas">Bas</th><th class="centre col-haut">Haut</th><th class="centre">Total</th></tr></thead>';
         const corpsDetail = document.createElement('tbody');
         groupe.forEach(function (s) {
           const trLigne = document.createElement('tr');
           const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = s.produit;
-          const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono'; tdHaut.dataset.label = 'Haut';
+          const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono col-haut'; tdHaut.dataset.label = 'Haut';
           tdHaut.textContent = (s.stockHaut === null || typeof s.stockHaut === 'undefined') ? '—' : s.stockHaut;
-          const tdBas = document.createElement('td'); tdBas.className = 'centre mono'; tdBas.dataset.label = 'Bas';
+          const tdBas = document.createElement('td'); tdBas.className = 'centre mono col-bas'; tdBas.dataset.label = 'Bas';
           tdBas.textContent = (s.stockBas === null || typeof s.stockBas === 'undefined') ? '—' : s.stockBas;
           const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono'; tdTotal.dataset.label = 'Total'; tdTotal.textContent = s.stockSoir;
-          trLigne.appendChild(tdProduit); trLigne.appendChild(tdHaut); trLigne.appendChild(tdBas); trLigne.appendChild(tdTotal);
+          trLigne.appendChild(tdProduit); trLigne.appendChild(tdBas); trLigne.appendChild(tdHaut); trLigne.appendChild(tdTotal);
           corpsDetail.appendChild(trLigne);
         });
         tableDetail.appendChild(corpsDetail);
@@ -4847,13 +4861,13 @@
       lignes.forEach(function (s) {
         const tr = document.createElement('tr');
         const tdNom = document.createElement('td'); tdNom.className = 'produit'; tdNom.textContent = s.produit;
-        const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono';
+        const tdHaut = document.createElement('td'); tdHaut.className = 'centre mono col-haut';
         tdHaut.textContent = typeof s.stockHaut === 'number' ? s.stockHaut : '—';
-        const tdBas = document.createElement('td'); tdBas.className = 'centre mono';
+        const tdBas = document.createElement('td'); tdBas.className = 'centre mono col-bas';
         tdBas.textContent = typeof s.stockBas === 'number' ? s.stockBas : '—';
         const tdTotal = document.createElement('td'); tdTotal.className = 'centre mono';
         tdTotal.textContent = typeof s.stockSoir === 'number' ? s.stockSoir : '—';
-        tr.appendChild(tdNom); tr.appendChild(tdHaut); tr.appendChild(tdBas); tr.appendChild(tdTotal);
+        tr.appendChild(tdNom); tr.appendChild(tdBas); tr.appendChild(tdHaut); tr.appendChild(tdTotal);
         corps.appendChild(tr);
       });
       document.getElementById('resultatConsultationStock').style.display = '';
