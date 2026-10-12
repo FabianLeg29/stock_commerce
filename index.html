@@ -2460,6 +2460,58 @@
     });
   }
 
+  // Corrige directement le "Stock initial" (dernierStock/main) d'un produit — pour une
+  // saisie déjà validée mais erronée (ex. un comptage mal réparti entre deux
+  // conditionnements différents du même produit). Bascule la valeur en champ de saisie
+  // au clic sur "modifier" (même mécanique que commencerRenommage(), en dehors du module
+  // Produits), écrit directement dans dernierStock/main à la confirmation — un
+  // contournement volontaire du circuit normal (comptage → validation), réservé au
+  // rôle `commerce`/admin comme la validation elle-même (même règle Firestore :
+  // dernierStock n'est écrit que par estCommerce()). Une confirmation explicite prévient
+  // que la correction est immédiate et visible par toute l'équipe, et une ligne est
+  // ajoutée à l'Historique pour garder une trace. Le champ accepte une addition tapée
+  // directement (ex. "133+130"), comme les autres champs de quantité de l'app.
+  function commencerCorrectionStockInitial(tdVeille, spanValeur, nomProduit, valeurActuelle) {
+    tdVeille.querySelectorAll('a').forEach(function (a) { a.style.display = 'none'; });
+    const input = document.createElement('input');
+    input.type = 'tel';
+    input.className = 'champ-valeur';
+    input.style.width = '70px';
+    input.value = valeurActuelle;
+    let termine = false;
+    function terminer(valider) {
+      if (termine) return;
+      termine = true;
+      if (!valider) { rendreCommerce(); return; }
+      const nouvelleValeur = sommerExpression(input.value);
+      if (nouvelleValeur === null || nouvelleValeur < 0) {
+        afficherToast('Valeur invalide');
+        rendreCommerce();
+        return;
+      }
+      if (nouvelleValeur === valeurActuelle) { rendreCommerce(); return; }
+      if (!confirm(
+        'Corriger le stock initial de « ' + nomProduit + ' » : ' + valeurActuelle + ' → ' + nouvelleValeur + ' ?\n\n' +
+        "Cette correction est immédiate et visible par toute l'équipe, en dehors du circuit normal de comptage/validation."
+      )) { rendreCommerce(); return; }
+      db.collection('dernierStock').doc('main').set(
+        { [nomProduit]: { valeur: nouvelleValeur, date: AUJOURD_HUI } },
+        { merge: true }
+      ).then(function () {
+        enregistrerTransaction('stock_initial_corrige', nomProduit, nouvelleValeur);
+        afficherToast('Stock initial corrigé');
+      }).catch(function (e) { afficherToast('Erreur : ' + e.message); rendreCommerce(); });
+    }
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') terminer(true);
+      else if (e.key === 'Escape') terminer(false);
+    });
+    input.addEventListener('blur', function () { terminer(true); });
+    spanValeur.replaceWith(input);
+    input.focus();
+    input.select();
+  }
+
   function rendreCommerce() {
     document.getElementById('dateCommerce').textContent = "Aujourd'hui " + AUJOURD_HUI;
     rendreSousOngletsCommerce();
@@ -2575,6 +2627,29 @@
       const spanValeurVeille = document.createElement('span');
       spanValeurVeille.textContent = stockVeille;
       tdVeille.appendChild(spanValeurVeille);
+      // Corriger une saisie déjà validée mais erronée (ex. un comptage mal réparti entre
+      // deux conditionnements) — voir commencerCorrectionStockInitial(). Même duplication
+      // desktop/carte que le bouton "+" d'ajout d'achat ci-dessous : un lien à côté de la
+      // valeur sur desktop, le même lien dans le libellé en mode carte mobile, pour ne
+      // jamais avoir plus de 2 enfants visibles dans la cellule (voir plus haut).
+      if (peutGererCommerce()) {
+        const lienModifierVeille = document.createElement('a');
+        lienModifierVeille.className = 'lien-modifier bouton-mini-desktop';
+        lienModifierVeille.style.marginLeft = '6px';
+        lienModifierVeille.textContent = 'modifier';
+        lienModifierVeille.onclick = function () {
+          commencerCorrectionStockInitial(tdVeille, spanValeurVeille, p.nom, stockVeille);
+        };
+        tdVeille.appendChild(lienModifierVeille);
+
+        const lienModifierVeilleCarte = document.createElement('a');
+        lienModifierVeilleCarte.className = 'lien-modifier bouton-mini-carte';
+        lienModifierVeilleCarte.textContent = 'modifier';
+        lienModifierVeilleCarte.onclick = function () {
+          commencerCorrectionStockInitial(tdVeille, spanValeurVeille, p.nom, stockVeille);
+        };
+        libelleVeille.appendChild(lienModifierVeilleCarte);
+      }
       if (cache.date) {
         const spanDateVeille = document.createElement('span');
         spanDateVeille.className = 'date-desktop-seule';
