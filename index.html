@@ -2476,11 +2476,14 @@
       const stockInitial = typeof cache.valeur === 'number' ? cache.valeur : 0;
       const achats = achatsDuJourParProduit[p.nom] || 0;
       const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
-      const saisie = saisieDuJour[p.nom] || {};
       return {
         p: p, stockInitial: stockInitial, achats: achats, ventes: ventes,
-        stockBas: typeof saisie.stockBas === 'number' ? saisie.stockBas : null,
-        stockHaut: typeof saisie.stockHaut === 'number' ? saisie.stockHaut : null,
+        // Bas/Haut du DERNIER stock du soir intégré (celui qui a produit le "Stock
+        // initial" ci-dessus), pas le comptage du jour en cours — sinon ces deux
+        // colonnes désynchronisent le Stock initial affiché dès qu'un comptage est en
+        // cours aujourd'hui sans avoir encore été validé par le Commerce.
+        stockBas: typeof cache.stockBas === 'number' ? cache.stockBas : null,
+        stockHaut: typeof cache.stockHaut === 'number' ? cache.stockHaut : null,
         stockTheorique: stockInitial + achats - ventes
       };
     });
@@ -3434,7 +3437,11 @@
     const majCache = {};
     Object.keys(dernierParProduit).forEach(function (produit) {
       const s = dernierParProduit[produit];
-      majCache[produit] = { valeur: s.stockSoir, date: s.date };
+      majCache[produit] = {
+        valeur: s.stockSoir, date: s.date,
+        stockBas: typeof s.stockBas === 'number' ? s.stockBas : null,
+        stockHaut: typeof s.stockHaut === 'number' ? s.stockHaut : null
+      };
     });
     const lot = db.batch();
     lot.set(db.collection('dernierStock').doc('main'), majCache, { merge: true });
