@@ -4109,11 +4109,23 @@
   }
   window.rendreAchats = rendreAchats;
 
-  // Trie Produit → Fournisseur → Livraison prévue → Heure d'arrivée prévue (demande
-  // explicite) — regrouper par produit permet de recouper d'un coup d'œil toutes les
-  // livraisons d'un même article, et le sous-tri par fournisseur/date/heure garde un
-  // ordre stable et lisible à l'intérieur de chaque groupe produit.
+  // Un achat ne porte que le nom du produit en toutes lettres (pas une référence à son
+  // id, voir "Origine des données produits") : la famille se retrouve par recherche dans
+  // le catalogue actuel. "Sans famille" si le produit a depuis été renommé/supprimé,
+  // même repli que les autres exports groupés par famille (Stock du soir, Commerce).
+  function familleDuProduitAchat(nomProduit) {
+    const p = produits.find(function (x) { return x.nom === nomProduit; });
+    return (p && p.famille) || 'Sans famille';
+  }
+
+  // Trie Famille → Produit → Fournisseur → Livraison prévue → Heure d'arrivée prévue
+  // (demande explicite) — regrouper par grande famille d'abord, puis par produit au
+  // sein de chaque famille, permet de recouper d'un coup d'œil toutes les livraisons
+  // d'un même article, et le sous-tri par fournisseur/date/heure garde un ordre stable
+  // et lisible à l'intérieur de chaque groupe produit.
   function comparerLignesAchatPourPDF(x, y) {
+    const famx = familleDuProduitAchat(x.ligne.produit), famy = familleDuProduitAchat(y.ligne.produit);
+    if (famx !== famy) return famx.localeCompare(famy);
     const px = x.ligne.produit || '', py = y.ligne.produit || '';
     if (px !== py) return px.localeCompare(py);
     const fx = x.achat.fournisseur || '', fy = y.achat.fournisseur || '';
@@ -4148,7 +4160,7 @@
       const a = item.achat, l = item.ligne;
       const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
       const prix = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
-      return '<tr' + (fondTeinte ? ' style="background:var(--copper-soft);"' : '') + '>' +
+      return '<tr' + (fondTeinte ? ' style="background:#F7EFF5;"' : '') + '>' +
         '<td>' + l.produit + '</td><td>' + a.fournisseur + '</td>' +
         '<td>' + (a.dateLivraisonPrevue || '—') + '</td>' +
         '<td>' + (l.heureDepart || '—') + '</td>' +
@@ -4157,22 +4169,37 @@
         '<td>' + transport + '</td><td>' + a.responsable + '</td><td>' + (a.commentaire || '—') + '</td></tr>';
     }
     const colonnes = avecPrix ? 10 : 9;
+    // Même en-tête de ligne "FAMILLE" que les autres exports PDF groupés (Stock du soir,
+    // Stock théorique) — une ligne pleine largeur avant les produits de chaque famille,
+    // plutôt qu'une colonne Famille répétée sur chaque ligne.
+    function corpsGroupeParFamille(lignes, fondTeinte) {
+      let corps = '';
+      let familleCourante = null;
+      lignes.forEach(function (item) {
+        const famille = familleDuProduitAchat(item.ligne.produit);
+        if (famille !== familleCourante) {
+          corps += '<tr><td colspan="' + colonnes + '" style="background:var(--copper-soft); color:var(--copper); font-weight:700; text-transform:uppercase; letter-spacing:0.03em; font-size:12px;">' + famille + '</td></tr>';
+          familleCourante = famille;
+        }
+        corps += ligne(item, fondTeinte);
+      });
+      return corps;
+    }
 
     let html = '<style>#zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
     html += '<h2>Récapitulatif des achats — La Légumière</h2>';
     html += '<div style="margin-bottom:10px;">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
     html += '<table><thead>' + entetes() + '</thead><tbody>';
-    filtrees.forEach(function (item) { html += ligne(item, false); });
-    if (!filtrees.length) {
+    if (filtrees.length) {
+      html += corpsGroupeParFamille(filtrees, false);
+    } else {
       html += '<tr><td colspan="' + colonnes + '" style="text-align:center; color:#888;">Aucun achat.</td></tr>';
     }
     html += '</tbody></table>';
 
     if (aVenir.length) {
       html += '<h3 style="margin-top:20px; background:var(--copper-soft); color:var(--copper); padding:8px 12px; border-radius:6px;">Livraisons différées (à venir)</h3>';
-      html += '<table><thead>' + entetes() + '</thead><tbody>';
-      aVenir.forEach(function (item) { html += ligne(item, true); });
-      html += '</tbody></table>';
+      html += '<table><thead>' + entetes() + '</thead><tbody>' + corpsGroupeParFamille(aVenir, true) + '</tbody></table>';
     }
 
     document.getElementById('zoneImpression').innerHTML = html;
