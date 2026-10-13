@@ -289,6 +289,32 @@
 
   .impression-seule { display: none; }
   @page { size: landscape; margin: 12mm; }
+
+  /* Clavier numérique personnalisé (mobile uniquement, voir #clavierPersonnalise plus bas
+     dans le HTML) : barre fixée en bas d'écran, au-dessus de tout (toast, modale), avec une
+     touche "+" dédiée toujours visible. */
+  #clavierPersonnalise {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
+    background: var(--panel); border-top: 1.5px solid var(--line);
+    box-shadow: 0 -4px 16px rgba(43,38,32,0.18);
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)) 10px;
+  }
+  #clavierApercu {
+    text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 700;
+    color: var(--copper); padding: 4px 8px 10px 8px; min-height: 26px; word-break: break-all;
+  }
+  .clavier-grille {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px;
+  }
+  .clavier-grille button, #clavierPersonnalise #clavierTermine {
+    font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 700;
+    border: 1.5px solid var(--line); border-radius: 10px; background: white; color: var(--ink);
+    padding: 14px 0; min-height: 48px; cursor: pointer;
+  }
+  .clavier-grille button.clavier-touche-plus { color: var(--copper); border-color: var(--copper); }
+  #clavierPersonnalise #clavierTermine {
+    width: 100%; background: var(--copper); color: white; border-color: var(--copper); font-size: 15px;
+  }
   @media print {
     body > *:not(.impression-seule) { display: none !important; }
     .impression-seule { display: block !important; }
@@ -878,6 +904,29 @@
 <div class="toast" id="toast"></div>
 <div id="zoneImpression" class="impression-seule"></div>
 
+<!-- Clavier numérique personnalisé (mobile uniquement) : remplace le clavier natif sur les
+     champs de quantité qui acceptent une addition tapée (type="tel", classe "champ-valeur")
+     pour garantir une touche "+" toujours visible, le clavier téléphone natif ne l'affichant
+     pas de façon fiable sur tous les mobiles (voir CLAUDE.md). -->
+<div id="clavierPersonnalise" style="display:none;">
+  <div id="clavierApercu">0</div>
+  <div class="clavier-grille">
+    <button type="button" data-touche="1">1</button>
+    <button type="button" data-touche="2">2</button>
+    <button type="button" data-touche="3">3</button>
+    <button type="button" data-touche="4">4</button>
+    <button type="button" data-touche="5">5</button>
+    <button type="button" data-touche="6">6</button>
+    <button type="button" data-touche="7">7</button>
+    <button type="button" data-touche="8">8</button>
+    <button type="button" data-touche="9">9</button>
+    <button type="button" class="clavier-touche-plus" data-touche="+">+</button>
+    <button type="button" data-touche="0">0</button>
+    <button type="button" id="clavierEffacer">⌫</button>
+  </div>
+  <button type="button" id="clavierTermine">Terminé</button>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -1013,6 +1062,89 @@
     clearTimeout(t._timer);
     t._timer = setTimeout(function () { t.classList.remove('show'); }, 1600);
   }
+
+  // ============================================================
+  // CLAVIER NUMÉRIQUE PERSONNALISÉ (mobile)
+  // ============================================================
+  // Les champs de quantité acceptant une addition tapée (type="tel", classe "champ-valeur" —
+  // voir sommerExpression()) comptent sur le clavier numérique natif du téléphone pour la
+  // touche "+", mais celle-ci n'est pas affichée de façon fiable sur tous les mobiles (ex.
+  // absente du clavier "Téléphone" natif d'iOS). Sur un écran étroit (même seuil 640px que le
+  // reste de l'app), on bascule ces champs sur `inputmode="none"` — qui supprime le clavier
+  // natif sans rien changer à l'édition par script — et on affiche à la place le clavier
+  // ci-dessous, avec une touche "+" toujours visible. Sur desktop, rien ne change : pas de
+  // souci de clavier natif, le clavier personnalisé ne s'affiche jamais.
+  let clavierPersonnaliseInput = null;
+
+  function champClavierPersonnalise(el) {
+    return !!el && el.tagName === 'INPUT' && el.type === 'tel' && el.classList.contains('champ-valeur');
+  }
+
+  // Identifiant stable d'un champ de saisie (produit + côté), pour reconnaître qu'un re-rendu
+  // déclenché par un listener Firestore en tâche de fond a recréé LE MÊME champ (nouveau
+  // nœud DOM, même donnée) plutôt que l'utilisateur n'ait tapé dans un champ différent —
+  // évite de redéfiler l'écran à chaque re-rendu pendant la saisie (voir restaurerSaisieEnCours).
+  function cleChampClavier(el) {
+    return (el.dataset && el.dataset.produit) ? (el.dataset.produit + '|' + (el.dataset.champ || '')) : null;
+  }
+
+  function ouvrirClavierPersonnalise(input) {
+    const memeChamp = clavierPersonnaliseInput && cleChampClavier(input) && cleChampClavier(input) === cleChampClavier(clavierPersonnaliseInput);
+    clavierPersonnaliseInput = input;
+    document.getElementById('clavierApercu').textContent = input.value || '0';
+    document.getElementById('clavierPersonnalise').style.display = '';
+    if (!memeChamp) input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  function fermerClavierPersonnalise() {
+    clavierPersonnaliseInput = null;
+    document.getElementById('clavierPersonnalise').style.display = 'none';
+  }
+
+  function toucheClavierPersonnalise(touche) {
+    const input = clavierPersonnaliseInput;
+    if (!input) return;
+    input.value = (touche === '⌫') ? input.value.slice(0, -1) : (input.value + touche);
+    // Un Event générique (pas un vrai événement clavier) suffit : tous les écouteurs
+    // "input" déjà posés sur ces champs (mise à jour du total, auto-sauvegarde du
+    // brouillon, avertissement de correction...) réagissent de la même façon qu'à une
+    // frappe réelle, sans rien connaître du clavier personnalisé.
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('clavierApercu').textContent = input.value || '0';
+  }
+
+  // Le HTML du clavier est déjà parsé à ce stade (balise <script> placée après dans le
+  // document) — pas besoin d'attendre DOMContentLoaded, comme pour le reste de l'app.
+  (function initClavierPersonnalise() {
+    const clavier = document.getElementById('clavierPersonnalise');
+    // mousedown (pas click) avec preventDefault() : empêche les boutons du clavier de voler
+    // le focus au champ en cours d'édition. Sans ça, le champ perdrait le focus à chaque
+    // frappe et un re-rendu déclenché par un listener Firestore pendant la saisie recréerait
+    // un nouveau champ sans que le clavier personnalisé sache lequel suivre.
+    clavier.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    clavier.querySelectorAll('.clavier-grille button[data-touche]').forEach(function (bouton) {
+      bouton.addEventListener('click', function () { toucheClavierPersonnalise(bouton.dataset.touche); });
+    });
+    document.getElementById('clavierEffacer').addEventListener('click', function () { toucheClavierPersonnalise('⌫'); });
+    document.getElementById('clavierTermine').addEventListener('click', function () {
+      if (clavierPersonnaliseInput) clavierPersonnaliseInput.blur();
+      fermerClavierPersonnalise();
+    });
+  })();
+
+  document.addEventListener('focusin', function (e) {
+    const cible = e.target;
+    if (champClavierPersonnalise(cible)) {
+      if (window.innerWidth <= 640) {
+        cible.inputMode = 'none';
+        ouvrirClavierPersonnalise(cible);
+      }
+      return;
+    }
+    if (clavierPersonnaliseInput && !document.getElementById('clavierPersonnalise').contains(cible)) {
+      fermerClavierPersonnalise();
+    }
+  });
 
   function peutSaisirProduction() { return roleCourant === 'production' || roleCourant === 'commerce' || roleCourant === 'admin'; }
 
