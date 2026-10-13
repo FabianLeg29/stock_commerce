@@ -164,6 +164,22 @@
   .col-haut input.champ-valeur { border-color: #1565C0; }
   .col-bas input.champ-valeur { border-color: #E65100; }
 
+  /* Récapitulatif Achats (et "Achats à venir", même ligne via genererLigneAchat()) :
+     ces tableaux alignent 10-11 colonnes de texte, sans aucune distinction visuelle
+     entre elles (retour utilisateur : "colonnes difficiles à distinguer") — chaque
+     groupe de colonnes reçoit sa propre teinte, posée à la fois sur l'en-tête et sur
+     chaque cellule du corps, pour qu'un coup d'œil repère tout de suite "la colonne
+     quantité", "la colonne prix", etc. plutôt que de devoir suivre les en-têtes du
+     regard. Quantité reprend le vert déjà utilisé pour "Achats" ailleurs dans l'app ;
+     Prix d'achat reprend le cuivre des figures mises en avant (Stock théorique...) ;
+     Heure d'arrivée prévue et Livraison prévue (les deux colonnes "quand") partagent
+     le bleu de Haut ; Transport reprend l'orange de Bas — pas de lien sémantique avec
+     Haut/Bas ici, seulement un moyen de plus de distinguer les colonnes entre elles. */
+  .col-quantite-achat { background: var(--ok-soft); color: var(--ok); }
+  .col-prix-achat { background: var(--copper-soft); color: var(--copper); font-weight: 700; }
+  .col-date-achat { background: #E3F2FD; color: #1565C0; }
+  .col-transport-achat { background: #FFF3E0; color: #E65100; }
+
   /* Sous-tableau du panneau "▸ Détail" (Commerce) : plus compact que les tableaux
      principaux, sans défilement forcé (déjà dans une cellule qui peut faire défiler
      .carte-tableau au besoin sur desktop, et convertie en cartes sous 640px comme
@@ -586,11 +602,11 @@
               <th>Date</th>
               <th>Fournisseur</th>
               <th>Produit</th>
-              <th class="centre">Quantité</th>
-              <th class="centre" id="thPrixAchatRecap">Prix d'achat</th>
-              <th class="centre">Heure d'arrivée prévue</th>
-              <th>Livraison prévue</th>
-              <th>Transport</th>
+              <th class="centre col-quantite-achat">Quantité</th>
+              <th class="centre col-prix-achat" id="thPrixAchatRecap">Prix d'achat</th>
+              <th class="centre col-date-achat">Heure d'arrivée prévue</th>
+              <th class="col-date-achat">Livraison prévue</th>
+              <th class="col-transport-achat">Transport</th>
               <th>Responsable</th>
               <th>Commentaire</th>
               <th style="width:140px;"></th>
@@ -611,11 +627,11 @@
                 <th>Date</th>
                 <th>Fournisseur</th>
                 <th>Produit</th>
-                <th class="centre">Quantité</th>
-                <th class="centre" id="thPrixAchatAVenir">Prix d'achat</th>
-                <th class="centre">Heure d'arrivée prévue</th>
-                <th>Livraison prévue</th>
-                <th>Transport</th>
+                <th class="centre col-quantite-achat">Quantité</th>
+                <th class="centre col-prix-achat" id="thPrixAchatAVenir">Prix d'achat</th>
+                <th class="centre col-date-achat">Heure d'arrivée prévue</th>
+                <th class="col-date-achat">Livraison prévue</th>
+                <th class="col-transport-achat">Transport</th>
                 <th>Responsable</th>
                 <th>Commentaire</th>
                 <th style="width:140px;"></th>
@@ -4006,10 +4022,11 @@
     const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.dataset.label = 'Date'; tdDate.textContent = a.date;
     const tdFournisseur = document.createElement('td'); tdFournisseur.dataset.label = 'Fournisseur'; tdFournisseur.textContent = a.fournisseur;
     const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
-    const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = l.quantite;
-    const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = l.heureDepart || '—';
-    const tdLivraison = document.createElement('td'); tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
+    const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono col-quantite-achat'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = l.quantite;
+    const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono col-date-achat'; tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = l.heureDepart || '—';
+    const tdLivraison = document.createElement('td'); tdLivraison.className = 'col-date-achat'; tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
     const tdTransport = document.createElement('td');
+    tdTransport.className = 'col-transport-achat';
     tdTransport.dataset.label = 'Transport';
     tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
     const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
@@ -4039,7 +4056,7 @@
     tr.appendChild(tdDate); tr.appendChild(tdFournisseur); tr.appendChild(tdProduit);
     tr.appendChild(tdQuantite);
     if (peutVoirPrix()) {
-      const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono'; tdPrix.dataset.label = "Prix d'achat";
+      const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono col-prix-achat'; tdPrix.dataset.label = "Prix d'achat";
       tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
       tr.appendChild(tdPrix);
     }
