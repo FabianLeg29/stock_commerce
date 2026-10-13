@@ -1179,6 +1179,7 @@
   }
 
   function libelleCommercial(email) {
+    if (email === '__ajustement__') return 'Ajustement (non attribué)';
     if (!email) return 'Non attribué';
     const prefixe = email.split('@')[0];
     return prefixe.split(/[._-]+/).map(function (mot) {
@@ -2985,18 +2986,68 @@
         return td;
       }
 
-      function champLectureSeule(valeur, libelle) {
+      // Correction du TOTAL global (sous-onglet Global uniquement), pour le cas où un
+      // commercial oublie de saisir une vente/réservation et qu'on doit malgré tout
+      // corriger le total du jour sans fausser le chiffre personnel de qui que ce soit
+      // (équivalent de l'ancienne colonne Excel de Gilles qui retouchait directement le
+      // total par ligne). Ne réécrit AUCUN document par-commercial : l'écart tapé est
+      // stocké à part, dans un document "pseudo-commercial" dédié (commercial ==
+      // '__ajustement__', même collection "commerce", même id que les documents par
+      // commercial mais avec 'ajustement' à la place du slug d'email) qui s'additionne
+      // aux totaux comme n'importe quel autre commercial (recalculerCommerceDuJour() ne
+      // filtre pas par commercial) et apparaît à part dans le détail ventilé par
+      // commercial (libelleCommercial('__ajustement__') => "Ajustement (non attribué)").
+      // Réservé à commerce/admin (peutGererCommerce()), comme la correction groupée du
+      // stock initial. Limite assumée : si le commercial finit par saisir lui-même la
+      // vente oubliée, l'ajustement ne se retire pas tout seul et doit être corrigé à la
+      // main (remettre le total à sa vraie valeur) pour ne pas compter deux fois.
+      function champCommerceGlobal(valeurTotal, nomChamp, libelle) {
         const td = document.createElement('td');
-        td.className = 'centre mono';
+        td.className = 'centre';
         td.dataset.label = libelle;
-        td.textContent = valeur;
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = 'any';
+        input.min = '0';
+        input.className = 'champ-valeur';
+        input.value = valeurTotal;
+        input.dataset.produit = p.nom;
+        input.dataset.champ = nomChamp + 'Global';
+        const peutAjuster = peutGererCommerce() && !!utilisateurCourant;
+        input.disabled = !peutAjuster;
+        if (peutAjuster) {
+          input.addEventListener('change', function () {
+            const nouveauTotal = input.value === '' ? 0 : Number(input.value);
+            if (nouveauTotal === valeurTotal) return;
+            const sommeReelle = detailCommerciaux
+              .filter(function (d) { return d.commercial !== '__ajustement__'; })
+              .reduce(function (acc, d) { return acc + (d[nomChamp] || 0); }, 0);
+            const nouvelAjustement = nouveauTotal - sommeReelle;
+            if (!confirm(
+              'Corriger le total "' + libelle + '" de ' + p.nom + ' à ' + nouveauTotal + ' ?\n\n' +
+              'Les ' + libelle.toLowerCase() + ' déjà saisies par les commerciaux (' + sommeReelle + ') ne sont pas modifiées — ' +
+              'un ajustement non attribué de ' + nouvelAjustement + ' sera enregistré pour combler l\'écart.'
+            )) { input.value = valeurTotal; return; }
+            const idAjustement = idJourProduit(AUJOURD_HUI, p.nom) + '__ajustement';
+            const donnees = {
+              date: AUJOURD_HUI, produit: p.nom, commercial: '__ajustement__',
+              horodatage: firebase.firestore.FieldValue.serverTimestamp(), responsable: utilisateurCourant.email
+            };
+            donnees[nomChamp] = nouvelAjustement;
+            db.collection('commerce').doc(idAjustement).set(donnees, { merge: true }).then(function () {
+              enregistrerTransaction(nomChamp + '_ajustement', p.nom, nouveauTotal);
+              afficherToast(p.nom + ' : total corrigé');
+            }).catch(function (err) { afficherToast('Erreur : ' + err.message); input.value = valeurTotal; });
+          });
+        }
+        td.appendChild(input);
         return td;
       }
 
       const libelleVentes = estGlobal ? 'Ventes (total)' : 'Mes ventes';
       const libelleReservations = estGlobal ? 'Réservations (total)' : 'Mes réservations';
-      const tdVentes = estGlobal ? champLectureSeule(venteAffichee, libelleVentes) : champCommerce(venteAffichee, 'ventes', libelleVentes);
-      const tdReservations = estGlobal ? champLectureSeule(reservationAffichee, libelleReservations) : champCommerce(reservationAffichee, 'reservations', libelleReservations);
+      const tdVentes = estGlobal ? champCommerceGlobal(venteAffichee, 'ventes', libelleVentes) : champCommerce(venteAffichee, 'ventes', libelleVentes);
+      const tdReservations = estGlobal ? champCommerceGlobal(reservationAffichee, 'reservations', libelleReservations) : champCommerce(reservationAffichee, 'reservations', libelleReservations);
 
       const tdDetail = document.createElement('td');
       tdDetail.className = 'centre';
@@ -4186,7 +4237,7 @@
     return {
       stock_soir: 'Stock du soir', stock_importe: 'Stock importé', achats: 'Achats', ventes: 'Ventes', prixAchat: 'Prix marché',
       reservations: 'Réservations', produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé',
-      cloture_journee: 'Clôture de journée'
+      cloture_journee: 'Clôture de journée', ventes_ajustement: 'Ventes (total corrigé)', reservations_ajustement: 'Réservations (total corrigé)'
     }[t] || t;
   }
 

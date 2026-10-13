@@ -124,11 +124,16 @@ service cloud.firestore {
     // Un document par produit + jour + commercial (id = ${date}__${slug(produit)}__${slug(email)}).
     // Un compte commerce ne peut écrire QUE le document dont le champ "commercial"
     // correspond à son propre email (n'écrase pas les saisies des autres) ; l'admin
-    // peut écrire n'importe quel document (correction).
+    // peut écrire n'importe quel document (correction). Exception : le pseudo-commercial
+    // "__ajustement__" (id = ${date}__${slug(produit)}__ajustement) porte une correction
+    // de TOTAL non attribuée à un commercial précis (voir "Modifier le total" dans
+    // l'onglet Commerce > sous-onglet Global) — n'importe quel compte commerce peut
+    // l'écrire, comme pour la correction groupée du stock initial.
     match /commerce/{docId} {
       allow read: if connecte();
       allow write: if estAdmin() ||
-        (estCommerce() && request.resource.data.commercial == request.auth.token.email);
+        (estCommerce() && (request.resource.data.commercial == request.auth.token.email ||
+          request.resource.data.commercial == '__ajustement__'));
     }
 
     // ---- Achats (une livraison = un document, plusieurs lignes produit) ----
