@@ -2461,9 +2461,12 @@
   // famille en en-tête de ligne, portrait, colonnes en couleur. Affiche le Stock initial
   // (dernier stock connu), les Achats et Ventes TOTAUX du jour (tous commerciaux
   // confondus, indépendamment du sous-onglet actuellement affiché à l'écran — "total"
-  // demandé explicitement) et le Stock théorique fin de journée (= stock initial +
-  // achats − ventes, identique à la colonne "Stock réel" du tableau à l'écran et à la
-  // colonne "Stock théorique fin de journée" de l'onglet Stock du soir). Toujours pour
+  // demandé explicitement), le comptage physique Bas/Haut du jour s'il a déjà été fait
+  // (`saisieDuJour`, même cache temps réel que l'onglet Stock du soir, déjà tenu à jour en
+  // arrière-plan quel que soit l'onglet affiché — « — » tant qu'aucun comptage n'existe
+  // encore pour ce produit aujourd'hui) et le Stock théorique fin de journée (= stock
+  // initial + achats − ventes, identique à la colonne "Stock réel" du tableau à l'écran et
+  // à la colonne "Stock théorique fin de journée" de l'onglet Stock du soir). Toujours pour
   // aujourd'hui — l'onglet Commerce n'a pas de consultation historique comme le Stock du
   // soir, donc pas de sélecteur de date ici.
   function exporterStockTheoriquePDF() {
@@ -2472,7 +2475,13 @@
       const stockInitial = typeof cache.valeur === 'number' ? cache.valeur : 0;
       const achats = achatsDuJourParProduit[p.nom] || 0;
       const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
-      return { p: p, stockInitial: stockInitial, achats: achats, ventes: ventes, stockTheorique: stockInitial + achats - ventes };
+      const saisie = saisieDuJour[p.nom] || {};
+      return {
+        p: p, stockInitial: stockInitial, achats: achats, ventes: ventes,
+        stockBas: typeof saisie.stockBas === 'number' ? saisie.stockBas : null,
+        stockHaut: typeof saisie.stockHaut === 'number' ? saisie.stockHaut : null,
+        stockTheorique: stockInitial + achats - ventes
+      };
     });
 
     let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
@@ -2481,22 +2490,27 @@
     html += '<table><thead><tr><th>Produit</th><th>Stock initial</th>' +
       '<th style="background:var(--ok-soft); color:var(--ok);">Achats</th>' +
       '<th style="background:var(--danger-soft); color:var(--danger);">Ventes</th>' +
+      '<th style="background:#FFF3E0; color:#E65100;">Bas</th>' +
+      '<th style="background:#E3F2FD; color:#1565C0;">Haut</th>' +
       '<th style="background:var(--copper-soft); color:var(--copper);">Stock théorique fin de journée</th></tr></thead><tbody>';
     let familleCourante = null;
+    const vide = function (v) { return v === null ? '—' : v; };
     lignes.forEach(function (item) {
       const famille = item.p.famille || 'Sans famille';
       if (famille !== familleCourante) {
-        html += '<tr><td colspan="5" style="background:var(--copper-soft); color:var(--copper); font-weight:700; text-transform:uppercase; letter-spacing:0.03em; font-size:12px;">' + famille + '</td></tr>';
+        html += '<tr><td colspan="7" style="background:var(--copper-soft); color:var(--copper); font-weight:700; text-transform:uppercase; letter-spacing:0.03em; font-size:12px;">' + famille + '</td></tr>';
         familleCourante = famille;
       }
       html += '<tr><td>' + item.p.nom + '</td>' +
         '<td>' + item.stockInitial + '</td>' +
         '<td style="background:var(--ok-soft); color:var(--ok);">' + item.achats + '</td>' +
         '<td style="background:var(--danger-soft); color:var(--danger);">' + item.ventes + '</td>' +
+        '<td style="background:#FFF3E0; color:#E65100;">' + vide(item.stockBas) + '</td>' +
+        '<td style="background:#E3F2FD; color:#1565C0;">' + vide(item.stockHaut) + '</td>' +
         '<td style="background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + item.stockTheorique + '</td></tr>';
     });
     if (!lignes.length) {
-      html += '<tr><td colspan="5" style="text-align:center; color:#888;">Aucun produit actif.</td></tr>';
+      html += '<tr><td colspan="7" style="text-align:center; color:#888;">Aucun produit actif.</td></tr>';
     }
     html += '</tbody></table>';
     document.getElementById('zoneImpression').innerHTML = html;
