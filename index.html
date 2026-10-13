@@ -2492,14 +2492,23 @@
       const stockInitial = typeof cache.valeur === 'number' ? cache.valeur : 0;
       const achats = achatsDuJourParProduit[p.nom] || 0;
       const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
+      const saisie = saisieDuJour[p.nom] || {};
       return {
         p: p, stockInitial: stockInitial, achats: achats, ventes: ventes,
         // Bas/Haut du DERNIER stock du soir intégré (celui qui a produit le "Stock
         // initial" ci-dessus), pas le comptage du jour en cours — sinon ces deux
         // colonnes désynchronisent le Stock initial affiché dès qu'un comptage est en
-        // cours aujourd'hui sans avoir encore été validé par le Commerce.
-        stockBas: typeof cache.stockBas === 'number' ? cache.stockBas : null,
-        stockHaut: typeof cache.stockHaut === 'number' ? cache.stockHaut : null,
+        // cours aujourd'hui sans avoir encore été validé par le Commerce. Repli sur
+        // saisieDuJour (comptage du jour) UNIQUEMENT si dernierStock/main ne porte pas
+        // encore ces deux champs pour ce produit — cas d'un stock intégré AVANT
+        // l'introduction de stockBas/stockHaut dans validerStock() : sans ce repli, tout
+        // produit non revalidé depuis affiche "—" indéfiniment. Le repli s'efface tout
+        // seul dès la prochaine validation de ce produit (le cache porte alors les
+        // vraies valeurs intégrées).
+        stockBas: typeof cache.stockBas === 'number' ? cache.stockBas
+          : (typeof saisie.stockBas === 'number' ? saisie.stockBas : null),
+        stockHaut: typeof cache.stockHaut === 'number' ? cache.stockHaut
+          : (typeof saisie.stockHaut === 'number' ? saisie.stockHaut : null),
         stockTheorique: stockInitial + achats - ventes
       };
     });
@@ -4100,6 +4109,20 @@
   }
   window.rendreAchats = rendreAchats;
 
+  // Trie Produit → Fournisseur → Livraison prévue → Heure d'arrivée prévue (demande
+  // explicite) — regrouper par produit permet de recouper d'un coup d'œil toutes les
+  // livraisons d'un même article, et le sous-tri par fournisseur/date/heure garde un
+  // ordre stable et lisible à l'intérieur de chaque groupe produit.
+  function comparerLignesAchatPourPDF(x, y) {
+    const px = x.ligne.produit || '', py = y.ligne.produit || '';
+    if (px !== py) return px.localeCompare(py);
+    const fx = x.achat.fournisseur || '', fy = y.achat.fournisseur || '';
+    if (fx !== fy) return fx.localeCompare(fy);
+    const lx = x.achat.dateLivraisonPrevue || x.achat.date || '', ly = y.achat.dateLivraisonPrevue || y.achat.date || '';
+    if (lx !== ly) return lx.localeCompare(ly);
+    return (x.ligne.heureDepart || '').localeCompare(y.ligne.heureDepart || '');
+  }
+
   // Génère un récapitulatif imprimable (respecte la recherche en cours de #filtreAchats)
   // via la boîte d'impression du navigateur — l'utilisateur choisit "Enregistrer au
   // format PDF" comme destination. Pas de dépendance PDF supplémentaire côté client.
@@ -4109,25 +4132,49 @@
     // façon jamais accès au prix, ne voit pas cette question.
     const avecPrix = peutVoirPrix() &&
       confirm("Inclure les prix d'achat dans le PDF ?\n\nOK = avec les prix — Annuler = sans les prix.");
-    const filtrees = lignesAchatsFiltrees();
-    let html = '<h2>Récapitulatif des achats — La Légumière</h2>';
-    html += '<div style="margin-bottom:10px;">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
-    html += '<table><thead><tr>' +
-      '<th>Date</th><th>Fournisseur</th><th>Produit</th><th>Quantité</th>' +
-      (avecPrix ? '<th>Prix d\'achat</th>' : '') +
-      '<th>Heure d\'arrivée prévue</th><th>Livraison prévue</th><th>Transport</th><th>Responsable</th><th>Commentaire</th>' +
-      '</tr></thead><tbody>';
-    filtrees.forEach(function (item) {
+    const filtrees = lignesAchatsFiltrees().slice().sort(comparerLignesAchatPourPDF);
+    // Livraisons différées (arrivée prévue un autre jour) : jamais incluses dans
+    // lignesAchatsFiltrees() — absentes du PDF jusqu'ici — ajoutées dans une section à
+    // part, avec un bandeau et un fond teintés, pour ne jamais les confondre avec les
+    // livraisons déjà arrivées/du jour (même séparation que la page Achats à l'écran).
+    const aVenir = lignesAchatsAVenir().slice().sort(comparerLignesAchatPourPDF);
+
+    function entetes() {
+      return '<tr><th>Produit</th><th>Fournisseur</th><th>Livraison prévue</th><th>Heure d\'arrivée prévue</th>' +
+        '<th>Date</th><th>Quantité</th>' + (avecPrix ? '<th>Prix d\'achat</th>' : '') +
+        '<th>Transport</th><th>Responsable</th><th>Commentaire</th></tr>';
+    }
+    function ligne(item, fondTeinte) {
       const a = item.achat, l = item.ligne;
       const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
       const prix = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
-      html += '<tr><td>' + a.date + '</td><td>' + a.fournisseur + '</td><td>' + l.produit + '</td>' +
-        '<td>' + l.quantite + '</td>' + (avecPrix ? '<td>' + prix + '</td>' : '') +
-        '<td>' + (l.heureDepart || '—') + '</td>' +
+      return '<tr' + (fondTeinte ? ' style="background:var(--copper-soft);"' : '') + '>' +
+        '<td>' + l.produit + '</td><td>' + a.fournisseur + '</td>' +
         '<td>' + (a.dateLivraisonPrevue || '—') + '</td>' +
+        '<td>' + (l.heureDepart || '—') + '</td>' +
+        '<td>' + a.date + '</td><td>' + l.quantite + '</td>' +
+        (avecPrix ? '<td>' + prix + '</td>' : '') +
         '<td>' + transport + '</td><td>' + a.responsable + '</td><td>' + (a.commentaire || '—') + '</td></tr>';
-    });
+    }
+    const colonnes = avecPrix ? 10 : 9;
+
+    let html = '<style>#zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
+    html += '<h2>Récapitulatif des achats — La Légumière</h2>';
+    html += '<div style="margin-bottom:10px;">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
+    html += '<table><thead>' + entetes() + '</thead><tbody>';
+    filtrees.forEach(function (item) { html += ligne(item, false); });
+    if (!filtrees.length) {
+      html += '<tr><td colspan="' + colonnes + '" style="text-align:center; color:#888;">Aucun achat.</td></tr>';
+    }
     html += '</tbody></table>';
+
+    if (aVenir.length) {
+      html += '<h3 style="margin-top:20px; background:var(--copper-soft); color:var(--copper); padding:8px 12px; border-radius:6px;">Livraisons différées (à venir)</h3>';
+      html += '<table><thead>' + entetes() + '</thead><tbody>';
+      aVenir.forEach(function (item) { html += ligne(item, true); });
+      html += '</tbody></table>';
+    }
+
     document.getElementById('zoneImpression').innerHTML = html;
     window.print();
   }
