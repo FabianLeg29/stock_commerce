@@ -452,7 +452,7 @@
     <button data-vue="achats" onclick="allerA('achats')">Achats</button>
     <button data-vue="commerce" onclick="allerA('commerce')">Commerce</button>
     <button data-vue="produits" onclick="allerA('produits')">Produits</button>
-    <button data-vue="prixAchat" id="ongletPrixAchat" onclick="allerA('prixAchat')">Prix d'achat</button>
+    <button data-vue="prixAchat" id="ongletPrixAchat" onclick="allerA('prixAchat')">Prix marché</button>
     <button data-vue="historique" onclick="allerA('historique')">Historique</button>
     <button data-vue="parametres" id="ongletParametres" onclick="allerA('parametres')" style="display:none;">Paramètres</button>
   </nav>
@@ -714,7 +714,7 @@
           <thead>
             <tr>
               <th>Produit</th>
-              <th class="centre">Prix d'achat</th>
+              <th class="centre">Prix marché</th>
               <th class="centre">Stock initial</th>
               <th class="centre">Achats</th>
               <th class="centre" id="entierVentesLabel">Ventes</th>
@@ -772,7 +772,7 @@
               <th>Origine</th>
               <th>Conditionnement</th>
               <th>Suremballage</th>
-              <th class="centre">Prix d'achat par défaut</th>
+              <th class="centre">Prix marché par défaut</th>
               <th class="centre">Unité</th>
               <th class="centre">Actif</th>
             </tr>
@@ -971,7 +971,7 @@
                                           // correspondantes restent alors dépliées pour ne pas gêner la recherche.
   let familleOuverteProduits = null;     // même accordéon que ci-dessus, pour le tableau de l'onglet Produits — ici actif en
                                           // permanence (pas de notion de session), ignoré tant que #filtreProduits n'est pas vide.
-  let familleOuvertePrixAchat = null;    // même accordéon, pour le tableau de l'onglet Prix d'achat (#filtrePrixAchat).
+  let familleOuvertePrixAchat = null;    // même accordéon, pour le tableau de l'onglet Prix marché (#filtrePrixAchat).
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: { haut: valeurTexte, bas: valeurTexte } } — comptage local de la session, écrit en une fois à la fin
   let saisieDateSession = {};     // snapshot ponctuel de saisieStock pour sessionStockSoir.date, UNIQUEMENT quand cette date
@@ -2836,7 +2836,7 @@
 
       const tdPrix = document.createElement('td');
       tdPrix.className = 'centre mono';
-      tdPrix.dataset.label = "Prix d'achat";
+      tdPrix.dataset.label = "Prix marché";
       if (!peutVoirPrix()) {
         tdPrix.textContent = '—';
       } else if (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') {
@@ -4184,7 +4184,7 @@
 
   function libelleTypeTransaction(t) {
     return {
-      stock_soir: 'Stock du soir', stock_importe: 'Stock importé', achats: 'Achats', ventes: 'Ventes', prixAchat: "Prix d'achat",
+      stock_soir: 'Stock du soir', stock_importe: 'Stock importé', achats: 'Achats', ventes: 'Ventes', prixAchat: 'Prix marché',
       reservations: 'Réservations', produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé',
       cloture_journee: 'Clôture de journée'
     }[t] || t;
@@ -4222,7 +4222,7 @@
     ]).then(function (resultats) {
       const saisieSnap = resultats[0], commerceSnap = resultats[1], achatsSnap = resultats[2], transactionsSnap = resultats[3];
 
-      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Origine', 'Conditionnement', 'Suremballage', 'Actif', "Prix d'achat par défaut", 'Unité', 'Ordre']];
+      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Origine', 'Conditionnement', 'Suremballage', 'Actif', 'Prix marché par défaut', 'Unité', 'Ordre']];
       produits.slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
         feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.origine || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, libelleUnitePrix(p.prixAchatUnite), p.ordre || '']);
       });
