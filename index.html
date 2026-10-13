@@ -2487,12 +2487,12 @@
     let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
     html += '<h2>Stock théorique — La Légumière</h2>';
     html += '<div style="margin-bottom:10px;">Aujourd\'hui ' + AUJOURD_HUI + '</div>';
-    html += '<table><thead><tr><th>Produit</th><th>Stock initial</th>' +
-      '<th style="background:var(--ok-soft); color:var(--ok);">Achats</th>' +
-      '<th style="background:var(--danger-soft); color:var(--danger);">Ventes</th>' +
-      '<th style="background:#FFF3E0; color:#E65100;">Bas</th>' +
-      '<th style="background:#E3F2FD; color:#1565C0;">Haut</th>' +
-      '<th style="background:var(--copper-soft); color:var(--copper);">Stock théorique fin de journée</th></tr></thead><tbody>';
+    html += '<table style="table-layout:fixed; width:100%;"><thead><tr><th>Produit</th><th style="width:12%;">Stock initial</th>' +
+      '<th style="width:12%; background:var(--ok-soft); color:var(--ok);">Achats</th>' +
+      '<th style="width:12%; background:var(--danger-soft); color:var(--danger);">Ventes</th>' +
+      '<th style="width:12%; background:#FFF3E0; color:#E65100;">Bas</th>' +
+      '<th style="width:12%; background:#E3F2FD; color:#1565C0;">Haut</th>' +
+      '<th style="width:16%; background:var(--copper-soft); color:var(--copper);">Stock théorique fin de journée</th></tr></thead><tbody>';
     let familleCourante = null;
     const vide = function (v) { return v === null ? '—' : v; };
     lignes.forEach(function (item) {
