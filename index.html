@@ -2880,7 +2880,7 @@
         tdPrix.textContent = '—';
       } else {
         const unite = libelleUnitePrix(p.prixAchatUnite);
-        tdPrix.textContent = p.prixAchatDefaut + ' €' + (unite ? ' / ' + unite : '');
+        tdPrix.textContent = formaterPrix(p.prixAchatDefaut) + ' €' + (unite ? ' / ' + unite : '');
       }
 
       const tdVeille = document.createElement('td');
@@ -3135,7 +3135,7 @@
           const corpsAchats = document.createElement('tbody');
           detailAchats.forEach(function (d) {
             const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
-            const prix = (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
+            const prix = formaterPrix(d.prixAchat);
             const trLigne = document.createElement('tr');
             const tdFournisseur = document.createElement('td');
             tdFournisseur.className = 'produit'; tdFournisseur.textContent = d.fournisseur;
@@ -3217,7 +3217,7 @@
           const corpsAVenir = document.createElement('tbody');
           detailAchatsAVenir.forEach(function (d) {
             const transport = d.transportType === 'ramasse' ? 'Ramasse' : (d.transporteurNom || '—');
-            const prix = (d.prixAchat === null || typeof d.prixAchat === 'undefined') ? '—' : d.prixAchat;
+            const prix = formaterPrix(d.prixAchat);
             const trLigne = document.createElement('tr');
             const tdFournisseur = document.createElement('td');
             tdFournisseur.className = 'produit'; tdFournisseur.textContent = d.fournisseur;
@@ -3893,7 +3893,7 @@
       const inputPrix = document.createElement('input');
       inputPrix.type = 'number'; inputPrix.step = 'any'; inputPrix.min = '0';
       inputPrix.className = 'champ-valeur'; inputPrix.style.width = '100%';
-      inputPrix.value = ligne.prixAchat;
+      inputPrix.value = (ligne.prixAchat === '' || ligne.prixAchat === null || typeof ligne.prixAchat === 'undefined') ? '' : Number(ligne.prixAchat).toFixed(2);
       inputPrix.addEventListener('input', function () { ligne.prixAchat = inputPrix.value; });
 
       const inputHeure = document.createElement('input');
@@ -4074,7 +4074,7 @@
     tr.appendChild(tdQuantite);
     if (peutVoirPrix()) {
       const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono col-prix-achat'; tdPrix.dataset.label = "Prix d'achat";
-      tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+      tdPrix.textContent = formaterPrix(l.prixAchat);
       tr.appendChild(tdPrix);
     }
     tr.appendChild(tdHeure);
@@ -4167,7 +4167,7 @@
     function ligne(item, fondTeinte) {
       const a = item.achat, l = item.ligne;
       const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
-      const prix = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+      const prix = formaterPrix(l.prixAchat);
       return '<tr' + (fondTeinte ? ' style="background:#F7EFF5;"' : '') + '>' +
         '<td>' + l.produit + '</td><td>' + a.fournisseur + '</td>' +
         '<td>' + (a.dateLivraisonPrevue || '—') + '</td>' +
@@ -4241,7 +4241,7 @@
         tr.appendChild(tdFournisseur); tr.appendChild(tdProduit); tr.appendChild(tdQuantite);
         if (avecPrix) {
           const tdPrix = document.createElement('td'); tdPrix.className = 'centre mono'; tdPrix.dataset.label = "Prix d'achat";
-          tdPrix.textContent = (l.prixAchat === null || typeof l.prixAchat === 'undefined') ? '—' : l.prixAchat;
+          tdPrix.textContent = formaterPrix(l.prixAchat);
           tr.appendChild(tdPrix);
         }
         const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = l.heureDepart || '—';
@@ -4725,6 +4725,14 @@
     return '';
   }
 
+  // Affichage d'un prix en lecture seule : toujours 2 décimales (demande explicite),
+  // "—" si pas de prix renseigné. Ne touche jamais aux champs de saisie eux-mêmes
+  // (inputPrix de la modale d'achat, champPrixAchat()) : y forcer .toFixed(2) à chaque
+  // frappe gênerait la saisie (ex. passer de "2.50" à "2.5" redeviendrait impossible).
+  function formaterPrix(valeur) {
+    return (valeur === null || typeof valeur === 'undefined' || valeur === '') ? '—' : Number(valeur).toFixed(2);
+  }
+
   // Champ de taxonomie à plat (famille, origine, conditionnement, suremballage) en mode
   // édition — pas d'enregistrement au changement : la valeur n'est écrite que lorsque le
   // bouton "Enregistrer" de la ligne est cliqué (voir rendreProduits), pour forcer une
@@ -4791,7 +4799,7 @@
     input.type = 'number';
     input.step = 'any';
     input.className = 'champ-valeur';
-    input.value = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '' : p.prixAchatDefaut;
+    input.value = (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') ? '' : Number(p.prixAchatDefaut).toFixed(2);
     input.disabled = !peutEditer;
     input.style.cssText = 'width:80px;';
     input.dataset.produit = p.id;
