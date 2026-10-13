@@ -2487,63 +2487,71 @@
   // aujourd'hui — l'onglet Commerce n'a pas de consultation historique comme le Stock du
   // soir, donc pas de sélecteur de date ici.
   function exporterStockTheoriquePDF() {
-    const lignes = produitsActifsTriesParFamille().map(function (p) {
-      const cache = dernierStockParProduit[p.nom] || {};
-      const stockInitial = typeof cache.valeur === 'number' ? cache.valeur : 0;
-      const achats = achatsDuJourParProduit[p.nom] || 0;
-      const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
-      const saisie = saisieDuJour[p.nom] || {};
-      return {
-        p: p, stockInitial: stockInitial, achats: achats, ventes: ventes,
-        // Bas/Haut du DERNIER stock du soir intégré (celui qui a produit le "Stock
-        // initial" ci-dessus), pas le comptage du jour en cours — sinon ces deux
-        // colonnes désynchronisent le Stock initial affiché dès qu'un comptage est en
-        // cours aujourd'hui sans avoir encore été validé par le Commerce. Repli sur
-        // saisieDuJour (comptage du jour) UNIQUEMENT si dernierStock/main ne porte pas
-        // encore ces deux champs pour ce produit — cas d'un stock intégré AVANT
-        // l'introduction de stockBas/stockHaut dans validerStock() : sans ce repli, tout
-        // produit non revalidé depuis affiche "—" indéfiniment. Le repli s'efface tout
-        // seul dès la prochaine validation de ce produit (le cache porte alors les
-        // vraies valeurs intégrées).
-        stockBas: typeof cache.stockBas === 'number' ? cache.stockBas
-          : (typeof saisie.stockBas === 'number' ? saisie.stockBas : null),
-        stockHaut: typeof cache.stockHaut === 'number' ? cache.stockHaut
-          : (typeof saisie.stockHaut === 'number' ? saisie.stockHaut : null),
-        stockTheorique: stockInitial + achats - ventes
-      };
-    });
+    const produitsListe = produitsActifsTriesParFamille();
+    // Bas/Haut doivent correspondre exactement au stock du soir qui a produit le "Stock
+    // initial" de la même ligne (dernierStockParProduit[produit].date), pas au comptage
+    // du jour en cours — sinon ces deux colonnes désynchronisent le Stock initial
+    // affiché dès qu'un comptage est en cours aujourd'hui sans avoir encore été validé.
+    // On va donc chercher la vraie répartition Bas/Haut enregistrée ce jour-là dans
+    // saisieStock (chargerSaisiePourDate(), déjà utilisé pour le rattrapage et la
+    // consultation d'un stock antérieur — réutilise le cache temps réel si c'est
+    // aujourd'hui, sinon une requête ponctuelle), groupée par date distincte pour ne
+    // faire qu'une requête par date plutôt qu'une par produit.
+    const datesDistinctes = Array.from(new Set(
+      produitsListe.map(function (p) { return (dernierStockParProduit[p.nom] || {}).date; }).filter(Boolean)
+    ));
+    Promise.all(datesDistinctes.map(function (date) {
+      return chargerSaisiePourDate(date).then(function (parProduit) { return { date: date, parProduit: parProduit }; });
+    })).then(function (resultats) {
+      const saisieParDate = {};
+      resultats.forEach(function (r) { saisieParDate[r.date] = r.parProduit; });
 
-    let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
-    html += '<h2>Stock théorique — La Légumière</h2>';
-    html += '<div style="margin-bottom:10px;">Aujourd\'hui ' + AUJOURD_HUI + '</div>';
-    html += '<table style="table-layout:fixed; width:100%;"><thead><tr><th>Produit</th><th style="width:12%;">Stock initial</th>' +
-      '<th style="width:12%; background:var(--ok-soft); color:var(--ok);">Achats</th>' +
-      '<th style="width:12%; background:var(--danger-soft); color:var(--danger);">Ventes</th>' +
-      '<th style="width:12%; background:#FFF3E0; color:#E65100;">Bas</th>' +
-      '<th style="width:12%; background:#E3F2FD; color:#1565C0;">Haut</th>' +
-      '<th style="width:16%; background:var(--copper-soft); color:var(--copper);">Stock théorique fin de journée</th></tr></thead><tbody>';
-    let familleCourante = null;
-    const vide = function (v) { return v === null ? '—' : v; };
-    lignes.forEach(function (item) {
-      const famille = item.p.famille || 'Sans famille';
-      if (famille !== familleCourante) {
-        html += '<tr><td colspan="7" style="background:var(--copper-soft); color:var(--copper); font-weight:700; text-transform:uppercase; letter-spacing:0.03em; font-size:12px;">' + famille + '</td></tr>';
-        familleCourante = famille;
+      const lignes = produitsListe.map(function (p) {
+        const cache = dernierStockParProduit[p.nom] || {};
+        const stockInitial = typeof cache.valeur === 'number' ? cache.valeur : 0;
+        const achats = achatsDuJourParProduit[p.nom] || 0;
+        const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
+        const saisieValidee = (cache.date && saisieParDate[cache.date] && saisieParDate[cache.date][p.nom]) || {};
+        return {
+          p: p, stockInitial: stockInitial, achats: achats, ventes: ventes,
+          stockBas: typeof saisieValidee.stockBas === 'number' ? saisieValidee.stockBas : null,
+          stockHaut: typeof saisieValidee.stockHaut === 'number' ? saisieValidee.stockHaut : null,
+          stockTheorique: stockInitial + achats - ventes
+        };
+      });
+
+      let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
+      html += '<h2>Stock théorique — La Légumière</h2>';
+      html += '<div style="margin-bottom:10px;">Aujourd\'hui ' + AUJOURD_HUI + '</div>';
+      html += '<table style="table-layout:fixed; width:100%;"><thead><tr><th>Produit</th><th style="width:12%;">Stock initial</th>' +
+        '<th style="width:12%; background:var(--ok-soft); color:var(--ok);">Achats</th>' +
+        '<th style="width:12%; background:var(--danger-soft); color:var(--danger);">Ventes</th>' +
+        '<th style="width:12%; background:#FFF3E0; color:#E65100;">Bas</th>' +
+        '<th style="width:12%; background:#E3F2FD; color:#1565C0;">Haut</th>' +
+        '<th style="width:16%; background:var(--copper-soft); color:var(--copper);">Stock théorique fin de journée</th></tr></thead><tbody>';
+      let familleCourante = null;
+      const vide = function (v) { return v === null ? '—' : v; };
+      lignes.forEach(function (item) {
+        const famille = item.p.famille || 'Sans famille';
+        if (famille !== familleCourante) {
+          html += '<tr><td colspan="7" style="background:var(--copper-soft); color:var(--copper); font-weight:700; text-transform:uppercase; letter-spacing:0.03em; font-size:12px;">' + famille + '</td></tr>';
+          familleCourante = famille;
+        }
+        html += '<tr><td>' + item.p.nom + '</td>' +
+          '<td>' + item.stockInitial + '</td>' +
+          '<td style="background:var(--ok-soft); color:var(--ok);">' + item.achats + '</td>' +
+          '<td style="background:var(--danger-soft); color:var(--danger);">' + item.ventes + '</td>' +
+          '<td style="background:#FFF3E0; color:#E65100;">' + vide(item.stockBas) + '</td>' +
+          '<td style="background:#E3F2FD; color:#1565C0;">' + vide(item.stockHaut) + '</td>' +
+          '<td style="background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + item.stockTheorique + '</td></tr>';
+      });
+      if (!lignes.length) {
+        html += '<tr><td colspan="7" style="text-align:center; color:#888;">Aucun produit actif.</td></tr>';
       }
-      html += '<tr><td>' + item.p.nom + '</td>' +
-        '<td>' + item.stockInitial + '</td>' +
-        '<td style="background:var(--ok-soft); color:var(--ok);">' + item.achats + '</td>' +
-        '<td style="background:var(--danger-soft); color:var(--danger);">' + item.ventes + '</td>' +
-        '<td style="background:#FFF3E0; color:#E65100;">' + vide(item.stockBas) + '</td>' +
-        '<td style="background:#E3F2FD; color:#1565C0;">' + vide(item.stockHaut) + '</td>' +
-        '<td style="background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + item.stockTheorique + '</td></tr>';
-    });
-    if (!lignes.length) {
-      html += '<tr><td colspan="7" style="text-align:center; color:#888;">Aucun produit actif.</td></tr>';
-    }
-    html += '</tbody></table>';
-    document.getElementById('zoneImpression').innerHTML = html;
-    window.print();
+      html += '</tbody></table>';
+      document.getElementById('zoneImpression').innerHTML = html;
+      window.print();
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.exporterStockTheoriquePDF = exporterStockTheoriquePDF;
 
