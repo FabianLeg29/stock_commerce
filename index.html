@@ -214,6 +214,18 @@
   .pastille-stock.negatif { color: var(--danger); }
   .pastille-stock.positif { color: var(--ok); }
 
+  /* Stock disponible négatif (onglet Commerce) : mise en évidence renforcée par rapport
+     au ".negatif" partagé ci-dessus (lui-même utilisé aussi pour Stock réel et l'Écart
+     du Stock du soir, qui ne sont pas concernés par cette demande) — taille de police
+     plus grosse et un rouge plus vif/saturé que --danger (#B71C1C), pensé pour sauter
+     aux yeux dans un tableau dense plutôt que se fondre avec les autres cellules
+     négatives en rouge plus discret. */
+  .pastille-stock.negatif.stock-dispo-critique {
+    color: #D50000;
+    font-size: 17px;
+    font-weight: 800;
+  }
+
   .toggle {
     display: inline-block; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 13px;
     cursor: pointer; user-select: none; border: 2px solid transparent;
@@ -2973,7 +2985,7 @@
       tdReel.textContent = stockReel;
 
       const tdDisponible = document.createElement('td');
-      tdDisponible.className = 'centre mono pastille-stock ' + (stockDisponible < 0 ? 'negatif' : 'positif');
+      tdDisponible.className = 'centre mono pastille-stock ' + (stockDisponible < 0 ? 'negatif stock-dispo-critique' : 'positif');
       tdDisponible.dataset.label = 'Stock disponible';
       tdDisponible.textContent = stockDisponible;
 
