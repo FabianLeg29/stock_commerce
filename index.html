@@ -1014,6 +1014,8 @@
   let dernierStockParProduit = {}; // { nom: { valeur, date } }
   let saisieDuJour = {};           // { nom: { stockHaut, stockBas, stockSoir } }
   let saisieEnAttente = [];        // saisies du soir pas encore validées : [{ id, date, produit, stockHaut, stockBas, stockSoir, responsable }]
+  let datePendanteStockSoir = null; // date d'un stock du soir antérieur encore affiché (voir rendreProduction()) tant qu'il
+                                     // n'est pas intégré par le Commerce et que rien n'a été compté aujourd'hui — null sinon.
   let commerceDuJour = {};                    // { nom: { ventes, reservations } } — sommes tous commerciaux confondus
   let commerceDuJourDetailParProduit = {};    // { nom: [ { id, commercial, ventes, reservations } ] } — détail par commercial
   let preferencesCommerceParEmail = {};       // { email: { produitsMasques: [nom, ...] } } — produits qu'un commercial a choisi de ne pas afficher dans son propre sous-onglet
@@ -2121,23 +2123,40 @@
     return null;
   }
 
+  // Reconstruit, à partir de saisieEnAttente (already chargé en temps réel), la même
+  // forme de map { nomProduit: { stockHaut, stockBas, ... } } que saisieDuJour, mais
+  // pour une date antérieure encore en attente de validation — voir datePendanteStockSoir.
+  function saisieEnAttentePourDate(date) {
+    const out = {};
+    saisieEnAttente.forEach(function (s) { if (s.date === date) out[s.produit] = s; });
+    return out;
+  }
+
+  // Modifier/corriger le stock déjà enregistré pour ce côté : normalement aujourd'hui,
+  // mais si le tableau affiche actuellement un stock antérieur encore en attente de
+  // validation (datePendanteStockSoir), on modifie CE jour-là — en relançant une session
+  // sur cette date, exactement comme un rattrapage manuel (demarrerSessionStockSoir()
+  // avec date ≠ AUJOURD_HUI sait déjà gérer ce cas via saisieDateSession).
   function modifierStockSoir(cote) {
     if (!peutSaisirProduction()) return;
-    const existant = saisieExistanteCote(cote);
+    const date = datePendanteStockSoir || AUJOURD_HUI;
+    const source = datePendanteStockSoir ? saisieEnAttentePourDate(datePendanteStockSoir) : saisieDuJour;
+    const existant = saisieExistanteCote(cote, source);
     if (!existant) return;
-    demarrerSessionStockSoir(AUJOURD_HUI, cote, existant.operateur, existant.heure, valeursExistantesPourCote(cote));
+    demarrerSessionStockSoir(date, cote, existant.operateur, existant.heure, valeursExistantesPourCote(cote, source), source);
   }
   window.modifierStockSoir = modifierStockSoir;
 
   function rendreResumeStocksEnregistres() {
     const conteneur = document.getElementById('resumeStocksEnregistres');
     const peutModifier = peutSaisirProduction();
+    const source = datePendanteStockSoir ? saisieEnAttentePourDate(datePendanteStockSoir) : saisieDuJour;
     conteneur.innerHTML = [{ cote: 'haut', libelle: 'Stock Haut' }, { cote: 'bas', libelle: 'Stock Bas' }]
       .map(function (info) {
-        const existant = saisieExistanteCote(info.cote);
+        const existant = saisieExistanteCote(info.cote, source);
         const etat = existant
-          ? 'Enregistré à ' + existant.heure + ' par ' + existant.operateur
-          : 'Pas encore enregistré aujourd\'hui';
+          ? 'Enregistré' + (datePendanteStockSoir ? ' le ' + datePendanteStockSoir : '') + ' à ' + existant.heure + ' par ' + existant.operateur
+          : (datePendanteStockSoir ? 'Pas encore enregistré pour le ' + datePendanteStockSoir : 'Pas encore enregistré aujourd\'hui');
         const bouton = (existant && peutModifier)
           ? '<button class="bouton-secondaire" onclick="modifierStockSoir(\'' + info.cote + '\')">Modifier le stock enregistré</button>'
           : '';
@@ -2148,6 +2167,18 @@
   }
 
   function rendreProduction() {
+    // Calculé en premier (voir plus bas dans la fonction pour le détail) : utilisé à la
+    // fois par rendreResumeStocksEnregistres() (statut + bouton "Modifier" par côté) et
+    // par le tableau principal plus bas, pour rester cohérents sur la date affichée.
+    datePendanteStockSoir = null;
+    if (!sessionStockSoir && !Object.keys(saisieDuJour).length) {
+      saisieEnAttente.forEach(function (s) {
+        if (s.date < AUJOURD_HUI && (!datePendanteStockSoir || s.date > datePendanteStockSoir)) {
+          datePendanteStockSoir = s.date;
+        }
+      });
+    }
+
     // Réactiver un produit inactif n'a de sens que pendant la réalisation d'un stock
     // du soir (on peut alors se rendre compte qu'un produit devrait être compté) — pas
     // sur l'écran de démarrage/consultation, avant qu'une session soit en cours.
@@ -2255,26 +2286,19 @@
     // explicite : la Production doit pouvoir revoir son dernier comptage tant qu'il n'a
     // pas été intégré, même après le changement de date. Dès que le Commerce l'intègre
     // (saisieEnAttente ne porte plus cette date), le tableau revient à AUJOURD_HUI.
-    let datePendanteAffichee = null;
-    if (!sessionStockSoir && !Object.keys(saisieDuJour).length) {
-      saisieEnAttente.forEach(function (s) {
-        if (s.date < AUJOURD_HUI && (!datePendanteAffichee || s.date > datePendanteAffichee)) {
-          datePendanteAffichee = s.date;
-        }
-      });
-    }
+    // datePendanteStockSoir est calculé une seule fois, tout en haut de cette fonction
+    // (voir plus haut), pour rester cohérent avec rendreResumeStocksEnregistres().
     let sourceAffichage;
     if (sessionStockSoir && sessionStockSoir.date !== AUJOURD_HUI) {
       sourceAffichage = saisieDateSession;
-    } else if (datePendanteAffichee) {
-      sourceAffichage = {};
-      saisieEnAttente.forEach(function (s) { if (s.date === datePendanteAffichee) sourceAffichage[s.produit] = s; });
+    } else if (datePendanteStockSoir) {
+      sourceAffichage = saisieEnAttentePourDate(datePendanteStockSoir);
     } else {
       sourceAffichage = saisieDuJour;
     }
 
-    document.getElementById('dateProduction').textContent = datePendanteAffichee
-      ? 'Soir du ' + datePendanteAffichee + ' (en attente de validation par le Commerce)'
+    document.getElementById('dateProduction').textContent = datePendanteStockSoir
+      ? 'Soir du ' + datePendanteStockSoir + ' (en attente de validation par le Commerce)'
       : 'Soir du ' + AUJOURD_HUI;
 
     // Pendant une session mono-côté (Stock Haut seul ou Stock Bas seul), la colonne de
