@@ -1160,6 +1160,7 @@
   }
 
   function fermerClavierPersonnalise() {
+    if (clavierPersonnaliseInput) clavierPersonnaliseInput.readOnly = false;
     clavierPersonnaliseInput = null;
     document.getElementById('clavierPersonnalise').style.display = 'none';
   }
@@ -1199,7 +1200,16 @@
     const cible = e.target;
     if (champClavierPersonnalise(cible)) {
       if (window.innerWidth <= 640) {
+        // inputMode='none' n'est qu'un indice pour le navigateur — certains claviers/
+        // navigateurs de tablette (Android en particulier) l'ignorent par moments et
+        // affichent quand même le clavier natif en plus du clavier personnalisé (retour
+        // utilisateur réel). readOnly, lui, est une propriété dure : aucun navigateur
+        // n'ouvre le clavier natif sur un champ en lecture seule, qu'il respecte ou non
+        // inputMode — et n'empêche en rien les mises à jour programmatiques de .value
+        // faites par toucheClavierPersonnalise() (readOnly ne bloque que la frappe
+        // utilisateur, jamais les écritures par script).
         cible.inputMode = 'none';
+        cible.readOnly = true;
         ouvrirClavierPersonnalise(cible);
       }
       return;
