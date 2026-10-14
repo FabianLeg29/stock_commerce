@@ -1303,11 +1303,14 @@
     const sommes = {};
     const details = {};
     commerceDocsAujourdhui.forEach(function (d) {
-      // Une fois la journée clôturée, les ventes/réservations enregistrées AVANT la
-      // clôture ne comptent plus dans le stock réel (déjà reflétées dans le stock du
-      // soir validé qui devient le nouveau stock initial) — seules celles saisies
-      // après continuent de s'additionner normalement.
-      if (seuilCloture && seuilCloture.heure && d.horodatageMillis !== null &&
+      // Une fois la journée clôturée, les ventes/réservations déjà enregistrées pour un
+      // jour STRICTEMENT ANTÉRIEUR à aujourd'hui ne comptent plus dans le stock réel
+      // (déjà reflétées dans le stock du soir validé qui devient le nouveau stock
+      // initial) — jamais celles d'aujourd'hui, qui n'ont jamais pu être comptées dans
+      // le stock que cette clôture intègre (toujours "la journée de la veille"), même si
+      // elles ont été saisies avant le clic sur « Intégrer » (voir même correctif sur
+      // recalculerAchatsDuJour()).
+      if (d.date < AUJOURD_HUI && seuilCloture && seuilCloture.heure && d.horodatageMillis !== null &&
         d.horodatageMillis <= seuilCloture.heure.toMillis()) return;
       const ventes = d.ventes || 0;
       const reservations = d.reservations || 0;
@@ -1341,13 +1344,17 @@
       const d = combines[id];
       const arrivee = d.dateLivraisonPrevue || d.date;
       const futur = arrivee > AUJOURD_HUI;
-      // Le seuil de clôture ne doit exclure que les achats déjà arrivés (déjà comptés
-      // dans l'ancien stock réel, remplacé par le nouveau dernierStock validé lors de
-      // cette clôture) — jamais les livraisons futures : celles-ci n'ont jamais été
-      // comptées dans le stock réel du jour, donc aucun risque de double-comptage, et
-      // doivent continuer à alimenter "Stock dispo J+" même si elles ont été saisies
-      // avant la clôture.
-      if (!futur && seuilCloture && seuilCloture.heure && d.horodatageMillis !== null &&
+      // Le seuil de clôture ne doit exclure que les achats arrivés STRICTEMENT AVANT
+      // aujourd'hui (déjà comptés dans l'ancien stock réel, remplacé par le nouveau
+      // dernierStock validé lors de cette clôture) — jamais les livraisons futures (déjà
+      // exclu par "futur" ci-dessus) NI celles d'aujourd'hui : la clôture clôture
+      // toujours "la journée de la veille", donc un achat daté d'aujourd'hui n'a jamais
+      // pu être compté dans le stock qu'elle intègre, même s'il a été saisi avant le
+      // clic sur « Intégrer » (ex. une livraison du jour enregistrée tôt le matin, avant
+      // que le Commerce n'intègre le stock du soir de la veille) — bug corrigé après un
+      // signalement réel (achats du jour disparus de l'onglet Commerce après intégration).
+      const dejaReflete = arrivee < AUJOURD_HUI;
+      if (dejaReflete && seuilCloture && seuilCloture.heure && d.horodatageMillis !== null &&
         d.horodatageMillis <= seuilCloture.heure.toMillis()) return;
       const totaux = futur ? totauxFuturs : totauxJour;
       const details = futur ? detailsFuturs : detailsJour;
@@ -1533,7 +1540,7 @@
           qs.forEach(function (doc) {
             const d = doc.data();
             commerceDocsAujourdhui.push({
-              id: doc.id, produit: d.produit, commercial: d.commercial,
+              id: doc.id, date: d.date, produit: d.produit, commercial: d.commercial,
               ventes: d.ventes, reservations: d.reservations,
               horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null
             });
