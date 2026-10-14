@@ -1068,7 +1068,24 @@
   let vueActive = 'production';
   let historiqueCharge = false;
 
-  const AUJOURD_HUI = new Date().toISOString().slice(0, 10);
+  // new Date().toISOString() donne la date en UTC, pas en heure locale : entre minuit et
+  // 2h (heure de France l'été), elle renvoie encore la date de la veille — un achat/stock
+  // du jour précédent restait alors affiché comme "aujourd'hui" toute la matinée. Calculée
+  // ici à partir des composants locaux de la date (getFullYear/getMonth/getDate) à la place.
+  function dateDuJourLocale(date) {
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+  }
+
+  const AUJOURD_HUI = dateDuJourLocale(new Date());
+
+  // AUJOURD_HUI reste figé à sa valeur de chargement de la page : si une tablette/un poste
+  // reste ouvert après minuit, l'app continuerait sinon d'afficher la veille comme
+  // "aujourd'hui" (achats/stock/ventes) jusqu'à un rechargement manuel. Un contrôle par
+  // minute recharge automatiquement la page dès que la date locale change, pour repartir
+  // sur un état propre (nouveaux écouteurs Firestore, nouvelle valeur d'AUJOURD_HUI).
+  setInterval(function () {
+    if (dateDuJourLocale(new Date()) !== AUJOURD_HUI) location.reload();
+  }, 60000);
 
   // ============================================================
   // UTILITAIRES
