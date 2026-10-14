@@ -3678,12 +3678,36 @@
     }, Promise.resolve());
   }
 
+  // Liste, parmi les entrées sur le point d'être intégrées, celles où un des deux côtés
+  // (Haut ou Bas) n'a pas de valeur numérique — ex. un stock dont seul le Bas a été fait,
+  // comme l'incident réel qui a motivé cette alerte (le Haut avait été oublié, intégré tel
+  // quel sans que personne ne s'en aperçoive avant la correction après coup). Ne décide pas
+  // si c'est un problème (un produit peut n'avoir physiquement qu'un seul niveau) — se
+  // contente de lister les faits, à charge du Commerce de juger avant de confirmer.
+  function produitsCoteManquant(entrees) {
+    const manquants = [];
+    entrees.forEach(function (s) {
+      const manqueHaut = typeof s.stockHaut !== 'number';
+      const manqueBas = typeof s.stockBas !== 'number';
+      if (manqueHaut || manqueBas) {
+        manquants.push(s.produit + ' — ' + (manqueHaut && manqueBas ? 'Haut et Bas manquants' : manqueHaut ? 'Haut manquant' : 'Bas manquant'));
+      }
+    });
+    return manquants.sort();
+  }
+
   function integrerStocksEtCloturerJourneeVeille() {
     if (!peutGererCommerce()) return;
     const aIntegrer = saisieEnAttente.filter(function (s) { return selectionIntegrationStock[cleSessionValidation(s)] !== false; });
     const nbStocksCoches = new Set(aIntegrer.map(cleSessionValidation)).size;
     if (saisieEnAttente.length && !aIntegrer.length) {
       if (!confirm("Aucun stock n'est coché dans « Stock du soir à valider » : aucun stock ne sera intégré. Clôturer quand même la journée de la veille ?")) return;
+    }
+    const coteManquant = produitsCoteManquant(aIntegrer);
+    if (coteManquant.length) {
+      if (!confirm('⚠️ ' + coteManquant.length + ' produit(s) sur le point d\'être intégré(s) n\'ont pas le Stock Haut ET le Stock Bas tous les deux réalisés :\n\n' +
+        coteManquant.join('\n') +
+        '\n\nIntégrer quand même ce stock incomplet ?')) return;
     }
     // Le prix marché n'est remis à vide qu'à la PREMIÈRE clôture du jour — jamais sur une
     // reclôture le même jour, pour ne pas effacer un prix que le Commerce viendrait de
