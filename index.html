@@ -2148,7 +2148,6 @@
   }
 
   function rendreProduction() {
-    document.getElementById('dateProduction').textContent = 'Soir du ' + AUJOURD_HUI;
     // Réactiver un produit inactif n'a de sens que pendant la réalisation d'un stock
     // du soir (on peut alors se rendre compte qu'un produit devrait être compté) — pas
     // sur l'écran de démarrage/consultation, avant qu'une session soit en cours.
@@ -2247,7 +2246,36 @@
     // colonne en lecture seule doit refléter l'existant de CETTE date (saisieDateSession),
     // pas saisieDuJour (toujours aujourd'hui) — sinon elle afficherait des valeurs sans
     // rapport avec le jour réellement compté, voire un total erroné en "Haut + Bas".
-    const sourceAffichage = (sessionStockSoir && sessionStockSoir.date !== AUJOURD_HUI) ? saisieDateSession : saisieDuJour;
+    //
+    // Hors session, si rien n'a encore été compté aujourd'hui (saisieDuJour vide) mais
+    // qu'un stock du soir d'un jour précédent est toujours en attente de validation par
+    // le Commerce (saisieEnAttente, alimenté par le listener where('importe','==',false),
+    // déjà utilisé par "Stock du soir à valider" dans l'onglet Commerce), on continue de
+    // l'afficher au lieu de basculer silencieusement sur un jour vide à minuit — demande
+    // explicite : la Production doit pouvoir revoir son dernier comptage tant qu'il n'a
+    // pas été intégré, même après le changement de date. Dès que le Commerce l'intègre
+    // (saisieEnAttente ne porte plus cette date), le tableau revient à AUJOURD_HUI.
+    let datePendanteAffichee = null;
+    if (!sessionStockSoir && !Object.keys(saisieDuJour).length) {
+      saisieEnAttente.forEach(function (s) {
+        if (s.date < AUJOURD_HUI && (!datePendanteAffichee || s.date > datePendanteAffichee)) {
+          datePendanteAffichee = s.date;
+        }
+      });
+    }
+    let sourceAffichage;
+    if (sessionStockSoir && sessionStockSoir.date !== AUJOURD_HUI) {
+      sourceAffichage = saisieDateSession;
+    } else if (datePendanteAffichee) {
+      sourceAffichage = {};
+      saisieEnAttente.forEach(function (s) { if (s.date === datePendanteAffichee) sourceAffichage[s.produit] = s; });
+    } else {
+      sourceAffichage = saisieDuJour;
+    }
+
+    document.getElementById('dateProduction').textContent = datePendanteAffichee
+      ? 'Soir du ' + datePendanteAffichee + ' (en attente de validation par le Commerce)'
+      : 'Soir du ' + AUJOURD_HUI;
 
     // Pendant une session mono-côté (Stock Haut seul ou Stock Bas seul), la colonne de
     // l'autre côté n'apporte rien à cette session précise — la masquer entièrement
