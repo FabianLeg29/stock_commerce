@@ -589,6 +589,10 @@
             <input type="date" id="nouvelleDateConsultation">
             <button class="bouton-secondaire" onclick="deplacerStockDate()">Déplacer vers cette date</button>
           </div>
+          <div id="ligneReconstituerHaut" style="display:none; margin-top:10px;" class="ligne-ajout">
+            <span class="date-du-jour">Un Stock Haut manque pour un ou plusieurs produits, mais le Stock initial du Commerce est déjà bon</span>
+            <button class="bouton-secondaire" onclick="reconstituerHautDepuisStockInitial()">Reconstituer le Haut depuis le Stock initial</button>
+          </div>
           <div id="ligneSupprimerConsultation" style="display:none; margin-top:10px;">
             <button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerStockDate()">Supprimer ce stock du soir</button>
           </div>
@@ -5445,9 +5449,77 @@
         inputNouvelleDate.max = AUJOURD_HUI;
         inputNouvelleDate.value = date;
       }
+      // Visible seulement s'il y a au moins un produit sans Haut enregistré pour cette
+      // date ET un Stock initial déjà connu en Commerce pour ce produit — voir
+      // reconstituerHautDepuisStockInitial().
+      document.getElementById('ligneReconstituerHaut').style.display = (estAdmin() && lignes.some(function (s) {
+        return typeof s.stockHaut !== 'number' && dernierStockParProduit[s.produit] &&
+          typeof dernierStockParProduit[s.produit].valeur === 'number';
+      })) ? '' : 'none';
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.consulterStockDate = consulterStockDate;
+
+  // Reconstitution PONCTUELLE du Stock Haut manquant d'une date, à partir du Stock initial
+  // déjà connu en Commerce (dernierStock/main) et du Stock Bas déjà enregistré : Haut =
+  // Total − Bas. Pensée pour l'incident où un vrai Stock Haut a été supprimé par erreur
+  // (voir plus haut) alors que le total, lui, était déjà correctement intégré au Commerce —
+  // seule la répartition Bas/Haut de l'historique saisieStock doit être reconstituée, pas
+  // le total lui-même. Un geste ADMIN ponctuel, pas un calcul automatique permanent : ne
+  // touche que les lignes où le Haut est manquant ET où un total numérique est connu pour
+  // ce produit, et ignore (en le signalant) tout produit où le calcul donnerait un Haut
+  // négatif — signe que le total connu ne correspond pas à ce Bas, donc rien de fiable à
+  // reconstituer automatiquement dans ce cas précis. `importe: true` est posé directement
+  // (le total est déjà intégré, cette reconstitution ne fait que compléter l'historique
+  // sans rien changer au Commerce, donc pas besoin de redemander une validation).
+  function reconstituerHautDepuisStockInitial() {
+    if (!estAdmin() || !dateConsultee) return;
+    db.collection('saisieStock').where('date', '==', dateConsultee).get().then(function (qs) {
+      const aReconstituer = [];
+      const ignores = [];
+      qs.forEach(function (doc) {
+        const d = doc.data();
+        if (typeof d.stockHaut === 'number') return;
+        const cache = dernierStockParProduit[d.produit];
+        if (!cache || typeof cache.valeur !== 'number') return;
+        const bas = typeof d.stockBas === 'number' ? d.stockBas : 0;
+        const haut = cache.valeur - bas;
+        if (haut < 0) { ignores.push(d.produit + ' (stock initial ' + cache.valeur + ' < bas ' + bas + ')'); return; }
+        aReconstituer.push({ ref: doc.ref, produit: d.produit, haut: haut, bas: bas, total: cache.valeur });
+      });
+      if (!aReconstituer.length) {
+        if (ignores.length) afficherToast('Rien de fiable à reconstituer — écarts suspects : ' + ignores.join(', '));
+        else afficherToast('Rien à reconstituer pour cette date');
+        return;
+      }
+      const recap = aReconstituer.map(function (x) {
+        return x.produit + ' : Haut = ' + x.haut + ' (stock initial ' + x.total + ' − bas ' + x.bas + ')';
+      }).sort().join('\n');
+      const avertissement = ignores.length
+        ? ('\n\n' + ignores.length + ' produit(s) ignoré(s) car le calcul donnerait un Haut négatif : ' + ignores.join(', '))
+        : '';
+      if (!confirm('Reconstituer le Stock Haut du ' + formaterDateFr(dateConsultee) + ' pour ' + aReconstituer.length +
+        ' produit(s), à partir du Stock initial déjà intégré au Commerce ?\n\n' + recap + avertissement +
+        '\n\nCette valeur est reconstituée (pas un comptage physique) — à utiliser uniquement si le Stock initial affiché en Commerce est déjà correct.')) return;
+      const lot = db.batch();
+      const heureActuelle = new Date().toTimeString().slice(0, 5);
+      aReconstituer.forEach(function (x) {
+        lot.update(x.ref, {
+          stockHaut: x.haut,
+          stockHautOperateur: 'Reconstitué depuis le Stock initial',
+          stockHautHeure: heureActuelle,
+          stockSoir: x.total,
+          importe: true
+        });
+      });
+      return lot.commit().then(function () {
+        aReconstituer.forEach(function (x) { enregistrerTransaction('stock_soir_haut_reconstitue', x.produit, x.haut); });
+        afficherToast(aReconstituer.length + ' Stock Haut reconstitué(s) pour le ' + formaterDateFr(dateConsultee));
+        consulterStockDate();
+      });
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.reconstituerHautDepuisStockInitial = reconstituerHautDepuisStockInitial;
 
   function supprimerStockDate() {
     if (!estAdmin() || !dateConsultee) return;
