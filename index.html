@@ -2174,6 +2174,7 @@
   function rendreResumeStocksEnregistres() {
     const conteneur = document.getElementById('resumeStocksEnregistres');
     const peutModifier = peutSaisirProduction();
+    const peutSupprimer = estAdmin();
     const source = datePendanteStockSoir ? saisieEnAttentePourDate(datePendanteStockSoir) : saisieDuJour;
     conteneur.innerHTML = [{ cote: 'haut', libelle: 'Stock Haut' }, { cote: 'bas', libelle: 'Stock Bas' }]
       .map(function (info) {
@@ -2181,14 +2182,56 @@
         const etat = existant
           ? 'Enregistré' + (datePendanteStockSoir ? ' le ' + datePendanteStockSoir : '') + ' à ' + existant.heure + ' par ' + existant.operateur
           : (datePendanteStockSoir ? 'Pas encore enregistré pour le ' + datePendanteStockSoir : 'Pas encore enregistré aujourd\'hui');
-        const bouton = (existant && peutModifier)
+        const boutonModifier = (existant && peutModifier)
           ? '<button class="bouton-secondaire" onclick="modifierStockSoir(\'' + info.cote + '\')">Modifier le stock enregistré</button>'
+          : '';
+        const boutonSupprimer = (existant && peutSupprimer)
+          ? '<button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerCoteStockSoir(\'' + info.cote + '\')">Supprimer cet enregistrement</button>'
           : '';
         return '<div class="ligne-ajout" style="margin-top:8px;">' +
           '<span class="date-du-jour" style="min-width:90px;">' + info.libelle + '</span>' +
-          '<span class="date-du-jour">' + etat + '</span>' + bouton + '</div>';
+          '<span class="date-du-jour">' + etat + '</span>' + boutonModifier + boutonSupprimer + '</div>';
       }).join('');
   }
+
+  // Efface l'enregistrement d'un seul côté (Haut ou Bas) pour la date actuellement
+  // affichée (AUJOURD_HUI, ou datePendanteStockSoir si un stock antérieur encore en
+  // attente de validation est affiché) — sans toucher à l'autre côté ni au reste du
+  // document saisieStock. Distinct de « Modifier le stock enregistré » : pensé pour un
+  // enregistrement qu'on ne veut PAS corriger mais purement retirer (ex. une session
+  // Haut démarrée par erreur, qui a écrit 0 pour tous les produits sans correspondre à
+  // un comptage réel) — réservé à l'admin, même principe que « Supprimer ce stock du
+  // soir »/« Déplacer vers cette date » dans « Consulter un stock antérieur ».
+  function supprimerCoteStockSoir(cote) {
+    if (!estAdmin()) return;
+    const date = datePendanteStockSoir || AUJOURD_HUI;
+    const libelle = cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
+    if (!confirm('Supprimer l\'enregistrement de ' + libelle + ' du ' + date + ' ? Seul ce côté est effacé (l\'autre reste inchangé) — action irréversible.')) return;
+    const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
+    const champOperateur = cote === 'haut' ? 'stockHautOperateur' : 'stockBasOperateur';
+    const champHeure = cote === 'haut' ? 'stockHautHeure' : 'stockBasHeure';
+    const autreChampValeur = cote === 'haut' ? 'stockBas' : 'stockHaut';
+    db.collection('saisieStock').where('date', '==', date).get().then(function (qs) {
+      if (qs.empty) return;
+      const lot = db.batch();
+      qs.forEach(function (doc) {
+        const d = doc.data();
+        if (!d[champOperateur]) return; // ce côté n'a jamais été enregistré pour ce produit, rien à effacer
+        const autre = typeof d[autreChampValeur] === 'number' ? d[autreChampValeur] : 0;
+        const maj = {};
+        maj[champValeur] = firebase.firestore.FieldValue.delete();
+        maj[champOperateur] = firebase.firestore.FieldValue.delete();
+        maj[champHeure] = firebase.firestore.FieldValue.delete();
+        maj.stockSoir = autre;
+        lot.update(doc.ref, maj);
+      });
+      return lot.commit();
+    }).then(function () {
+      enregistrerTransaction('stock_soir_cote_supprime', '—', null);
+      afficherToast(libelle + ' du ' + date + ' supprimé');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.supprimerCoteStockSoir = supprimerCoteStockSoir;
 
   function rendreProduction() {
     // Calculé en premier (voir plus bas dans la fonction pour le détail) : utilisé à la
