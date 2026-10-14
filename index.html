@@ -1078,6 +1078,18 @@
 
   const AUJOURD_HUI = dateDuJourLocale(new Date());
 
+  // Convertit une date ISO "AAAA-MM-JJ" (format interne, utilisé pour les requêtes/tris/
+  // comparaisons Firestore) en version française "JJ/MM/AAAA" — pour l'AFFICHAGE
+  // uniquement (texte à l'écran, confirmations, PDF). Ne touche jamais les champs
+  // Firestore eux-mêmes, les ids de documents, ni les comparaisons avec AUJOURD_HUI.
+  // Renvoie la valeur telle quelle si elle ne ressemble pas à une date ISO (ex. undefined,
+  // '—') pour rester un remplacement direct des usages existants avec repli.
+  function formaterDateFr(iso) {
+    if (typeof iso !== 'string') return iso;
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? (m[3] + '/' + m[2] + '/' + m[1]) : iso;
+  }
+
   // AUJOURD_HUI reste figé à sa valeur de chargement de la page : si une tablette/un poste
   // reste ouvert après minuit, l'app continuerait sinon d'afficher la veille comme
   // "aujourd'hui" (achats/stock/ventes) jusqu'à un rechargement manuel. Un contrôle par
@@ -1910,7 +1922,7 @@
       const detail = existants.map(function (e) {
         return libelleCoteStockSoir(e.cote) + ' (enregistré à ' + e.info.heure + ' par ' + e.info.operateur + ')';
       }).join(' et ');
-      const libelleJour = date === AUJOURD_HUI ? 'aujourd\'hui' : 'le ' + date;
+      const libelleJour = date === AUJOURD_HUI ? 'aujourd\'hui' : 'le ' + formaterDateFr(date);
 
       if (confirm('Un stock a déjà été enregistré ' + libelleJour + ' pour : ' + detail +
         '.\n\nCliquez sur OK pour MODIFIER le stock déjà enregistré (recommandé), ou sur Annuler pour choisir une autre action.')) {
@@ -1981,7 +1993,7 @@
       const libelleCote = libelleCoteStockSoir(b.cote);
       const tr = document.createElement('tr');
       const tdSession = document.createElement('td');
-      tdSession.textContent = b.date + ' — ' + libelleCote + ' (' + b.operateur + ')';
+      tdSession.textContent = formaterDateFr(b.date) + ' — ' + libelleCote + ' (' + b.operateur + ')';
       const tdStatut = document.createElement('td');
       tdStatut.className = 'centre';
       tdStatut.textContent = 'En cours';
@@ -2174,7 +2186,6 @@
   function rendreResumeStocksEnregistres() {
     const conteneur = document.getElementById('resumeStocksEnregistres');
     const peutModifier = peutSaisirProduction();
-    const peutSupprimer = estAdmin();
     const source = datePendanteStockSoir ? saisieEnAttentePourDate(datePendanteStockSoir) : saisieDuJour;
     conteneur.innerHTML = [{ cote: 'haut', libelle: 'Stock Haut' }, { cote: 'bas', libelle: 'Stock Bas' }]
       .map(function (info) {
@@ -2185,65 +2196,11 @@
         const boutonModifier = (existant && peutModifier)
           ? '<button class="bouton-secondaire" onclick="modifierStockSoir(\'' + info.cote + '\')">Modifier le stock enregistré</button>'
           : '';
-        const boutonSupprimer = (existant && peutSupprimer)
-          ? '<button class="bouton-secondaire" style="color:var(--danger); border-color:var(--danger);" onclick="supprimerCoteStockSoir(\'' + info.cote + '\')">Supprimer cet enregistrement</button>'
-          : '';
         return '<div class="ligne-ajout" style="margin-top:8px;">' +
           '<span class="date-du-jour" style="min-width:90px;">' + info.libelle + '</span>' +
-          '<span class="date-du-jour">' + etat + '</span>' + boutonModifier + boutonSupprimer + '</div>';
+          '<span class="date-du-jour">' + etat + '</span>' + boutonModifier + '</div>';
       }).join('');
   }
-
-  // Efface l'enregistrement d'un seul côté (Haut ou Bas) pour la date actuellement
-  // affichée (AUJOURD_HUI, ou datePendanteStockSoir si un stock antérieur encore en
-  // attente de validation est affiché) — sans toucher à l'autre côté ni au reste du
-  // document saisieStock. Distinct de « Modifier le stock enregistré » : pensé pour un
-  // enregistrement qu'on ne veut PAS corriger mais purement retirer (ex. une session
-  // Haut démarrée par erreur, qui a écrit 0 pour tous les produits sans correspondre à
-  // un comptage réel) — réservé à l'admin, même principe que « Supprimer ce stock du
-  // soir »/« Déplacer vers cette date » dans « Consulter un stock antérieur ».
-  function supprimerCoteStockSoir(cote) {
-    if (!estAdmin()) return;
-    const date = datePendanteStockSoir || AUJOURD_HUI;
-    const libelle = cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
-    const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
-    const champOperateur = cote === 'haut' ? 'stockHautOperateur' : 'stockBasOperateur';
-    const champHeure = cote === 'haut' ? 'stockHautHeure' : 'stockBasHeure';
-    const autreChampValeur = cote === 'haut' ? 'stockBas' : 'stockHaut';
-    db.collection('saisieStock').where('date', '==', date).get().then(function (qs) {
-      const docsConcernes = [];
-      qs.forEach(function (doc) {
-        const d = doc.data();
-        if (d[champOperateur]) docsConcernes.push({ ref: doc.ref, produit: d.produit, valeur: d[champValeur], autre: d[autreChampValeur] });
-      });
-      if (!docsConcernes.length) { afficherToast('Rien à supprimer pour ce côté'); return; }
-      // Affiche le détail produit par produit avant de confirmer — ce côté peut porter
-      // de vraies valeurs (ex. un rattrapage fait entre-temps) plutôt que les 0 auxquels
-      // on s'attendait, et l'action est irréversible (Firestore ne garde pas d'historique
-      // des champs supprimés) : mieux vaut le vérifier avant que de le découvrir après.
-      const recap = docsConcernes.map(function (x) {
-        return x.produit + ' : ' + (typeof x.valeur === 'number' ? x.valeur : 0);
-      }).sort().join('\n');
-      if (!confirm('Supprimer l\'enregistrement de ' + libelle + ' du ' + date + ' pour ' + docsConcernes.length +
-        ' produit(s) ?\n\nValeurs qui seront définitivement effacées :\n' + recap +
-        '\n\nSeul ce côté est effacé (l\'autre reste inchangé) — action irréversible.')) return;
-      const lot = db.batch();
-      docsConcernes.forEach(function (x) {
-        const autre = typeof x.autre === 'number' ? x.autre : 0;
-        const maj = {};
-        maj[champValeur] = firebase.firestore.FieldValue.delete();
-        maj[champOperateur] = firebase.firestore.FieldValue.delete();
-        maj[champHeure] = firebase.firestore.FieldValue.delete();
-        maj.stockSoir = autre;
-        lot.update(x.ref, maj);
-      });
-      return lot.commit().then(function () {
-        enregistrerTransaction('stock_soir_cote_supprime', '—', null);
-        afficherToast(libelle + ' du ' + date + ' supprimé');
-      });
-    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
-  }
-  window.supprimerCoteStockSoir = supprimerCoteStockSoir;
 
   function rendreProduction() {
     // Calculé en premier (voir plus bas dans la fonction pour le détail) : utilisé à la
@@ -2275,7 +2232,7 @@
     if (joursConservationStockSoir !== null) {
       const seuil = dateMoinsJours(AUJOURD_HUI, joursConservationStockSoir);
       inputConsultation.min = seuil;
-      noteConsultation.textContent = 'Historique conservé ' + joursConservationStockSoir + ' jour(s) — jusqu\'au ' + seuil + '.';
+      noteConsultation.textContent = 'Historique conservé ' + joursConservationStockSoir + ' jour(s) — jusqu\'au ' + formaterDateFr(seuil) + '.';
       noteConsultation.style.display = '';
     } else {
       inputConsultation.removeAttribute('min');
@@ -2323,7 +2280,7 @@
       document.getElementById('carteBrouillonsStockSoir').style.display = 'none';
       document.getElementById('blocSessionStockSoir').style.display = '';
       const libelleCote = libelleCoteStockSoir(sessionStockSoir.cote);
-      const suffixeDateSession = sessionStockSoir.date === AUJOURD_HUI ? '' : ' — ' + sessionStockSoir.date + ' (rattrapage)';
+      const suffixeDateSession = sessionStockSoir.date === AUJOURD_HUI ? '' : ' — ' + formaterDateFr(sessionStockSoir.date) + ' (rattrapage)';
       document.getElementById('resumeSessionStockSoir').textContent =
         'Session en cours — ' + libelleCote + ' — ' + sessionStockSoir.operateur + ' — ' + sessionStockSoir.heure + suffixeDateSession;
       // Permet de corriger un démarrage sur le mauvais côté sans perdre la saisie déjà
@@ -2377,8 +2334,8 @@
     }
 
     document.getElementById('dateProduction').textContent = datePendanteStockSoir
-      ? 'Soir du ' + datePendanteStockSoir + ' (en attente de validation par le Commerce)'
-      : 'Soir du ' + AUJOURD_HUI;
+      ? 'Soir du ' + formaterDateFr(datePendanteStockSoir) + ' (en attente de validation par le Commerce)'
+      : 'Soir du ' + formaterDateFr(AUJOURD_HUI);
 
     // Pendant une session mono-côté (Stock Haut seul ou Stock Bas seul), la colonne de
     // l'autre côté n'apporte rien à cette session précise — la masquer entièrement
@@ -2588,7 +2545,7 @@
 
       let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
       html += '<h2>Stock du soir — La Légumière</h2>';
-      html += '<div style="margin-bottom:10px;">Soir du ' + date + '</div>';
+      html += '<div style="margin-bottom:10px;">Soir du ' + formaterDateFr(date) + '</div>';
       html += '<table><thead><tr><th>Produit</th>' +
         '<th style="background:#FFF3E0; color:#E65100;">Bas</th>' +
         '<th style="background:#E3F2FD; color:#1565C0;">Haut</th>' +
@@ -2665,7 +2622,7 @@
 
       let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
       html += '<h2>Stock théorique — La Légumière</h2>';
-      html += '<div style="margin-bottom:10px;">Aujourd\'hui ' + AUJOURD_HUI + '</div>';
+      html += '<div style="margin-bottom:10px;">Aujourd\'hui ' + formaterDateFr(AUJOURD_HUI) + '</div>';
       html += '<table style="table-layout:fixed; width:100%;"><thead><tr><th>Produit</th><th style="width:12%;">Stock initial</th>' +
         '<th style="width:12%; background:var(--ok-soft); color:var(--ok);">Achats</th>' +
         '<th style="width:12%; background:var(--danger-soft); color:var(--danger);">Ventes</th>' +
@@ -2919,7 +2876,7 @@
   window.validerCorrectionStockInitial = validerCorrectionStockInitial;
 
   function rendreCommerce() {
-    document.getElementById('dateCommerce').textContent = "Aujourd'hui " + AUJOURD_HUI;
+    document.getElementById('dateCommerce').textContent = "Aujourd'hui " + formaterDateFr(AUJOURD_HUI);
     rendreSousOngletsCommerce();
     rendreAlertesVrac();
 
@@ -3034,7 +2991,7 @@
       if (cache.date) {
         const badgeDateVeille = document.createElement('span');
         badgeDateVeille.className = 'badge-date-carte';
-        badgeDateVeille.textContent = cache.date;
+        badgeDateVeille.textContent = formaterDateFr(cache.date);
         libelleVeille.appendChild(badgeDateVeille);
       }
       tdVeille.appendChild(libelleVeille);
@@ -3081,7 +3038,7 @@
         const spanDateVeille = document.createElement('span');
         spanDateVeille.className = 'date-desktop-seule';
         spanDateVeille.style.cssText = 'display:block; font-size:11px; color:#a49a89; margin-top:2px;';
-        spanDateVeille.textContent = cache.date;
+        spanDateVeille.textContent = formaterDateFr(cache.date);
         tdVeille.appendChild(spanDateVeille);
       }
 
@@ -3373,7 +3330,7 @@
               trLigne.appendChild(tdPrixLigne);
             }
             const tdLivraison = document.createElement('td');
-            tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = d.dateLivraisonPrevue || '—';
+            tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = formaterDateFr(d.dateLivraisonPrevue) || '—';
             const tdTransport = document.createElement('td');
             tdTransport.dataset.label = 'Transport'; tdTransport.textContent = transport;
             const tdCommercial = document.createElement('td');
@@ -3505,7 +3462,7 @@
     const parties = [];
     if (s.stockHautOperateur) parties.push('Haut : ' + s.stockHautOperateur + (s.stockHautHeure ? ' (' + s.stockHautHeure + ')' : ''));
     if (s.stockBasOperateur) parties.push('Bas : ' + s.stockBasOperateur + (s.stockBasHeure ? ' (' + s.stockBasHeure + ')' : ''));
-    return s.date + ' — ' + (parties.length ? parties.join(' · ') : 'Attribution inconnue');
+    return formaterDateFr(s.date) + ' — ' + (parties.length ? parties.join(' · ') : 'Attribution inconnue');
   }
 
   // Mémorise, par clé de session (cleSessionValidation), si le commercial souhaite
@@ -4179,12 +4136,12 @@
     const a = item.achat, l = item.ligne;
     const tr = document.createElement('tr');
 
-    const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.dataset.label = 'Date'; tdDate.textContent = a.date;
+    const tdDate = document.createElement('td'); tdDate.className = 'mono'; tdDate.dataset.label = 'Date'; tdDate.textContent = formaterDateFr(a.date);
     const tdFournisseur = document.createElement('td'); tdFournisseur.dataset.label = 'Fournisseur'; tdFournisseur.textContent = a.fournisseur;
     const tdProduit = document.createElement('td'); tdProduit.className = 'produit'; tdProduit.textContent = l.produit;
     const tdQuantite = document.createElement('td'); tdQuantite.className = 'centre mono col-quantite-achat'; tdQuantite.dataset.label = 'Quantité'; tdQuantite.textContent = l.quantite;
     const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono col-date-achat'; tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = l.heureDepart || '—';
-    const tdLivraison = document.createElement('td'); tdLivraison.className = 'col-date-achat'; tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
+    const tdLivraison = document.createElement('td'); tdLivraison.className = 'col-date-achat'; tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = formaterDateFr(a.dateLivraisonPrevue) || '—';
     const tdTransport = document.createElement('td');
     tdTransport.className = 'col-transport-achat';
     tdTransport.dataset.label = 'Transport';
@@ -4204,7 +4161,7 @@
       btnSupprimer.className = 'bouton-secondaire';
       btnSupprimer.textContent = 'Suppr.';
       btnSupprimer.onclick = function () {
-        if (!confirm('Supprimer définitivement cet achat (' + a.fournisseur + ', ' + a.date + ', toutes ses lignes) ?')) return;
+        if (!confirm('Supprimer définitivement cet achat (' + a.fournisseur + ', ' + formaterDateFr(a.date) + ', toutes ses lignes) ?')) return;
         db.collection('achats').doc(a.id).delete().then(function () {
           afficherToast('Achat supprimé');
         }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
@@ -4313,9 +4270,9 @@
       const prix = formaterPrix(l.prixAchat);
       return '<tr' + (fondTeinte ? ' style="background:#F7EFF5;"' : '') + '>' +
         '<td>' + l.produit + '</td><td>' + a.fournisseur + '</td>' +
-        '<td>' + (a.dateLivraisonPrevue || '—') + '</td>' +
+        '<td>' + (formaterDateFr(a.dateLivraisonPrevue) || '—') + '</td>' +
         '<td>' + (l.heureDepart || '—') + '</td>' +
-        '<td>' + a.date + '</td><td>' + l.quantite + '</td>' +
+        '<td>' + formaterDateFr(a.date) + '</td><td>' + l.quantite + '</td>' +
         (avecPrix ? '<td>' + prix + '</td>' : '') +
         '<td>' + transport + '</td><td>' + a.responsable + '</td><td>' + (a.commentaire || '—') + '</td></tr>';
     }
@@ -4388,7 +4345,7 @@
           tr.appendChild(tdPrix);
         }
         const tdHeure = document.createElement('td'); tdHeure.className = 'centre mono'; tdHeure.dataset.label = "Heure d'arrivée prévue"; tdHeure.textContent = l.heureDepart || '—';
-        const tdLivraison = document.createElement('td'); tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = a.dateLivraisonPrevue || '—';
+        const tdLivraison = document.createElement('td'); tdLivraison.dataset.label = 'Livraison prévue'; tdLivraison.textContent = formaterDateFr(a.dateLivraisonPrevue) || '—';
         const tdTransport = document.createElement('td');
         tdTransport.dataset.label = 'Transport';
         tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
@@ -4412,7 +4369,7 @@
           btnSupprimerConsultation.className = 'bouton-secondaire';
           btnSupprimerConsultation.textContent = 'Suppr.';
           btnSupprimerConsultation.onclick = function () {
-            if (!confirm('Supprimer définitivement cet achat (' + a.fournisseur + ', ' + a.date + ', toutes ses lignes) ?')) return;
+            if (!confirm('Supprimer définitivement cet achat (' + a.fournisseur + ', ' + formaterDateFr(a.date) + ', toutes ses lignes) ?')) return;
             db.collection('achats').doc(a.id).delete().then(function () {
               afficherToast('Achat supprimé');
               consulterAchatsDate();
@@ -4455,7 +4412,7 @@
       const tr = document.createElement('tr');
       const tdDate = document.createElement('td');
       tdDate.className = 'mono';
-      tdDate.textContent = h.horodatage ? h.horodatage.toLocaleString('fr-FR') : h.date;
+      tdDate.textContent = h.horodatage ? h.horodatage.toLocaleString('fr-FR') : formaterDateFr(h.date);
       const tdType = document.createElement('td');
       tdType.textContent = libelleTypeTransaction(h.type);
       const tdProduit = document.createElement('td');
@@ -5418,7 +5375,7 @@
       if (nouveauBas === basActuel && nouveauHaut === hautActuel) { consulterStockDate(); return; }
       const nouveauTotal = nouveauBas + nouveauHaut;
       if (!confirm(
-        'Corriger le stock du ' + s.date + ' pour « ' + s.produit + ' » ?\n\n' +
+        'Corriger le stock du ' + formaterDateFr(s.date) + ' pour « ' + s.produit + ' » ?\n\n' +
         'Bas : ' + basActuel + ' → ' + nouveauBas + '\n' +
         'Haut : ' + hautActuel + ' → ' + nouveauHaut + '\n' +
         'Total : ' + (typeof s.stockSoir === 'number' ? s.stockSoir : 0) + ' → ' + nouveauTotal + '\n\n' +
@@ -5494,14 +5451,14 @@
 
   function supprimerStockDate() {
     if (!estAdmin() || !dateConsultee) return;
-    if (!confirm('Supprimer définitivement tout le stock du soir enregistré le ' + dateConsultee + ' (toutes les lignes produit) ? Cette action est irréversible.')) return;
+    if (!confirm('Supprimer définitivement tout le stock du soir enregistré le ' + formaterDateFr(dateConsultee) + ' (toutes les lignes produit) ? Cette action est irréversible.')) return;
     db.collection('saisieStock').where('date', '==', dateConsultee).get().then(function (qs) {
       if (qs.empty) return;
       const lot = db.batch();
       qs.forEach(function (doc) { lot.delete(doc.ref); });
       return lot.commit();
     }).then(function () {
-      afficherToast('Stock du soir du ' + dateConsultee + ' supprimé');
+      afficherToast('Stock du soir du ' + formaterDateFr(dateConsultee) + ' supprimé');
       consulterStockDate();
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
@@ -5532,9 +5489,9 @@
           if (anciens.some(function (a) { return a.produit === d.produit; })) produitsExistants.push(d.produit);
         });
         const messageEcrasement = produitsExistants.length
-          ? ' Un stock existe déjà le ' + nouvelleDate + ' pour : ' + produitsExistants.join(', ') + ' — ces lignes seront écrasées.'
+          ? ' Un stock existe déjà le ' + formaterDateFr(nouvelleDate) + ' pour : ' + produitsExistants.join(', ') + ' — ces lignes seront écrasées.'
           : '';
-        if (!confirm('Déplacer le stock du soir du ' + dateConsultee + ' (' + anciens.length + ' produit(s)) vers le ' + nouvelleDate + ' ?' + messageEcrasement)) return;
+        if (!confirm('Déplacer le stock du soir du ' + formaterDateFr(dateConsultee) + ' (' + anciens.length + ' produit(s)) vers le ' + formaterDateFr(nouvelleDate) + ' ?' + messageEcrasement)) return;
 
         const lot = db.batch();
         anciens.forEach(function (s) {
@@ -5543,7 +5500,7 @@
           lot.delete(db.collection('saisieStock').doc(idJourProduit(dateConsultee, s.produit)));
         });
         lot.commit().then(function () {
-          afficherToast('Stock du soir déplacé vers le ' + nouvelleDate);
+          afficherToast('Stock du soir déplacé vers le ' + formaterDateFr(nouvelleDate));
           document.getElementById('dateConsultationStock').value = nouvelleDate;
           consulterStockDate();
         }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
