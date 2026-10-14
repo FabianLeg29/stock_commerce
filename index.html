@@ -3678,22 +3678,31 @@
     }, Promise.resolve());
   }
 
-  // Liste, parmi les entrées sur le point d'être intégrées, celles où un des deux côtés
-  // (Haut ou Bas) n'a pas de valeur numérique — ex. un stock dont seul le Bas a été fait,
-  // comme l'incident réel qui a motivé cette alerte (le Haut avait été oublié, intégré tel
-  // quel sans que personne ne s'en aperçoive avant la correction après coup). Ne décide pas
-  // si c'est un problème (un produit peut n'avoir physiquement qu'un seul niveau) — se
-  // contente de lister les faits, à charge du Commerce de juger avant de confirmer.
-  function produitsCoteManquant(entrees) {
-    const manquants = [];
+  // Vérifie, pour chaque DATE représentée parmi les entrées sur le point d'être intégrées,
+  // qu'un Stock Haut ET un Stock Bas ont bien été réalisés — via deux sessions séparées
+  // (une Haut-only + une Bas-only) OU une seule session Haut+Bas qui couvre les deux à la
+  // fois. Vérification au niveau de la SESSION/journée, pas produit par produit : un produit
+  // peut légitimement n'avoir qu'un comptage partiel sans que la journée elle-même soit
+  // incomplète ; ce qui compte ici, c'est qu'au moins un opérateur ait bien validé chaque
+  // côté pour cette date (présence de stockHautOperateur/stockBasOperateur sur au moins une
+  // entrée). Née de l'incident réel qui a lancé cette série de correctifs : un stock Bas-only
+  // intégré sans que personne ne remarque que le Stock Haut n'avait jamais été réalisé.
+  function datesAvecCoteManquant(entrees) {
+    const parDate = {};
     entrees.forEach(function (s) {
-      const manqueHaut = typeof s.stockHaut !== 'number';
-      const manqueBas = typeof s.stockBas !== 'number';
-      if (manqueHaut || manqueBas) {
-        manquants.push(s.produit + ' — ' + (manqueHaut && manqueBas ? 'Haut et Bas manquants' : manqueHaut ? 'Haut manquant' : 'Bas manquant'));
+      if (!parDate[s.date]) parDate[s.date] = { haut: false, bas: false };
+      if (s.stockHautOperateur) parDate[s.date].haut = true;
+      if (s.stockBasOperateur) parDate[s.date].bas = true;
+    });
+    const manquants = [];
+    Object.keys(parDate).sort().forEach(function (date) {
+      const etat = parDate[date];
+      if (!etat.haut || !etat.bas) {
+        manquants.push(formaterDateFr(date) + ' — ' +
+          (!etat.haut && !etat.bas ? 'Stock Haut ET Stock Bas non réalisés' : !etat.haut ? 'Stock Haut non réalisé' : 'Stock Bas non réalisé'));
       }
     });
-    return manquants.sort();
+    return manquants;
   }
 
   function integrerStocksEtCloturerJourneeVeille() {
@@ -3703,9 +3712,9 @@
     if (saisieEnAttente.length && !aIntegrer.length) {
       if (!confirm("Aucun stock n'est coché dans « Stock du soir à valider » : aucun stock ne sera intégré. Clôturer quand même la journée de la veille ?")) return;
     }
-    const coteManquant = produitsCoteManquant(aIntegrer);
+    const coteManquant = datesAvecCoteManquant(aIntegrer);
     if (coteManquant.length) {
-      if (!confirm('⚠️ ' + coteManquant.length + ' produit(s) sur le point d\'être intégré(s) n\'ont pas le Stock Haut ET le Stock Bas tous les deux réalisés :\n\n' +
+      if (!confirm('⚠️ Stock Haut et Stock Bas pas tous les deux réalisés pour :\n\n' +
         coteManquant.join('\n') +
         '\n\nIntégrer quand même ce stock incomplet ?')) return;
     }
