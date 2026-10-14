@@ -3661,6 +3661,23 @@
   // nouvelle journée — rien n'est supprimé, tout (dernier stock intégré, achats, prix
   // d'achat, ventes/réservations) reste consultable dans ses onglets, dans
   // l'Historique et dans la sauvegarde Excel générée automatiquement avant clôture.
+  // Remet à vide (affiché "—" via formaterPrix()) le Prix marché de TOUS les produits
+  // (actifs et inactifs) — comme achats/ventes/réservations, chaque jour doit repartir sans
+  // le prix de la veille, pour éviter qu'un prix oublié ne reste affiché par erreur comme
+  // celui du jour. Écrit par lots de 450 (limite Firestore par batch).
+  function remettreAZeroPrixMarche() {
+    if (!produits.length) return Promise.resolve();
+    const lots = [];
+    for (let i = 0; i < produits.length; i += 450) lots.push(produits.slice(i, i + 450));
+    return lots.reduce(function (promesse, groupe) {
+      return promesse.then(function () {
+        const lot = db.batch();
+        groupe.forEach(function (p) { lot.update(db.collection('produits').doc(p.id), { prixAchatDefaut: null }); });
+        return lot.commit();
+      });
+    }, Promise.resolve());
+  }
+
   function integrerStocksEtCloturerJourneeVeille() {
     if (!peutGererCommerce()) return;
     const aIntegrer = saisieEnAttente.filter(function (s) { return selectionIntegrationStock[cleSessionValidation(s)] !== false; });
@@ -3668,10 +3685,14 @@
     if (saisieEnAttente.length && !aIntegrer.length) {
       if (!confirm("Aucun stock n'est coché dans « Stock du soir à valider » : aucun stock ne sera intégré. Clôturer quand même la journée de la veille ?")) return;
     }
+    // Le prix marché n'est remis à vide qu'à la PREMIÈRE clôture du jour — jamais sur une
+    // reclôture le même jour, pour ne pas effacer un prix que le Commerce viendrait de
+    // ressaisir entre deux clôtures de cette même journée.
+    const premiereClotureAujourdhui = !clotureAujourdhui;
     const message = clotureAujourdhui
       ? "La journée a déjà été clôturée aujourd'hui. La reclôturer va aussi remettre à zéro les achats/ventes/réservations enregistrés depuis. Continuer ?"
       : (nbStocksCoches ? 'Intégrer ' + nbStocksCoches + ' stock(s) coché(s) et clôturer' : 'Clôturer') +
-        " la journée de la veille maintenant ?\n\nLes achats et ventes/réservations déjà comptés dans le stock réel seront remis à zéro pour la nouvelle journée. Rien n'est supprimé : ils restent consultables dans les onglets Achats/Historique. Une sauvegarde Excel va être générée d'abord.";
+        " la journée de la veille maintenant ?\n\nLes achats et ventes/réservations déjà comptés dans le stock réel seront remis à zéro pour la nouvelle journée, et le prix marché de tous les produits sera remis à vide (à ressaisir). Rien n'est supprimé côté achats/ventes : ils restent consultables dans les onglets Achats/Historique. Une sauvegarde Excel va être générée d'abord.";
     if (!confirm(message)) return;
 
     exporterSauvegardeExcel();
@@ -3684,7 +3705,10 @@
       }).then(function () { enregistrerTransaction('cloture_journee', '—', null); });
     };
 
-    Promise.all([validerStock(aIntegrer, true), cloturer()]).then(function () {
+    const taches = [validerStock(aIntegrer, true), cloturer()];
+    if (premiereClotureAujourdhui) taches.push(remettreAZeroPrixMarche());
+
+    Promise.all(taches).then(function () {
       afficherToast(nbStocksCoches ? 'Stocks intégrés et journée clôturée' : 'Journée clôturée');
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
