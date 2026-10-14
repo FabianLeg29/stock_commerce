@@ -2206,29 +2206,41 @@
     if (!estAdmin()) return;
     const date = datePendanteStockSoir || AUJOURD_HUI;
     const libelle = cote === 'haut' ? 'Stock Haut' : 'Stock Bas';
-    if (!confirm('Supprimer l\'enregistrement de ' + libelle + ' du ' + date + ' ? Seul ce côté est effacé (l\'autre reste inchangé) — action irréversible.')) return;
     const champValeur = cote === 'haut' ? 'stockHaut' : 'stockBas';
     const champOperateur = cote === 'haut' ? 'stockHautOperateur' : 'stockBasOperateur';
     const champHeure = cote === 'haut' ? 'stockHautHeure' : 'stockBasHeure';
     const autreChampValeur = cote === 'haut' ? 'stockBas' : 'stockHaut';
     db.collection('saisieStock').where('date', '==', date).get().then(function (qs) {
-      if (qs.empty) return;
-      const lot = db.batch();
+      const docsConcernes = [];
       qs.forEach(function (doc) {
         const d = doc.data();
-        if (!d[champOperateur]) return; // ce côté n'a jamais été enregistré pour ce produit, rien à effacer
-        const autre = typeof d[autreChampValeur] === 'number' ? d[autreChampValeur] : 0;
+        if (d[champOperateur]) docsConcernes.push({ ref: doc.ref, produit: d.produit, valeur: d[champValeur], autre: d[autreChampValeur] });
+      });
+      if (!docsConcernes.length) { afficherToast('Rien à supprimer pour ce côté'); return; }
+      // Affiche le détail produit par produit avant de confirmer — ce côté peut porter
+      // de vraies valeurs (ex. un rattrapage fait entre-temps) plutôt que les 0 auxquels
+      // on s'attendait, et l'action est irréversible (Firestore ne garde pas d'historique
+      // des champs supprimés) : mieux vaut le vérifier avant que de le découvrir après.
+      const recap = docsConcernes.map(function (x) {
+        return x.produit + ' : ' + (typeof x.valeur === 'number' ? x.valeur : 0);
+      }).sort().join('\n');
+      if (!confirm('Supprimer l\'enregistrement de ' + libelle + ' du ' + date + ' pour ' + docsConcernes.length +
+        ' produit(s) ?\n\nValeurs qui seront définitivement effacées :\n' + recap +
+        '\n\nSeul ce côté est effacé (l\'autre reste inchangé) — action irréversible.')) return;
+      const lot = db.batch();
+      docsConcernes.forEach(function (x) {
+        const autre = typeof x.autre === 'number' ? x.autre : 0;
         const maj = {};
         maj[champValeur] = firebase.firestore.FieldValue.delete();
         maj[champOperateur] = firebase.firestore.FieldValue.delete();
         maj[champHeure] = firebase.firestore.FieldValue.delete();
         maj.stockSoir = autre;
-        lot.update(doc.ref, maj);
+        lot.update(x.ref, maj);
       });
-      return lot.commit();
-    }).then(function () {
-      enregistrerTransaction('stock_soir_cote_supprime', '—', null);
-      afficherToast(libelle + ' du ' + date + ' supprimé');
+      return lot.commit().then(function () {
+        enregistrerTransaction('stock_soir_cote_supprime', '—', null);
+        afficherToast(libelle + ' du ' + date + ' supprimé');
+      });
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.supprimerCoteStockSoir = supprimerCoteStockSoir;
