@@ -772,7 +772,7 @@
                 <th style="width:40px;"></th>
                 <th>Stock</th>
                 <th class="centre">Produits</th>
-                <th style="width:90px;"></th>
+                <th style="width:170px;"></th>
               </tr>
             </thead>
             <tbody id="corpsValidationStock"></tbody>
@@ -3520,6 +3520,36 @@
       btnDetail.className = 'bouton-secondaire';
       btnDetail.textContent = '▸ Détail';
       tdDetail.appendChild(btnDetail);
+
+      // Retire ce stock en attente sans l'intégrer — pour un enregistrement qui ne
+      // correspond à rien de réel (ex. résidu d'une correction précédente, attribution
+      // inconnue) et qu'on ne veut ni valider ni corriger. Réservé à l'admin, confirmation
+      // avec le détail Bas/Haut/Total de chaque produit avant suppression (même principe
+      // que les autres actions destructrices de l'app — voir CLAUDE.md).
+      if (estAdmin()) {
+        const btnSupprimerSession = document.createElement('button');
+        btnSupprimerSession.className = 'bouton-secondaire';
+        btnSupprimerSession.style.cssText = 'color:var(--danger); border-color:var(--danger); margin-left:6px;';
+        btnSupprimerSession.textContent = 'Suppr.';
+        btnSupprimerSession.title = 'Supprimer ce stock en attente sans l\'intégrer';
+        btnSupprimerSession.onclick = function () {
+          const recap = groupe.map(function (s) {
+            return s.produit + ' : Bas=' + (typeof s.stockBas === 'number' ? s.stockBas : '—') +
+              ', Haut=' + (typeof s.stockHaut === 'number' ? s.stockHaut : '—') +
+              ', Total=' + (typeof s.stockSoir === 'number' ? s.stockSoir : '—');
+          }).join('\n');
+          if (!confirm('Supprimer définitivement ce stock en attente (' + libelleSessionValidation(groupe[0]) + ', ' +
+            groupe.length + ' produit(s)) ?\n\n' + recap +
+            '\n\nCette action ne l\'intègre PAS au Commerce — elle le retire pour de bon, sans jamais avoir été validé. Irréversible.')) return;
+          const lot = db.batch();
+          groupe.forEach(function (s) { lot.delete(db.collection('saisieStock').doc(s.id)); });
+          lot.commit().then(function () {
+            delete selectionIntegrationStock[cle];
+            afficherToast('Stock en attente supprimé (' + groupe.length + ' produit(s))');
+          }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+        };
+        tdDetail.appendChild(btnSupprimerSession);
+      }
 
       tr.appendChild(tdCoche); tr.appendChild(tdSession); tr.appendChild(tdNbProduits); tr.appendChild(tdDetail);
       corps.appendChild(tr);
