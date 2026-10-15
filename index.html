@@ -2561,30 +2561,42 @@
 
   // La famille est un en-tête de ligne (une ligne "FAMILLE" avant ses produits, comme le
   // tableau à l'écran) plutôt qu'une colonne répétée sur chaque ligne — plus court à lire.
+  // Même présentation que exporterStockSoirPDF() (demande explicite d'uniformiser les
+  // deux exports) : même filtre de lignes (ne garde que les produits ayant une quantité
+  // en stock OU ayant eu un mouvement ce jour-là, via chargerMouvementsPourDate()), même
+  // ordre de colonnes Produit/Bas/Haut/Total, même en-tête de famille en ligne pleine
+  // largeur. SheetJS (édition utilisée ici) ne permettant pas de styler les cellules, la
+  // mise en couleur du PDF n'a pas d'équivalent dans ce fichier .xlsx.
   function exporterStockSoirExcel() {
     if (typeof XLSX === 'undefined') {
       afficherToast('Bibliothèque Excel indisponible, réessayez.');
       return;
     }
     const date = document.getElementById('dateExportStockSoir').value || AUJOURD_HUI;
-    chargerSaisiePourDate(date).then(function (source) {
-      const actifs = produitsActifsTriesParFamille();
+    Promise.all([chargerSaisiePourDate(date), chargerMouvementsPourDate(date)]).then(function (res) {
+      const source = res[0], produitsAvecMouvement = res[1];
+      const lignes = produitsActifsTriesParFamille()
+        .map(function (p) { return { p: p, saisie: source[p.nom] || {} }; })
+        .filter(function (item) {
+          return (typeof item.saisie.stockSoir === 'number' && item.saisie.stockSoir > 0) || produitsAvecMouvement.has(item.p.nom);
+        });
       const feuille = [['Produit', 'Bas', 'Haut', 'Total']];
       let familleCourante = null;
-      actifs.forEach(function (p) {
-        const famille = p.famille || 'Sans famille';
+      lignes.forEach(function (item) {
+        const famille = item.p.famille || 'Sans famille';
         if (famille !== familleCourante) {
           feuille.push([famille.toUpperCase()]);
           familleCourante = famille;
         }
-        const saisie = source[p.nom] || {};
+        const saisie = item.saisie;
         feuille.push([
-          p.nom,
+          item.p.nom,
           (saisie.stockBas === null || typeof saisie.stockBas === 'undefined') ? '' : saisie.stockBas,
           (saisie.stockHaut === null || typeof saisie.stockHaut === 'undefined') ? '' : saisie.stockHaut,
           (saisie.stockSoir === null || typeof saisie.stockSoir === 'undefined') ? '' : saisie.stockSoir
         ]);
       });
+      if (!lignes.length) feuille.push(['Aucune quantité en stock ni mouvement ce soir-là.']);
       const classeur = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuille), 'Stock du soir');
       XLSX.writeFile(classeur, 'stock_du_soir_' + date + '.xlsx');
