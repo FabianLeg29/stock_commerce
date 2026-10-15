@@ -13,11 +13,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 
-<!-- SheetJS (génération de fichiers .xlsx côté client, pour la sauvegarde Excel) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<!-- ExcelJS (génération de fichiers .xlsx avec mise en forme — couleurs de cellules — pour
-     l'export Stock du soir ; SheetJS ci-dessus ne supporte pas l'écriture de styles dans
-     son édition gratuite, utilisée telle quelle pour la sauvegarde Excel technique) -->
+<!-- ExcelJS (génération de fichiers .xlsx côté client, avec mise en forme — couleurs de
+     cellules — pour les deux exports Excel de l'app). Remplace SheetJS, dont l'édition
+     gratuite n'écrit pas les styles de cellule à l'export (réservé à sa version payante). -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 
 <style>
@@ -2568,11 +2566,11 @@
   // que les produits ayant une quantité en stock OU ayant eu un mouvement ce jour-là, via
   // chargerMouvementsPourDate()), même ordre de colonnes Produit/Bas/Haut/Total, même
   // en-tête de famille en ligne pleine largeur, et les MÊMES couleurs que le PDF (Bas
-  // orange, Haut bleu, Total cuivre en gras) — posées via **ExcelJS** plutôt que SheetJS :
-  // l'édition gratuite de SheetJS (utilisée telle quelle pour la sauvegarde Excel complète
-  // de l'Historique, voir `exporterSauvegardeExcel()`) n'écrit pas les styles de cellule
-  // dans le fichier produit, c'est une fonctionnalité réservée à sa version payante.
-  // ExcelJS, lui, est open-source et gère nativement couleurs de fond/police/centrage.
+  // orange, Haut bleu, Total cuivre en gras) — posées via **ExcelJS** (voir balise
+  // <script> en tête de fichier), pas SheetJS : l'édition gratuite de ce dernier n'écrit
+  // pas les styles de cellule dans le fichier produit, réservé à sa version payante.
+  // ExcelJS, lui, est open-source et gère nativement couleurs de fond/police/centrage ;
+  // exporterSauvegardeExcel() (sauvegarde technique, plus bas) l'utilise aussi désormais.
   // Pas de `XLSX.writeFile()` équivalent ici : `workbook.xlsx.writeBuffer()` renvoie le
   // fichier en mémoire, déclenché au téléchargement via un lien `<a download>` temporaire.
   function exporterStockSoirExcel() {
@@ -4768,8 +4766,18 @@
   }
   window.exporterHistoriqueCSV = exporterHistoriqueCSV;
 
+  // Bascule sur ExcelJS, comme exporterStockSoirExcel() (voir plus haut) — même raison :
+  // SheetJS gratuit n'écrit pas de styles de cellule. Habillage volontairement discret
+  // (en-têtes cuivre clair/cuivre sur toutes les feuilles, mêmes couleurs Haut/Bas/Total
+  // que partout ailleurs sur la feuille "Stock du soir") puisque ce fichier reste une
+  // sauvegarde technique multi-collections, pas une vue de lecture comme les autres
+  // exports : les valeurs numériques restent des nombres bruts non formatés (aucun `—`
+  // de repli, aucune mise en forme de prix) pour rester directement utilisables dans des
+  // formules Excel — seule la présentation change, pas le contenu des cellules. Cette
+  // feuille garde aussi l'ordre de colonnes Haut/Bas d'origine (voir CLAUDE.md), à la
+  // différence de toutes les vues de lecture qui ont basculé sur Bas/Haut.
   function exporterSauvegardeExcel() {
-    if (typeof XLSX === 'undefined') {
+    if (typeof ExcelJS === 'undefined') {
       afficherToast('Bibliothèque Excel indisponible, réessayez.');
       return;
     }
@@ -4782,46 +4790,99 @@
     ]).then(function (resultats) {
       const saisieSnap = resultats[0], commerceSnap = resultats[1], achatsSnap = resultats[2], transactionsSnap = resultats[3];
 
-      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Origine', 'Conditionnement', 'Suremballage', 'Actif', 'Prix Logé par défaut', 'Unité', 'Ordre']];
-      produits.slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
-        feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.origine || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, libelleUnitePrix(p.prixAchatUnite), p.ordre || '']);
-      });
+      const teinte = function (hex) { return { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }; };
+      const encre = function (hex, gras) { return { bold: !!gras, color: { argb: 'FF' + hex } }; };
+      const centre = { horizontal: 'center' };
+      const styliserEntete = function (feuille) {
+        feuille.getRow(1).eachCell(function (cellule) {
+          cellule.fill = teinte('EAD7E6');
+          cellule.font = encre('963E88', true);
+        });
+      };
+      // Teinte une colonne numérique entière (en-tête inclus) d'une couleur donnée —
+      // `includeEmpty` pour que les lignes sans valeur (champ absent) restent stylées.
+      const teinterColonne = function (feuille, index, hexFond, hexTexte, gras) {
+        feuille.getColumn(index).eachCell({ includeEmpty: true }, function (cellule, numLigne) {
+          if (numLigne === 1) { cellule.fill = teinte(hexFond); cellule.font = encre(hexTexte, true); }
+          else { cellule.font = encre(hexTexte, gras); cellule.alignment = centre; }
+        });
+      };
 
-      const feuilleStock = [['Date', 'Produit', 'Haut', 'Bas', 'Total', 'Importé', 'Responsable']];
+      const classeur = new ExcelJS.Workbook();
+
+      const feuilleProduits = classeur.addWorksheet('Produits');
+      feuilleProduits.columns = [
+        { header: 'Désignation', width: 36 }, { header: 'Famille', width: 16 }, { header: 'Variété', width: 20 },
+        { header: 'Origine', width: 14 }, { header: 'Conditionnement', width: 20 }, { header: 'Suremballage', width: 16 },
+        { header: 'Actif', width: 8 }, { header: 'Prix Logé par défaut', width: 16 }, { header: 'Unité', width: 10 }, { header: 'Ordre', width: 8 }
+      ];
+      produits.slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
+        feuilleProduits.addRow([p.nom, p.famille || '', p.variete || '', p.origine || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, libelleUnitePrix(p.prixAchatUnite), p.ordre || '']);
+      });
+      styliserEntete(feuilleProduits);
+
+      const feuilleStock = classeur.addWorksheet('Stock du soir');
+      feuilleStock.columns = [
+        { header: 'Date', width: 12 }, { header: 'Produit', width: 34 }, { header: 'Haut', width: 10 },
+        { header: 'Bas', width: 10 }, { header: 'Total', width: 10 }, { header: 'Importé', width: 10 }, { header: 'Responsable', width: 24 }
+      ];
       saisieSnap.forEach(function (doc) {
         const d = doc.data();
-        feuilleStock.push([d.date, d.produit, d.stockHaut, d.stockBas, d.stockSoir, d.importe ? 'Oui' : 'Non', d.responsable]);
+        feuilleStock.addRow([d.date, d.produit, d.stockHaut, d.stockBas, d.stockSoir, d.importe ? 'Oui' : 'Non', d.responsable]);
       });
+      styliserEntete(feuilleStock);
+      teinterColonne(feuilleStock, 3, 'E3F2FD', '1565C0', false);
+      teinterColonne(feuilleStock, 4, 'FFF3E0', 'E65100', false);
+      teinterColonne(feuilleStock, 5, 'EAD7E6', '963E88', true);
 
-      const feuilleVentes = [['Date', 'Produit', 'Commercial', 'Ventes', 'Réservations', 'Responsable']];
+      const feuilleVentes = classeur.addWorksheet('Ventes');
+      feuilleVentes.columns = [
+        { header: 'Date', width: 12 }, { header: 'Produit', width: 34 }, { header: 'Commercial', width: 20 },
+        { header: 'Ventes', width: 10 }, { header: 'Réservations', width: 14 }, { header: 'Responsable', width: 24 }
+      ];
       commerceSnap.forEach(function (doc) {
         const d = doc.data();
-        feuilleVentes.push([d.date, d.produit, libelleCommercial(d.commercial), d.ventes, d.reservations, d.responsable]);
+        feuilleVentes.addRow([d.date, d.produit, libelleCommercial(d.commercial), d.ventes, d.reservations, d.responsable]);
       });
+      styliserEntete(feuilleVentes);
 
-      const feuilleAchats = [['Date', 'Fournisseur', 'Produit', 'Quantité', "Prix d'achat", "Heure d'arrivée prévue", 'Transport', 'Responsable', 'Commentaire']];
+      const feuilleAchats = classeur.addWorksheet('Achats');
+      feuilleAchats.columns = [
+        { header: 'Date', width: 12 }, { header: 'Fournisseur', width: 20 }, { header: 'Produit', width: 34 },
+        { header: 'Quantité', width: 10 }, { header: "Prix d'achat", width: 12 }, { header: "Heure d'arrivée prévue", width: 16 },
+        { header: 'Transport', width: 16 }, { header: 'Responsable', width: 24 }, { header: 'Commentaire', width: 30 }
+      ];
       achatsSnap.forEach(function (doc) {
         const d = doc.data();
         (d.lignes || []).forEach(function (l) {
           const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '');
-          feuilleAchats.push([d.date, d.fournisseur, l.produit, l.quantite, l.prixAchat, l.heureDepart, transport, d.responsable, l.commentaire || d.commentaire || '']);
+          feuilleAchats.addRow([d.date, d.fournisseur, l.produit, l.quantite, l.prixAchat, l.heureDepart, transport, d.responsable, l.commentaire || d.commentaire || '']);
         });
       });
+      styliserEntete(feuilleAchats);
 
-      const feuilleHistorique = [['Date', 'Type', 'Produit', 'Valeur', 'Responsable']];
+      const feuilleHistorique = classeur.addWorksheet('Historique');
+      feuilleHistorique.columns = [
+        { header: 'Date', width: 12 }, { header: 'Type', width: 20 }, { header: 'Produit', width: 34 },
+        { header: 'Valeur', width: 10 }, { header: 'Responsable', width: 24 }
+      ];
       transactionsSnap.forEach(function (doc) {
         const d = doc.data();
-        feuilleHistorique.push([d.date, libelleTypeTransaction(d.type), d.produit, d.valeur, d.responsable]);
+        feuilleHistorique.addRow([d.date, libelleTypeTransaction(d.type), d.produit, d.valeur, d.responsable]);
       });
+      styliserEntete(feuilleHistorique);
 
-      const classeur = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleProduits), 'Produits');
-      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleStock), 'Stock du soir');
-      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleVentes), 'Ventes');
-      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleAchats), 'Achats');
-      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuilleHistorique), 'Historique');
-      XLSX.writeFile(classeur, 'sauvegarde_stock_' + AUJOURD_HUI + '.xlsx');
-      afficherToast('Sauvegarde Excel générée');
+      classeur.xlsx.writeBuffer().then(function (buffer) {
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const lien = document.createElement('a');
+        lien.href = URL.createObjectURL(blob);
+        lien.download = 'sauvegarde_stock_' + AUJOURD_HUI + '.xlsx';
+        document.body.appendChild(lien);
+        lien.click();
+        document.body.removeChild(lien);
+        URL.revokeObjectURL(lien.href);
+        afficherToast('Sauvegarde Excel générée');
+      });
     }).catch(function (e) {
       afficherToast('Erreur : ' + e.message);
     });
