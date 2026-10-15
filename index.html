@@ -1530,8 +1530,14 @@
       })
     );
 
+    // "in" plutôt que "== 'commerce'" : un compte admin a toujours eu les mêmes droits
+    // d'écriture qu'un compte commerce sur cette collection (estCommerce() des règles
+    // Firestore renvoie vrai pour les deux), mais jusqu'ici un admin qui vend aussi
+    // (ex. Fred, admin ET commercial) n'avait pas son propre sous-onglet dans l'onglet
+    // Commerce pour y saisir ses ventes/réservations sous son propre nom — seul le
+    // sous-onglet Global restait disponible, qui n'attribue pas la vente à une personne.
     desabonnements.push(
-      db.collection('users').where('role', '==', 'commerce').onSnapshot(function (qs) {
+      db.collection('users').where('role', 'in', ['commerce', 'admin']).onSnapshot(function (qs) {
         const out = [];
         qs.forEach(function (doc) { out.push({ uid: doc.id, email: doc.data().email }); });
         commerciaux = out.sort(function (a, b) { return a.email.localeCompare(b.email); });
