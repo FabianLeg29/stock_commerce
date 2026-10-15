@@ -2157,13 +2157,20 @@
       return;
     }
 
+    // Identifiant unique pour CE clic sur "Terminer et enregistrer", écrit sur chaque
+    // produit touché — permet à cleSessionValidation() de regrouper tous ces produits
+    // en une seule ligne dans "Stock du soir à valider", même si certains n'ont eu que
+    // leur Bas retapé et d'autres que leur Haut (session "Haut + Bas" incomplète par
+    // produit) : sans cet identifiant commun, le regroupement par attribution Haut/Bas
+    // les éclatait à tort en plusieurs lignes distinctes pour une seule action.
+    const sessionId = db.collection('saisieStock').doc().id;
     const lot = db.batch();
     aEcrire.forEach(function (item) {
       const donnees = {
         date: dateSession, produit: item.nom,
         horodatage: firebase.firestore.FieldValue.serverTimestamp(),
         responsable: utilisateurCourant.email,
-        importe: false
+        importe: false, sessionId: sessionId
       };
       if (item.hautChange) {
         donnees.stockHaut = item.valeurHaut;
@@ -3526,20 +3533,32 @@
   }
   window.rendreCommerce = rendreCommerce;
 
-  // Regroupe une entrée en attente par session de comptage (date + attribution Haut
-  // + attribution Bas) — une session "Haut + Bas" a la même attribution des deux
-  // côtés et se retrouve donc naturellement dans un seul groupe ; des côtés faits
-  // séparément par des personnes/heures différentes forment des groupes distincts.
+  // Regroupe une entrée en attente par session de comptage. Priorité à `sessionId`
+  // (identifiant unique généré une fois par clic sur "Terminer et enregistrer", voir
+  // terminerStockSoir()) : tous les produits écrits par le MÊME clic forment un seul
+  // groupe, même si certains n'ont eu que leur Bas retapé et d'autres que leur Haut
+  // (cas réel d'une session "Haut + Bas" où tous les produits ne sont pas comptés des
+  // deux côtés — sans sessionId, ces sous-ensembles avaient des signatures Haut/Bas
+  // différentes et se retrouvaient à tort éclatés en plusieurs lignes dans "Stock du
+  // soir à valider" pour une seule et même action). Repli sur l'ancienne clé par
+  // attribution (date + opérateur/heure Haut + opérateur/heure Bas) pour les entrées
+  // antérieures à ce champ, qui n'ont pas de `sessionId`.
   function cleSessionValidation(s) {
+    if (s.sessionId) return s.date + '|session|' + s.sessionId;
     return s.date + '|' + (s.stockHautOperateur || '') + '@' + (s.stockHautHeure || '') +
       '|' + (s.stockBasOperateur || '') + '@' + (s.stockBasHeure || '');
   }
 
-  function libelleSessionValidation(s) {
+  // Prend le groupe entier (pas une seule entrée) pour afficher Haut ET Bas même
+  // quand ces deux attributions sont portées par des produits différents du même
+  // groupe (voir cleSessionValidation ci-dessus).
+  function libelleSessionValidation(groupe) {
+    const avecHaut = groupe.find(function (s) { return s.stockHautOperateur; });
+    const avecBas = groupe.find(function (s) { return s.stockBasOperateur; });
     const parties = [];
-    if (s.stockHautOperateur) parties.push('Haut : ' + s.stockHautOperateur + (s.stockHautHeure ? ' (' + s.stockHautHeure + ')' : ''));
-    if (s.stockBasOperateur) parties.push('Bas : ' + s.stockBasOperateur + (s.stockBasHeure ? ' (' + s.stockBasHeure + ')' : ''));
-    return formaterDateFr(s.date) + ' — ' + (parties.length ? parties.join(' · ') : 'Attribution inconnue');
+    if (avecHaut) parties.push('Haut : ' + avecHaut.stockHautOperateur + (avecHaut.stockHautHeure ? ' (' + avecHaut.stockHautHeure + ')' : ''));
+    if (avecBas) parties.push('Bas : ' + avecBas.stockBasOperateur + (avecBas.stockBasHeure ? ' (' + avecBas.stockBasHeure + ')' : ''));
+    return formaterDateFr(groupe[0].date) + ' — ' + (parties.length ? parties.join(' · ') : 'Attribution inconnue');
   }
 
   // Mémorise, par clé de session (cleSessionValidation), si le commercial souhaite
@@ -3580,7 +3599,7 @@
 
       const tdSession = document.createElement('td');
       tdSession.className = 'produit';
-      tdSession.textContent = libelleSessionValidation(groupe[0]);
+      tdSession.textContent = libelleSessionValidation(groupe);
 
       const tdNbProduits = document.createElement('td');
       tdNbProduits.className = 'centre mono';
@@ -3611,7 +3630,7 @@
               ', Haut=' + (typeof s.stockHaut === 'number' ? s.stockHaut : '—') +
               ', Total=' + (typeof s.stockSoir === 'number' ? s.stockSoir : '—');
           }).join('\n');
-          if (!confirm('Supprimer définitivement ce stock en attente (' + libelleSessionValidation(groupe[0]) + ', ' +
+          if (!confirm('Supprimer définitivement ce stock en attente (' + libelleSessionValidation(groupe) + ', ' +
             groupe.length + ' produit(s)) ?\n\n' + recap +
             '\n\nCette action ne l\'intègre PAS au Commerce — elle le retire pour de bon, sans jamais avoir été validé. Irréversible.')) return;
           const lot = db.batch();
