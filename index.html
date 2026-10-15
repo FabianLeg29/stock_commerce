@@ -2609,10 +2609,10 @@
       let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
       html += '<h2>Stock du soir — La Légumière</h2>';
       html += '<div style="margin-bottom:10px;">Soir du ' + formaterDateFr(date) + '</div>';
-      html += '<table><thead><tr><th>Produit</th>' +
-        '<th style="background:#FFF3E0; color:#E65100;">Bas</th>' +
-        '<th style="background:#E3F2FD; color:#1565C0;">Haut</th>' +
-        '<th style="background:var(--copper-soft); color:var(--copper);">Total</th></tr></thead><tbody>';
+      html += '<table style="table-layout:fixed; width:100%;"><thead><tr><th>Produit</th>' +
+        '<th style="width:15%; text-align:center; background:#FFF3E0; color:#E65100;">Bas</th>' +
+        '<th style="width:15%; text-align:center; background:#E3F2FD; color:#1565C0;">Haut</th>' +
+        '<th style="width:15%; text-align:center; background:var(--copper-soft); color:var(--copper);">Total</th></tr></thead><tbody>';
       let familleCourante = null;
       lignes.forEach(function (item) {
         const famille = item.p.famille || 'Sans famille';
@@ -2623,9 +2623,9 @@
         const saisie = item.saisie;
         const vide = function (v) { return (v === null || typeof v === 'undefined') ? '—' : v; };
         html += '<tr><td>' + item.p.nom + '</td>' +
-          '<td style="background:#FFF3E0; color:#E65100;">' + vide(saisie.stockBas) + '</td>' +
-          '<td style="background:#E3F2FD; color:#1565C0;">' + vide(saisie.stockHaut) + '</td>' +
-          '<td style="background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + vide(saisie.stockSoir) + '</td></tr>';
+          '<td style="text-align:center; background:#FFF3E0; color:#E65100;">' + vide(saisie.stockBas) + '</td>' +
+          '<td style="text-align:center; background:#E3F2FD; color:#1565C0;">' + vide(saisie.stockHaut) + '</td>' +
+          '<td style="text-align:center; background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + vide(saisie.stockSoir) + '</td></tr>';
       });
       if (!lignes.length) {
         html += '<tr><td colspan="4" style="text-align:center; color:#888;">Aucune quantité en stock ni mouvement ce soir-là.</td></tr>';
