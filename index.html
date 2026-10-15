@@ -1065,7 +1065,7 @@
   let achats = [];                 // tous les achats chargés (récap) : [{ id, date, fournisseur, responsable, horodatage, lignes: [...] }]
   let achatsCharges = false;
   let achatEnEditionId = null;
-  let lignesAchatEnCours = [{ produit: '', quantite: '', prixAchat: '', heureDepart: '', transportType: '', transporteurNom: '' }];
+  let lignesAchatEnCours = [{ produit: '', quantite: '', prixAchat: '', heureDepart: '', transportType: '', transporteurNom: '', commentaire: '' }];
   let historique = [];             // [{ id, date, type, produit, valeur, responsable, horodatage }]
   let comptes = [];                // [{ uid, email, role }]
   let desabonnements = [];         // fonctions unsubscribe des listeners Firestore
@@ -3863,7 +3863,7 @@
   // ACHATS
   // ============================================================
   function ligneAchatVide() {
-    return { produit: '', quantite: '', prixAchat: '', heureDepart: '', transportType: '', transporteurNom: '' };
+    return { produit: '', quantite: '', prixAchat: '', heureDepart: '', transportType: '', transporteurNom: '', commentaire: '' };
   }
 
   function ajouterLigneAchat() {
@@ -3941,7 +3941,7 @@
       return {
         produit: l.produit, quantite: l.quantite, prixAchat: l.prixAchat,
         heureDepart: l.heureDepart || '', transportType: l.transportType || '',
-        transporteurNom: l.transporteurNom || ''
+        transporteurNom: l.transporteurNom || '', commentaire: l.commentaire || ''
       };
     });
     if (!lignesAchatEnCours.length) lignesAchatEnCours = [ligneAchatVide()];
@@ -4018,7 +4018,8 @@
         prixAchat: (l.prixAchat === '' || l.prixAchat === null || typeof l.prixAchat === 'undefined') ? null : Number(l.prixAchat),
         heureDepart: l.heureDepart || '',
         transportType: l.transportType || '',
-        transporteurNom: l.transportType === 'transporteur' ? (l.transporteurNom || '') : ''
+        transporteurNom: l.transportType === 'transporteur' ? (l.transporteurNom || '') : '',
+        commentaire: (l.commentaire || '').trim()
       };
     });
     const donnees = {
@@ -4187,6 +4188,17 @@
       blocTransport.appendChild(selectTransport);
       blocTransport.appendChild(inputTransporteurAutre);
 
+      // Commentaire par ligne (demande explicite — distinct du commentaire global de
+      // l'achat au-dessus du tableau, qui porte sur toute la livraison) : pour noter
+      // quelque chose de spécifique à ce seul produit (ex. "qualité abîmée", "lot
+      // mélangé") sans que ça s'applique aux autres lignes de la même livraison.
+      const inputCommentaireLigne = document.createElement('input');
+      inputCommentaireLigne.type = 'text';
+      inputCommentaireLigne.placeholder = 'Ex. qualité abîmée...';
+      inputCommentaireLigne.style.cssText = 'width:100%; padding:9px 10px; border-radius:8px; border:1.5px solid var(--line); font-size:13px;';
+      inputCommentaireLigne.value = ligne.commentaire || '';
+      inputCommentaireLigne.addEventListener('input', function () { ligne.commentaire = inputCommentaireLigne.value; });
+
       const btnRetirer = document.createElement('button');
       btnRetirer.className = 'bouton-secondaire';
       btnRetirer.textContent = 'Retirer';
@@ -4198,6 +4210,7 @@
       rangee.appendChild(bloc("Prix d'achat", inputPrix));
       rangee.appendChild(bloc("Heure d'arrivée prévue", inputHeure));
       rangee.appendChild(blocTransport);
+      rangee.appendChild(bloc('Commentaire (optionnel)', inputCommentaireLigne));
       rangee.appendChild(btnRetirer);
       corps.appendChild(rangee);
     });
@@ -4274,7 +4287,7 @@
     tdTransport.dataset.label = 'Transport';
     tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
     const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
-    const tdCommentaire = document.createElement('td'); tdCommentaire.dataset.label = 'Commentaire'; tdCommentaire.textContent = a.commentaire || '—';
+    const tdCommentaire = document.createElement('td'); tdCommentaire.dataset.label = 'Commentaire'; tdCommentaire.textContent = l.commentaire || a.commentaire || '—';
 
     const tdActions = document.createElement('td');
     tdActions.className = 'centre';
@@ -4407,7 +4420,7 @@
         '<td>' + formaterDateFr(a.date) + '</td><td>' + l.quantite + '</td>' +
         (avecPrix ? '<td>' + prix + '</td>' : '') +
         (avecTransport ? '<td>' + transport + '</td>' : '') +
-        '<td>' + prenomDepuisEmail(a.responsable) + '</td><td>' + (a.commentaire || '—') + '</td></tr>';
+        '<td>' + prenomDepuisEmail(a.responsable) + '</td><td>' + (l.commentaire || a.commentaire || '—') + '</td></tr>';
     }
     const colonnes = avecPrix ? 10 : 9;
     const colonnesSansTransport = colonnes - 1;
@@ -4538,7 +4551,7 @@
         tdTransport.dataset.label = 'Transport';
         tdTransport.textContent = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
         const tdResponsable = document.createElement('td'); tdResponsable.dataset.label = 'Responsable'; tdResponsable.textContent = a.responsable;
-        const tdCommentaire = document.createElement('td'); tdCommentaire.dataset.label = 'Commentaire'; tdCommentaire.textContent = a.commentaire || '—';
+        const tdCommentaire = document.createElement('td'); tdCommentaire.dataset.label = 'Commentaire'; tdCommentaire.textContent = l.commentaire || a.commentaire || '—';
         tr.appendChild(tdHeure); tr.appendChild(tdLivraison); tr.appendChild(tdTransport); tr.appendChild(tdResponsable); tr.appendChild(tdCommentaire);
 
         // Cette consultation est une requête ponctuelle (pas un onSnapshot, voir plus
@@ -4689,7 +4702,7 @@
         const d = doc.data();
         (d.lignes || []).forEach(function (l) {
           const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '');
-          feuilleAchats.push([d.date, d.fournisseur, l.produit, l.quantite, l.prixAchat, l.heureDepart, transport, d.responsable, d.commentaire || '']);
+          feuilleAchats.push([d.date, d.fournisseur, l.produit, l.quantite, l.prixAchat, l.heureDepart, transport, d.responsable, l.commentaire || d.commentaire || '']);
         });
       });
 
