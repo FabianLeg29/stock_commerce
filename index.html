@@ -921,7 +921,7 @@
       <h3 class="section-titre">Comptes</h3>
       <div class="carte-tableau">
         <table>
-          <thead><tr><th>Email</th><th class="centre">Rôle</th></tr></thead>
+          <thead><tr><th>Email</th><th class="centre">Rôle</th><th class="centre">Aussi commercial</th></tr></thead>
           <tbody id="corpsComptes"></tbody>
         </table>
       </div>
@@ -1532,14 +1532,21 @@
 
     // "in" plutôt que "== 'commerce'" : un compte admin a toujours eu les mêmes droits
     // d'écriture qu'un compte commerce sur cette collection (estCommerce() des règles
-    // Firestore renvoie vrai pour les deux), mais jusqu'ici un admin qui vend aussi
-    // (ex. Fred, admin ET commercial) n'avait pas son propre sous-onglet dans l'onglet
-    // Commerce pour y saisir ses ventes/réservations sous son propre nom — seul le
-    // sous-onglet Global restait disponible, qui n'attribue pas la vente à une personne.
+    // Firestore renvoie vrai pour les deux), mais un admin qui vend aussi (ex. Fred)
+    // n'avait pas son propre sous-onglet dans l'onglet Commerce pour y saisir ses
+    // ventes/réservations sous son propre nom — seul le sous-onglet Global restait
+    // disponible, qui n'attribue pas la vente à une personne. Un admin n'est inclus ici
+    // que si son champ `estCommercial` vaut explicitement `true` (coché depuis Paramètres >
+    // Comptes, voir rendreParametres()) — tous les admins ne sont pas commerciaux (ex.
+    // Fabian, Jean-François), contrairement à un compte `role: 'commerce'` qui l'est
+    // toujours par définition.
     desabonnements.push(
       db.collection('users').where('role', 'in', ['commerce', 'admin']).onSnapshot(function (qs) {
         const out = [];
-        qs.forEach(function (doc) { out.push({ uid: doc.id, email: doc.data().email }); });
+        qs.forEach(function (doc) {
+          const d = doc.data();
+          if (d.role === 'commerce' || d.estCommercial === true) out.push({ uid: doc.id, email: d.email });
+        });
         commerciaux = out.sort(function (a, b) { return a.email.localeCompare(b.email); });
         if (vueActive === 'commerce') rendreCommerce();
       })
@@ -1634,7 +1641,9 @@
       desabonnements.push(
         db.collection('users').onSnapshot(function (qs) {
           const out = [];
-          qs.forEach(function (doc) { out.push({ uid: doc.id, email: doc.data().email, role: doc.data().role }); });
+          qs.forEach(function (doc) {
+            out.push({ uid: doc.id, email: doc.data().email, role: doc.data().role, estCommercial: !!doc.data().estCommercial });
+          });
           comptes = out;
           if (vueActive === 'parametres') rendreParametres();
         })
@@ -4987,10 +4996,34 @@
       select.addEventListener('change', function () {
         db.collection('users').doc(c.uid).update({ role: select.value }).then(function () {
           afficherToast('Rôle mis à jour pour ' + c.email);
+          rendreParametres();
         }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
       });
       tdRole.appendChild(select);
-      tr.appendChild(tdEmail); tr.appendChild(tdRole);
+
+      // Un admin n'est pas forcément commercial (ex. Fabian, Jean-François) — contrairement
+      // au rôle commerce, qui l'est toujours par définition et n'a donc pas besoin de cette
+      // case. Coché/décoché, écrit directement le champ estCommercial sur le compte ; piloté
+      // par la liste commerciaux (voir attacherListeners()) qui décide des sous-onglets
+      // personnels affichés dans l'onglet Commerce.
+      const tdCommercial = document.createElement('td');
+      tdCommercial.className = 'centre';
+      if (c.role === 'admin') {
+        const caseCommercial = document.createElement('input');
+        caseCommercial.type = 'checkbox';
+        caseCommercial.checked = !!c.estCommercial;
+        caseCommercial.title = 'Ce compte vend aussi : lui donner son propre sous-onglet dans Commerce';
+        caseCommercial.addEventListener('change', function () {
+          db.collection('users').doc(c.uid).update({ estCommercial: caseCommercial.checked }).then(function () {
+            afficherToast((caseCommercial.checked ? 'Sous-onglet Commerce activé' : 'Sous-onglet Commerce retiré') + ' pour ' + c.email);
+          }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+        });
+        tdCommercial.appendChild(caseCommercial);
+      } else {
+        tdCommercial.textContent = '—';
+      }
+
+      tr.appendChild(tdEmail); tr.appendChild(tdRole); tr.appendChild(tdCommercial);
       corpsComptes.appendChild(tr);
     });
   }
