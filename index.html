@@ -4412,10 +4412,21 @@
       return corps;
     }
 
+    // Les lignes Ramasse sont listées à plat, toutes ensemble, sans en-tête de famille
+    // (demande explicite — contrairement au reste de l'export, une livraison en ramasse
+    // n'a pas besoin d'être éclatée par famille/produit pour être utile).
+    function corpsPlat(lignes, fondTeinte) {
+      let corps = '';
+      lignes.forEach(function (item) { corps += ligne(item, fondTeinte); });
+      return corps;
+    }
+
     // Sépare les achats Ramasse des achats livrés par un transporteur (demande
     // explicite) — chaque sous-ensemble garde l'ordre Famille → Produit → Fournisseur →
     // Livraison prévue → Heure d'arrivée prévue déjà appliqué par comparerLignesAchatPourPDF()
-    // avant cet appel, un simple filtre préserve donc cet ordre dans chaque groupe.
+    // avant cet appel, un simple filtre préserve donc cet ordre dans chaque groupe (Ramasse
+    // n'étant ensuite plus groupé par famille, voir corpsPlat() ci-dessus, mais garde cet
+    // ordre comme simple tri d'affichage).
     function tableauParTransport(lignes, fondTeinte) {
       const ramasse = lignes.filter(function (item) { return item.ligne.transportType === 'ramasse'; });
       const autres = lignes.filter(function (item) { return item.ligne.transportType !== 'ramasse'; });
@@ -4427,7 +4438,7 @@
       }
       if (ramasse.length) {
         out += '<h4 style="margin:14px 0 4px; color:var(--copper);">Ramasse</h4>';
-        out += '<table><thead>' + entetes() + '</thead><tbody>' + corpsGroupeParFamille(ramasse, fondTeinte) + '</tbody></table>';
+        out += '<table><thead>' + entetes() + '</thead><tbody>' + corpsPlat(ramasse, fondTeinte) + '</tbody></table>';
       }
       if (autres.length) {
         out += '<h4 style="margin:14px 0 4px; color:var(--copper);">Transporteur</h4>';
