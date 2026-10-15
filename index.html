@@ -15,6 +15,10 @@
 
 <!-- SheetJS (génération de fichiers .xlsx côté client, pour la sauvegarde Excel) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- ExcelJS (génération de fichiers .xlsx avec mise en forme — couleurs de cellules — pour
+     l'export Stock du soir ; SheetJS ci-dessus ne supporte pas l'écriture de styles dans
+     son édition gratuite, utilisée telle quelle pour la sauvegarde Excel technique) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 
 <style>
   :root {
@@ -2559,16 +2563,20 @@
       });
   }
 
-  // La famille est un en-tête de ligne (une ligne "FAMILLE" avant ses produits, comme le
-  // tableau à l'écran) plutôt qu'une colonne répétée sur chaque ligne — plus court à lire.
   // Même présentation que exporterStockSoirPDF() (demande explicite d'uniformiser les
-  // deux exports) : même filtre de lignes (ne garde que les produits ayant une quantité
-  // en stock OU ayant eu un mouvement ce jour-là, via chargerMouvementsPourDate()), même
-  // ordre de colonnes Produit/Bas/Haut/Total, même en-tête de famille en ligne pleine
-  // largeur. SheetJS (édition utilisée ici) ne permettant pas de styler les cellules, la
-  // mise en couleur du PDF n'a pas d'équivalent dans ce fichier .xlsx.
+  // deux exports, puis d'y ajouter de vraies couleurs) : même filtre de lignes (ne garde
+  // que les produits ayant une quantité en stock OU ayant eu un mouvement ce jour-là, via
+  // chargerMouvementsPourDate()), même ordre de colonnes Produit/Bas/Haut/Total, même
+  // en-tête de famille en ligne pleine largeur, et les MÊMES couleurs que le PDF (Bas
+  // orange, Haut bleu, Total cuivre en gras) — posées via **ExcelJS** plutôt que SheetJS :
+  // l'édition gratuite de SheetJS (utilisée telle quelle pour la sauvegarde Excel complète
+  // de l'Historique, voir `exporterSauvegardeExcel()`) n'écrit pas les styles de cellule
+  // dans le fichier produit, c'est une fonctionnalité réservée à sa version payante.
+  // ExcelJS, lui, est open-source et gère nativement couleurs de fond/police/centrage.
+  // Pas de `XLSX.writeFile()` équivalent ici : `workbook.xlsx.writeBuffer()` renvoie le
+  // fichier en mémoire, déclenché au téléchargement via un lien `<a download>` temporaire.
   function exporterStockSoirExcel() {
-    if (typeof XLSX === 'undefined') {
+    if (typeof ExcelJS === 'undefined') {
       afficherToast('Bibliothèque Excel indisponible, réessayez.');
       return;
     }
@@ -2580,26 +2588,57 @@
         .filter(function (item) {
           return (typeof item.saisie.stockSoir === 'number' && item.saisie.stockSoir > 0) || produitsAvecMouvement.has(item.p.nom);
         });
-      const feuille = [['Produit', 'Bas', 'Haut', 'Total']];
+
+      const teinte = function (hex) { return { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }; };
+      const encre = function (hex, gras) { return { bold: !!gras, color: { argb: 'FF' + hex } }; };
+      const centre = { horizontal: 'center' };
+
+      const classeur = new ExcelJS.Workbook();
+      const feuille = classeur.addWorksheet('Stock du soir');
+      feuille.columns = [
+        { header: 'Produit', width: 38 },
+        { header: 'Bas', width: 12 },
+        { header: 'Haut', width: 12 },
+        { header: 'Total', width: 12 }
+      ];
+      const entete = feuille.getRow(1);
+      entete.getCell(1).fill = teinte('EAD7E6'); entete.getCell(1).font = encre('963E88', true);
+      entete.getCell(2).fill = teinte('FFF3E0'); entete.getCell(2).font = encre('E65100', true); entete.getCell(2).alignment = centre;
+      entete.getCell(3).fill = teinte('E3F2FD'); entete.getCell(3).font = encre('1565C0', true); entete.getCell(3).alignment = centre;
+      entete.getCell(4).fill = teinte('EAD7E6'); entete.getCell(4).font = encre('963E88', true); entete.getCell(4).alignment = centre;
+
       let familleCourante = null;
       lignes.forEach(function (item) {
         const famille = item.p.famille || 'Sans famille';
         if (famille !== familleCourante) {
-          feuille.push([famille.toUpperCase()]);
+          const ligneFamille = feuille.addRow([famille.toUpperCase()]);
+          feuille.mergeCells(ligneFamille.number, 1, ligneFamille.number, 4);
+          ligneFamille.getCell(1).fill = teinte('EAD7E6');
+          ligneFamille.getCell(1).font = encre('963E88', true);
           familleCourante = famille;
         }
         const saisie = item.saisie;
-        feuille.push([
-          item.p.nom,
-          (saisie.stockBas === null || typeof saisie.stockBas === 'undefined') ? '' : saisie.stockBas,
-          (saisie.stockHaut === null || typeof saisie.stockHaut === 'undefined') ? '' : saisie.stockHaut,
-          (saisie.stockSoir === null || typeof saisie.stockSoir === 'undefined') ? '' : saisie.stockSoir
-        ]);
+        const vide = function (v) { return (v === null || typeof v === 'undefined') ? '' : v; };
+        const ligne = feuille.addRow([item.p.nom, vide(saisie.stockBas), vide(saisie.stockHaut), vide(saisie.stockSoir)]);
+        ligne.getCell(2).fill = teinte('FFF3E0'); ligne.getCell(2).font = encre('E65100'); ligne.getCell(2).alignment = centre;
+        ligne.getCell(3).fill = teinte('E3F2FD'); ligne.getCell(3).font = encre('1565C0'); ligne.getCell(3).alignment = centre;
+        ligne.getCell(4).fill = teinte('EAD7E6'); ligne.getCell(4).font = encre('963E88', true); ligne.getCell(4).alignment = centre;
       });
-      if (!lignes.length) feuille.push(['Aucune quantité en stock ni mouvement ce soir-là.']);
-      const classeur = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(classeur, XLSX.utils.aoa_to_sheet(feuille), 'Stock du soir');
-      XLSX.writeFile(classeur, 'stock_du_soir_' + date + '.xlsx');
+      if (!lignes.length) {
+        const ligneVide = feuille.addRow(['Aucune quantité en stock ni mouvement ce soir-là.']);
+        feuille.mergeCells(ligneVide.number, 1, ligneVide.number, 4);
+      }
+
+      classeur.xlsx.writeBuffer().then(function (buffer) {
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const lien = document.createElement('a');
+        lien.href = URL.createObjectURL(blob);
+        lien.download = 'stock_du_soir_' + date + '.xlsx';
+        document.body.appendChild(lien);
+        lien.click();
+        document.body.removeChild(lien);
+        URL.revokeObjectURL(lien.href);
+      });
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
   }
   window.exporterStockSoirExcel = exporterStockSoirExcel;
