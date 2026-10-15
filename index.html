@@ -164,6 +164,17 @@
   .col-haut input.champ-valeur { border-color: #1565C0; }
   .col-bas input.champ-valeur { border-color: #E65100; }
 
+  /* Met en surbrillance toute la ligne du produit en train d'être saisi (Stock du
+     soir), pour la repérer d'un coup d'œil dans une longue liste de produits —
+     demande explicite suite à un retour utilisateur. `:focus-within` s'active dès
+     qu'un champ de la ligne (Bas ou Haut) a le focus. Posé en `box-shadow` sur
+     chaque `<td>` (superposition, pas un `background` plein) pour ne pas effacer
+     les couleurs `.col-haut`/`.col-bas` déjà posées sur ces cellules — la teinte
+     copper se superpose à leur bleu/orange au lieu de les remplacer. */
+  #corpsProduction tbody tr:focus-within td {
+    box-shadow: inset 0 0 0 999px rgba(150, 62, 136, 0.12), inset 0 2px 0 0 var(--copper), inset 0 -2px 0 0 var(--copper);
+  }
+
   /* Récapitulatif Achats (et "Achats à venir", même ligne via genererLigneAchat()) :
      ces tableaux alignent 10-11 colonnes de texte, sans aucune distinction visuelle
      entre elles (retour utilisateur : "colonnes difficiles à distinguer") — chaque
