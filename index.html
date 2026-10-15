@@ -2086,60 +2086,77 @@
     const brouillonId = idBrouillonActuel;
     const totauxParProduit = {};
 
-    // "Haut seul" / "Bas seul" réécrivent tous les produits actifs (inventaire complet,
+    // "Haut seul" / "Bas seul" considèrent tous les produits actifs (inventaire complet,
     // 0 si non saisi — comportement demandé explicitement pour ces deux cas). "Haut +
-    // Bas" est différent : on ne touche que les produits où au moins un des deux côtés
-    // a été saisi, et pour chaque produit on n'écrase QUE le côté effectivement retapé
-    // — l'autre garde sa valeur existante, pour ne jamais écraser une donnée par un 0
-    // simplement parce que l'opérateur ne l'a pas retapée dans cette session groupée.
-    const produitsAEcrire = cote === 'les2'
+    // Bas" ne considère que les produits où au moins un des deux côtés a été saisi.
+    const produitsCandidats = cote === 'les2'
       ? produitsActifs.filter(function (p) { return entrees.indexOf(p.nom) !== -1; })
       : produitsActifs;
 
-    const lot = db.batch();
-    produitsAEcrire.forEach(function (p) {
+    // Parmi les candidats, ne retient QUE ceux dont la valeur change RÉELLEMENT par
+    // rapport à ce qui est déjà enregistré — un champ non vide ne suffit pas : « Modifier
+    // le stock enregistré » préremplit tous les produits actifs avec leur valeur existante,
+    // donc sans cette vérification, corriger un seul produit réattribuait (opérateur/heure)
+    // tous les autres produits inchangés à cette même session, les faisant apparaître comme
+    // un second stock complet dans « Stock du soir à valider » — incident réel (voir
+    // CLAUDE.md : « Modifier » créait deux lignes au lieu d'une pour une correction ciblée).
+    // Un produit sans changement réel n'est ni réécrit, ni réattribué, ni journalisé.
+    const aEcrire = [];
+    produitsCandidats.forEach(function (p) {
       const nom = p.nom;
       const v = valeursSessionProduit(nom);
       const saisieExistante = sourceExistant[nom] || {};
       const ecrireHaut = cote === 'les2' ? v.haut !== '' : toucheHaut;
       const ecrireBas = cote === 'les2' ? v.bas !== '' : toucheBas;
+      const existantHaut = typeof saisieExistante.stockHaut === 'number' ? saisieExistante.stockHaut : null;
+      const existantBas = typeof saisieExistante.stockBas === 'number' ? saisieExistante.stockBas : null;
+      const valeurHaut = ecrireHaut ? (v.haut === '' ? 0 : sommerExpression(v.haut)) : (existantHaut !== null ? existantHaut : 0);
+      const valeurBas = ecrireBas ? (v.bas === '' ? 0 : sommerExpression(v.bas)) : (existantBas !== null ? existantBas : 0);
+      const hautChange = ecrireHaut && valeurHaut !== existantHaut;
+      const basChange = ecrireBas && valeurBas !== existantBas;
+      if (!hautChange && !basChange) return;
+      aEcrire.push({ nom: nom, valeurHaut: valeurHaut, valeurBas: valeurBas, hautChange: hautChange, basChange: basChange });
+    });
+
+    if (!aEcrire.length) {
+      afficherToast('Aucun changement par rapport au stock déjà enregistré');
+      terminaisonEnCours = false;
+      rendreProduction();
+      return;
+    }
+
+    const lot = db.batch();
+    aEcrire.forEach(function (item) {
       const donnees = {
-        date: dateSession, produit: nom,
+        date: dateSession, produit: item.nom,
         horodatage: firebase.firestore.FieldValue.serverTimestamp(),
         responsable: utilisateurCourant.email,
         importe: false
       };
-      let valeurHaut, valeurBas;
-      if (ecrireHaut) {
-        valeurHaut = v.haut === '' ? 0 : sommerExpression(v.haut);
-        donnees.stockHaut = valeurHaut;
+      if (item.hautChange) {
+        donnees.stockHaut = item.valeurHaut;
         donnees.stockHautOperateur = sessionStockSoir.operateur;
         donnees.stockHautHeure = sessionStockSoir.heure;
-      } else {
-        valeurHaut = (typeof saisieExistante.stockHaut === 'number') ? saisieExistante.stockHaut : 0;
       }
-      if (ecrireBas) {
-        valeurBas = v.bas === '' ? 0 : sommerExpression(v.bas);
-        donnees.stockBas = valeurBas;
+      if (item.basChange) {
+        donnees.stockBas = item.valeurBas;
         donnees.stockBasOperateur = sessionStockSoir.operateur;
         donnees.stockBasHeure = sessionStockSoir.heure;
-      } else {
-        valeurBas = (typeof saisieExistante.stockBas === 'number') ? saisieExistante.stockBas : 0;
       }
-      donnees.stockSoir = valeurHaut + valeurBas;
-      totauxParProduit[nom] = { haut: valeurHaut, bas: valeurBas, total: donnees.stockSoir };
-      lot.set(db.collection('saisieStock').doc(idJourProduit(dateSession, nom)), donnees, { merge: true });
+      donnees.stockSoir = item.valeurHaut + item.valeurBas;
+      totauxParProduit[item.nom] = { haut: item.valeurHaut, bas: item.valeurBas, total: donnees.stockSoir };
+      lot.set(db.collection('saisieStock').doc(idJourProduit(dateSession, item.nom)), donnees, { merge: true });
     });
 
     lot.commit().then(function () {
-      entrees.forEach(function (nom) {
+      aEcrire.forEach(function (item) {
         // Pour "Stock Haut + Bas", journalise le total (les deux ont changé) ; pour
         // un seul côté, journalise comme avant la seule valeur de ce côté.
-        const valeurLoguee = cote === 'les2' ? totauxParProduit[nom].total : totauxParProduit[nom][cote];
-        enregistrerTransaction('stock_soir', nom, valeurLoguee);
+        const valeurLoguee = cote === 'les2' ? totauxParProduit[item.nom].total : totauxParProduit[item.nom][cote];
+        enregistrerTransaction('stock_soir', item.nom, valeurLoguee);
       });
       const suffixeDate = dateSession === AUJOURD_HUI ? '' : ' — ' + dateSession;
-      afficherToast(produitsAEcrire.length + ' produit(s) enregistré(s) — ' + sessionStockSoir.operateur +
+      afficherToast(aEcrire.length + ' produit(s) enregistré(s) — ' + sessionStockSoir.operateur +
         ' (' + libelleCoteStockSoir(cote) + ')' + suffixeDate);
       sessionStockSoir = null;
       saisieSessionEnCours = {};
