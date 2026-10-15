@@ -480,7 +480,7 @@
     <button data-vue="achats" onclick="allerA('achats')">Achats</button>
     <button data-vue="commerce" onclick="allerA('commerce')">Commerce</button>
     <button data-vue="produits" onclick="allerA('produits')">Produits</button>
-    <button data-vue="prixAchat" id="ongletPrixAchat" onclick="allerA('prixAchat')">Prix marché</button>
+    <button data-vue="prixAchat" id="ongletPrixAchat" onclick="allerA('prixAchat')">Prix Logé</button>
     <button data-vue="historique" onclick="allerA('historique')">Historique</button>
     <button data-vue="parametres" id="ongletParametres" onclick="allerA('parametres')" style="display:none;">Paramètres</button>
   </nav>
@@ -742,7 +742,7 @@
           <thead>
             <tr>
               <th>Produit</th>
-              <th class="centre">Prix marché</th>
+              <th class="centre">Prix Logé</th>
               <th class="centre">Stock initial</th>
               <th class="centre">Achats</th>
               <th class="centre" id="entierVentesLabel">Ventes</th>
@@ -800,7 +800,7 @@
               <th>Origine</th>
               <th>Conditionnement</th>
               <th>Suremballage</th>
-              <th class="centre">Prix marché par défaut</th>
+              <th class="centre">Prix Logé par défaut</th>
               <th class="centre">Unité</th>
               <th class="centre">Actif</th>
             </tr>
@@ -1000,6 +1000,7 @@
   let familleOuverteProduits = null;     // même accordéon que ci-dessus, pour le tableau de l'onglet Produits — ici actif en
                                           // permanence (pas de notion de session), ignoré tant que #filtreProduits n'est pas vide.
   let familleOuvertePrixAchat = null;    // même accordéon, pour le tableau de l'onglet Prix marché (#filtrePrixAchat).
+  let familleOuverteCommerce = null;     // même accordéon, pour le tableau de l'onglet Commerce (#filtreCommerce).
   let sessionStockSoir = null;    // { date, heure, cote: 'haut'|'bas', operateur } — session de comptage en cours, ou null
   let saisieSessionEnCours = {};  // { nomProduit: { haut: valeurTexte, bas: valeurTexte } } — comptage local de la session, écrit en une fois à la fin
   let saisieDateSession = {};     // snapshot ponctuel de saisieStock pour sessionStockSoir.date, UNIQUEMENT quand cette date
@@ -2983,14 +2984,28 @@
       groupesFamilles[famille].push(p);
     });
 
+    // Familles en accordéon (une seule dépliée à la fois, voir familleOuverteCommerce) —
+    // même mécanisme que les onglets Produits/Prix marché, actif en permanence (pas de
+    // notion de session dans cet onglet) ; désactivé pendant une recherche pour que les
+    // résultats cherchés restent visibles sans dépliage manuel.
+    const accordeonActifCommerce = !q;
+
     Object.keys(groupesFamilles).sort().forEach(function (famille) {
+      const ouverte = !accordeonActifCommerce || familleOuverteCommerce === famille;
       const trTitreFamille = document.createElement('tr');
-      trTitreFamille.className = 'entete-groupe';
+      trTitreFamille.className = 'entete-groupe' + (accordeonActifCommerce ? ' entete-groupe-cliquable' : '');
       const tdTitreFamille = document.createElement('td');
       tdTitreFamille.colSpan = 10;
-      tdTitreFamille.textContent = famille;
+      tdTitreFamille.textContent = accordeonActifCommerce ? ((ouverte ? '▾ ' : '▸ ') + famille) : famille;
       trTitreFamille.appendChild(tdTitreFamille);
+      if (accordeonActifCommerce) {
+        trTitreFamille.addEventListener('click', function () {
+          familleOuverteCommerce = (familleOuverteCommerce === famille) ? null : famille;
+          rendreCommerce();
+        });
+      }
       corps.appendChild(trTitreFamille);
+      if (!ouverte) return;
 
       groupesFamilles[famille].sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
       const cache = dernierStockParProduit[p.nom] || {};
@@ -3024,7 +3039,7 @@
 
       const tdPrix = document.createElement('td');
       tdPrix.className = 'centre mono';
-      tdPrix.dataset.label = "Prix marché";
+      tdPrix.dataset.label = "Prix Logé";
       if (!peutVoirPrix()) {
         tdPrix.textContent = '—';
       } else if (p.prixAchatDefaut === null || typeof p.prixAchatDefaut === 'undefined') {
@@ -3762,7 +3777,7 @@
     const message = clotureAujourdhui
       ? "La journée a déjà été clôturée aujourd'hui. La reclôturer va aussi remettre à zéro les achats/ventes/réservations enregistrés depuis. Continuer ?"
       : (nbStocksCoches ? 'Intégrer ' + nbStocksCoches + ' stock(s) coché(s) et clôturer' : 'Clôturer') +
-        " la journée de la veille maintenant ?\n\nLes achats et ventes/réservations déjà comptés dans le stock réel seront remis à zéro pour la nouvelle journée, et le prix marché de tous les produits sera remis à vide (à ressaisir). Rien n'est supprimé côté achats/ventes : ils restent consultables dans les onglets Achats/Historique. Une sauvegarde Excel va être générée d'abord.";
+        " la journée de la veille maintenant ?\n\nLes achats et ventes/réservations déjà comptés dans le stock réel seront remis à zéro pour la nouvelle journée, et le prix Logé de tous les produits sera remis à vide (à ressaisir). Rien n'est supprimé côté achats/ventes : ils restent consultables dans les onglets Achats/Historique. Une sauvegarde Excel va être générée d'abord.";
     if (!confirm(message)) return;
 
     exporterSauvegardeExcel();
@@ -4648,7 +4663,7 @@
 
   function libelleTypeTransaction(t) {
     return {
-      stock_soir: 'Stock du soir', stock_importe: 'Stock importé', achats: 'Achats', ventes: 'Ventes', prixAchat: 'Prix marché',
+      stock_soir: 'Stock du soir', stock_importe: 'Stock importé', achats: 'Achats', ventes: 'Ventes', prixAchat: 'Prix Logé',
       reservations: 'Réservations', produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé',
       cloture_journee: 'Clôture de journée', ventes_ajustement: 'Ventes (total corrigé)', reservations_ajustement: 'Réservations (total corrigé)'
     }[t] || t;
@@ -4686,7 +4701,7 @@
     ]).then(function (resultats) {
       const saisieSnap = resultats[0], commerceSnap = resultats[1], achatsSnap = resultats[2], transactionsSnap = resultats[3];
 
-      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Origine', 'Conditionnement', 'Suremballage', 'Actif', 'Prix marché par défaut', 'Unité', 'Ordre']];
+      const feuilleProduits = [['Désignation', 'Famille', 'Variété', 'Origine', 'Conditionnement', 'Suremballage', 'Actif', 'Prix Logé par défaut', 'Unité', 'Ordre']];
       produits.slice().sort(function (a, b) { return (a.ordre || 0) - (b.ordre || 0); }).forEach(function (p) {
         feuilleProduits.push([p.nom, p.famille || '', p.variete || '', p.origine || '', p.conditionnement || '', p.suremballage || '', p.actif ? 'Oui' : 'Non', p.prixAchatDefaut, libelleUnitePrix(p.prixAchatUnite), p.ordre || '']);
       });
