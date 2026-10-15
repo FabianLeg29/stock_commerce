@@ -4421,6 +4421,17 @@
       return corps;
     }
 
+    // Une ligne compte comme Ramasse soit par son transportType ('ramasse', le cas
+    // normal), soit — filet de sécurité pour une saisie ancienne/erronée — si un nom de
+    // transporteur libre contient littéralement "ramasse" (ex. saisi via l'option
+    // "Autre" avant/sans utiliser la vraie option Ramasse) : sans ce repli, une telle
+    // ligne afficherait "Ramasse" dans la colonne Transport tout en atterrissant dans le
+    // tableau Transporteur, contradiction remontée en conditions réelles.
+    function estLigneRamasse(item) {
+      if (item.ligne.transportType === 'ramasse') return true;
+      return (item.ligne.transporteurNom || '').trim().toLowerCase() === 'ramasse';
+    }
+
     // Sépare les achats Ramasse des achats livrés par un transporteur (demande
     // explicite) — chaque sous-ensemble garde l'ordre Famille → Produit → Fournisseur →
     // Livraison prévue → Heure d'arrivée prévue déjà appliqué par comparerLignesAchatPourPDF()
@@ -4428,8 +4439,8 @@
     // n'étant ensuite plus groupé par famille, voir corpsPlat() ci-dessus, mais garde cet
     // ordre comme simple tri d'affichage).
     function tableauParTransport(lignes, fondTeinte) {
-      const ramasse = lignes.filter(function (item) { return item.ligne.transportType === 'ramasse'; });
-      const autres = lignes.filter(function (item) { return item.ligne.transportType !== 'ramasse'; });
+      const ramasse = lignes.filter(estLigneRamasse);
+      const autres = lignes.filter(function (item) { return !estLigneRamasse(item); });
       let out = '';
       if (!ramasse.length && !autres.length) {
         return '<table><thead>' + entetes() + '</thead><tbody>' +
