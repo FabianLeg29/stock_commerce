@@ -1260,6 +1260,15 @@
     }).join(' ');
   }
 
+  // Juste le prénom (premier segment avant un ".", "_" ou "-" dans la partie locale de
+  // l'adresse), pour l'affichage du Responsable dans l'export PDF des achats — l'adresse
+  // email complète y était jusqu'ici affichée telle quelle.
+  function prenomDepuisEmail(email) {
+    if (!email) return '—';
+    const prenom = email.split('@')[0].split(/[._-]+/)[0];
+    return prenom ? prenom.charAt(0).toUpperCase() + prenom.slice(1) : '—';
+  }
+
   // ============================================================
   // AUTHENTIFICATION
   // ============================================================
@@ -4377,12 +4386,17 @@
     // livraisons déjà arrivées/du jour (même séparation que la page Achats à l'écran).
     const aVenir = lignesAchatsAVenir().slice().sort(comparerLignesAchatPourPDF);
 
-    function entetes() {
+    // Transport est omis des en-têtes/lignes du tableau Transporteur (voir
+    // tableauParTransport() plus bas) : son regroupement par nom de transporteur rend
+    // cette colonne redondante sur chaque ligne, et la retirer gagne une colonne de
+    // largeur sur la feuille imprimée (moins de retours à la ligne dans les autres
+    // colonnes) — demande explicite.
+    function entetes(avecTransport) {
       return '<tr><th>Produit</th><th>Fournisseur</th><th>Livraison prévue</th><th>Heure d\'arrivée prévue</th>' +
         '<th>Date</th><th>Quantité</th>' + (avecPrix ? '<th>Prix d\'achat</th>' : '') +
-        '<th>Transport</th><th>Responsable</th><th>Commentaire</th></tr>';
+        (avecTransport ? '<th>Transport</th>' : '') + '<th>Responsable</th><th>Commentaire</th></tr>';
     }
-    function ligne(item, fondTeinte) {
+    function ligne(item, fondTeinte, avecTransport) {
       const a = item.achat, l = item.ligne;
       const transport = l.transportType === 'ramasse' ? 'Ramasse' : (l.transporteurNom || '—');
       const prix = formaterPrix(l.prixAchat);
@@ -4392,22 +4406,27 @@
         '<td>' + (l.heureDepart || '—') + '</td>' +
         '<td>' + formaterDateFr(a.date) + '</td><td>' + l.quantite + '</td>' +
         (avecPrix ? '<td>' + prix + '</td>' : '') +
-        '<td>' + transport + '</td><td>' + a.responsable + '</td><td>' + (a.commentaire || '—') + '</td></tr>';
+        (avecTransport ? '<td>' + transport + '</td>' : '') +
+        '<td>' + prenomDepuisEmail(a.responsable) + '</td><td>' + (a.commentaire || '—') + '</td></tr>';
     }
     const colonnes = avecPrix ? 10 : 9;
-    // Même en-tête de ligne "FAMILLE" que les autres exports PDF groupés (Stock du soir,
-    // Stock théorique) — une ligne pleine largeur avant les produits de chaque famille,
-    // plutôt qu'une colonne Famille répétée sur chaque ligne.
-    function corpsGroupeParFamille(lignes, fondTeinte) {
+    const colonnesSansTransport = colonnes - 1;
+    // Le tableau Transporteur est groupé par transporteur plutôt que par famille (demande
+    // explicite) — chaque nom de transporteur devient un en-tête de ligne pleine largeur,
+    // même principe que l'en-tête "FAMILLE" des autres exports PDF groupés (Stock du soir,
+    // Stock théorique), et remplace la colonne Transport (retirée, voir entetes()/ligne()
+    // plus haut) : plus besoin de répéter le nom du transporteur sur chaque ligne puisqu'il
+    // est déjà le titre du groupe qui les contient.
+    function corpsGroupeParTransporteur(lignes, fondTeinte) {
       let corps = '';
-      let familleCourante = null;
+      let transporteurCourant = null;
       lignes.forEach(function (item) {
-        const famille = familleDuProduitAchat(item.ligne.produit);
-        if (famille !== familleCourante) {
-          corps += '<tr><td colspan="' + colonnes + '" style="background:var(--copper-soft); color:var(--copper); font-weight:700; text-transform:uppercase; letter-spacing:0.03em; font-size:12px;">' + famille + '</td></tr>';
-          familleCourante = famille;
+        const transporteur = item.ligne.transporteurNom || '—';
+        if (transporteur !== transporteurCourant) {
+          corps += '<tr><td colspan="' + colonnesSansTransport + '" style="background:var(--copper-soft); color:var(--copper); font-weight:700; text-transform:uppercase; letter-spacing:0.03em; font-size:12px;">' + transporteur + '</td></tr>';
+          transporteurCourant = transporteur;
         }
-        corps += ligne(item, fondTeinte);
+        corps += ligne(item, fondTeinte, false);
       });
       return corps;
     }
@@ -4417,7 +4436,7 @@
     // n'a pas besoin d'être éclatée par famille/produit pour être utile).
     function corpsPlat(lignes, fondTeinte) {
       let corps = '';
-      lignes.forEach(function (item) { corps += ligne(item, fondTeinte); });
+      lignes.forEach(function (item) { corps += ligne(item, fondTeinte, true); });
       return corps;
     }
 
@@ -4432,28 +4451,39 @@
       return (item.ligne.transporteurNom || '').trim().toLowerCase() === 'ramasse';
     }
 
+    // Tri du tableau Transporteur : par transporteur d'abord (pour le regroupement de
+    // corpsGroupeParTransporteur()), puis Famille → Produit → Fournisseur → Livraison
+    // prévue → Heure d'arrivée prévue comme repli à l'intérieur d'un même transporteur
+    // (demande explicite — distinct du tri du tableau Ramasse, qui garde l'ordre de
+    // comparerLignesAchatPourPDF() tel quel puisqu'il n'est pas groupé).
+    function comparerLignesParTransporteur(x, y) {
+      const tx = x.ligne.transporteurNom || '', ty = y.ligne.transporteurNom || '';
+      if (tx !== ty) return tx.localeCompare(ty);
+      return comparerLignesAchatPourPDF(x, y);
+    }
+
     // Sépare les achats Ramasse des achats livrés par un transporteur (demande
-    // explicite) — chaque sous-ensemble garde l'ordre Famille → Produit → Fournisseur →
+    // explicite) — le sous-ensemble Ramasse garde l'ordre Famille → Produit → Fournisseur →
     // Livraison prévue → Heure d'arrivée prévue déjà appliqué par comparerLignesAchatPourPDF()
-    // avant cet appel, un simple filtre préserve donc cet ordre dans chaque groupe (Ramasse
-    // n'étant ensuite plus groupé par famille, voir corpsPlat() ci-dessus, mais garde cet
-    // ordre comme simple tri d'affichage).
+    // avant cet appel (il n'est plus groupé par famille, voir corpsPlat() ci-dessus, mais
+    // garde cet ordre comme simple tri d'affichage) ; le sous-ensemble Transporteur est
+    // retrié par transporteur (voir comparerLignesParTransporteur() ci-dessus).
     function tableauParTransport(lignes, fondTeinte) {
       const ramasse = lignes.filter(estLigneRamasse);
-      const autres = lignes.filter(function (item) { return !estLigneRamasse(item); });
+      const autres = lignes.filter(function (item) { return !estLigneRamasse(item); }).sort(comparerLignesParTransporteur);
       let out = '';
       if (!ramasse.length && !autres.length) {
-        return '<table><thead>' + entetes() + '</thead><tbody>' +
+        return '<table><thead>' + entetes(true) + '</thead><tbody>' +
           '<tr><td colspan="' + colonnes + '" style="text-align:center; color:#888;">Aucun achat.</td></tr>' +
           '</tbody></table>';
       }
       if (ramasse.length) {
         out += '<h4 style="margin:14px 0 4px; color:var(--copper);">Ramasse</h4>';
-        out += '<table><thead>' + entetes() + '</thead><tbody>' + corpsPlat(ramasse, fondTeinte) + '</tbody></table>';
+        out += '<table><thead>' + entetes(true) + '</thead><tbody>' + corpsPlat(ramasse, fondTeinte) + '</tbody></table>';
       }
       if (autres.length) {
         out += '<h4 style="margin:14px 0 4px; color:var(--copper);">Transporteur</h4>';
-        out += '<table><thead>' + entetes() + '</thead><tbody>' + corpsGroupeParFamille(autres, fondTeinte) + '</tbody></table>';
+        out += '<table><thead>' + entetes(false) + '</thead><tbody>' + corpsGroupeParTransporteur(autres, fondTeinte) + '</tbody></table>';
       }
       return out;
     }
