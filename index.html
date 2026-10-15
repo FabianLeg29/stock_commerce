@@ -2609,10 +2609,23 @@
       lignes.forEach(function (item) {
         const famille = item.p.famille || 'Sans famille';
         if (famille !== familleCourante) {
-          const ligneFamille = feuille.addRow([famille.toUpperCase()]);
-          feuille.mergeCells(ligneFamille.number, 1, ligneFamille.number, 4);
-          ligneFamille.getCell(1).fill = teinte('EAD7E6');
-          ligneFamille.getCell(1).font = encre('963E88', true);
+          // Pas de cellules fusionnées ici (contrairement à un essai précédent) : une
+          // cellule fusionnée ne peut porter qu'UNE valeur pour toute la largeur, ce qui
+          // empêchait de distinguer cette ligne d'une vraie ligne vide une fois un filtre
+          // Excel appliqué sur la colonne Total (retour utilisateur réel — décocher
+          // "(Vides)" faisait disparaître les lignes de famille en même temps que les
+          // produits sans quantité). Les 4 cellules sont donc indépendantes, coloriées
+          // chacune pour recréer le même bandeau plein, avec un "—" dans Bas/Haut/Total
+          // (même convention que partout ailleurs dans l'app pour "pas de valeur") : la
+          // ligne n'est alors plus "vide" aux yeux d'Excel et survit au filtre.
+          const ligneFamille = feuille.addRow([famille.toUpperCase(), '—', '—', '—']);
+          ligneFamille.eachCell({ includeEmpty: true }, function (cellule) {
+            cellule.fill = teinte('EAD7E6');
+            cellule.font = encre('963E88', true);
+          });
+          ligneFamille.getCell(2).alignment = centre;
+          ligneFamille.getCell(3).alignment = centre;
+          ligneFamille.getCell(4).alignment = centre;
           familleCourante = famille;
         }
         const saisie = item.saisie;
