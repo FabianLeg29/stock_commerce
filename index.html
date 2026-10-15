@@ -4412,20 +4412,38 @@
       return corps;
     }
 
+    // Sépare les achats Ramasse des achats livrés par un transporteur (demande
+    // explicite) — chaque sous-ensemble garde l'ordre Famille → Produit → Fournisseur →
+    // Livraison prévue → Heure d'arrivée prévue déjà appliqué par comparerLignesAchatPourPDF()
+    // avant cet appel, un simple filtre préserve donc cet ordre dans chaque groupe.
+    function tableauParTransport(lignes, fondTeinte) {
+      const ramasse = lignes.filter(function (item) { return item.ligne.transportType === 'ramasse'; });
+      const autres = lignes.filter(function (item) { return item.ligne.transportType !== 'ramasse'; });
+      let out = '';
+      if (!ramasse.length && !autres.length) {
+        return '<table><thead>' + entetes() + '</thead><tbody>' +
+          '<tr><td colspan="' + colonnes + '" style="text-align:center; color:#888;">Aucun achat.</td></tr>' +
+          '</tbody></table>';
+      }
+      if (ramasse.length) {
+        out += '<h4 style="margin:14px 0 4px; color:var(--copper);">Ramasse</h4>';
+        out += '<table><thead>' + entetes() + '</thead><tbody>' + corpsGroupeParFamille(ramasse, fondTeinte) + '</tbody></table>';
+      }
+      if (autres.length) {
+        out += '<h4 style="margin:14px 0 4px; color:var(--copper);">Transporteur</h4>';
+        out += '<table><thead>' + entetes() + '</thead><tbody>' + corpsGroupeParFamille(autres, fondTeinte) + '</tbody></table>';
+      }
+      return out;
+    }
+
     let html = '<style>#zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
     html += '<h2>Récapitulatif des achats — La Légumière</h2>';
     html += '<div style="margin-bottom:10px;">Généré le ' + new Date().toLocaleString('fr-FR') + '</div>';
-    html += '<table><thead>' + entetes() + '</thead><tbody>';
-    if (filtrees.length) {
-      html += corpsGroupeParFamille(filtrees, false);
-    } else {
-      html += '<tr><td colspan="' + colonnes + '" style="text-align:center; color:#888;">Aucun achat.</td></tr>';
-    }
-    html += '</tbody></table>';
+    html += tableauParTransport(filtrees, false);
 
     if (aVenir.length) {
       html += '<h3 style="margin-top:20px; background:var(--copper-soft); color:var(--copper); padding:8px 12px; border-radius:6px;">Livraisons différées (à venir)</h3>';
-      html += '<table><thead>' + entetes() + '</thead><tbody>' + corpsGroupeParFamille(aVenir, true) + '</tbody></table>';
+      html += tableauParTransport(aVenir, true);
     }
 
     document.getElementById('zoneImpression').innerHTML = html;
