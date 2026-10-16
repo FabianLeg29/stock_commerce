@@ -2800,7 +2800,16 @@
     optionGlobal.onclick = function () { commerceSousOnglet = 'global'; rendreCommerce(); };
     conteneur.appendChild(optionGlobal);
 
-    commerciaux.forEach(function (c) {
+    // Un compte commerce non-admin n'a de toute façon jamais pu écrire dans le
+    // sous-onglet d'un collègue (règle Firestore — commercial == son propre email) ;
+    // les autres sous-onglets ne lui servaient donc qu'à consulter le travail d'un
+    // collègue sans pouvoir le corriger, ce qui n'est pas un usage recherché (demande
+    // explicite). Il ne voit donc plus que Global + son propre sous-onglet. L'admin,
+    // qui peut écrire et corriger n'importe quel sous-onglet, continue de tous les voir.
+    const commerciauxVisibles = estAdmin() ? commerciaux :
+      commerciaux.filter(function (c) { return !!utilisateurCourant && c.email === utilisateurCourant.email; });
+
+    commerciauxVisibles.forEach(function (c) {
       const bouton = document.createElement('button');
       bouton.textContent = libelleCommercial(c.email);
       bouton.className = commerceSousOnglet === c.email ? 'actif' : '';
@@ -2963,6 +2972,16 @@
   window.validerCorrectionStockInitial = validerCorrectionStockInitial;
 
   function rendreCommerce() {
+    // Un compte commerce non-admin ne voit plus que Global + son propre sous-onglet
+    // (voir rendreSousOngletsCommerce() plus bas) — si commerceSousOnglet pointait sur
+    // un collègue (état restauré d'avant ce changement, ou perte du rôle admin en cours
+    // de session), on le resynchronise ici pour ne jamais rester bloqué sur un sous-onglet
+    // dont le bouton n'est plus affiché.
+    if (!estAdmin() && commerceSousOnglet !== 'global' &&
+      !(utilisateurCourant && commerceSousOnglet === utilisateurCourant.email)) {
+      commerceSousOnglet = (utilisateurCourant && commerciaux.some(function (c) { return c.email === utilisateurCourant.email; }))
+        ? utilisateurCourant.email : 'global';
+    }
     document.getElementById('dateCommerce').textContent = "Aujourd'hui " + formaterDateFr(AUJOURD_HUI);
     rendreSousOngletsCommerce();
     rendreAlertesVrac();
