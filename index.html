@@ -4161,12 +4161,15 @@
 
     const selectFournisseur = document.getElementById('achatFournisseur');
     const valeurFournisseurActuelle = selectFournisseur.value;
-    // Union de la liste de référence (Produits > Listes de référence > Fournisseur)
-    // et des fournisseurs déjà utilisés dans l'historique des achats, pour ne rien
-    // perdre des achats saisis avant l'introduction de cette liste de référence.
-    const fournisseurs = Array.from(new Set(
-      (referentiels.fournisseurs || []).concat(achats.map(function (a) { return a.fournisseur; }).filter(Boolean))
-    )).sort();
+    // Uniquement la liste de référence (Produits > Listes de référence > Fournisseur) —
+    // ne mélange plus les fournisseurs tapés manuellement via "Autre" sur d'anciens
+    // achats (retour utilisateur : liste polluée par ces valeurs ponctuelles/historiques
+    // qui n'ont pas vocation à réapparaître comme une option normale). Un achat déjà
+    // enregistré sous une valeur absente de cette liste (saisie "Autre" ou fournisseur
+    // depuis retiré/renommé du référentiel) n'est pas perdu pour autant : le rouvrir en
+    // édition (chargerAchatPourEdition()) retombe déjà sur le mode "Autre" avec le texte
+    // d'origine pré-rempli, indépendamment de ce que propose ce menu déroulant.
+    const fournisseurs = (referentiels.fournisseurs || []).slice().sort();
     selectFournisseur.innerHTML = '';
     const optVideF = document.createElement('option');
     optVideF.value = ''; optVideF.textContent = 'Fournisseur...';
@@ -5516,6 +5519,10 @@
   // en entier à partir de la version déjà en mémoire. Ne modifie aucun produit
   // existant utilisant déjà l'ancien texte (champs indépendants, comme pour le reste
   // du référentiel) — seule la liste proposée dans les menus déroulants change.
+  // **Exception pour `fournisseurs`** (demande explicite de l'utilisateur, seule liste
+  // concernée) : un nom de fournisseur désigne toujours la même entité réelle, donc un
+  // achat resté sous l'ancien nom après un renommage serait une incohérence plutôt
+  // qu'un historique à préserver — voir propagerRenommageFournisseur() plus bas.
   function renommerValeurReferentiel(categorie, idConteneur, ancienneValeur, nouvelleValeur) {
     if (!peutGererCommerce()) return;
     if ((referentiels[categorie] || []).indexOf(nouvelleValeur) !== -1) {
@@ -5525,8 +5532,33 @@
     }
     const nouvelleListe = (referentiels[categorie] || []).map(function (v) { return v === ancienneValeur ? nouvelleValeur : v; });
     db.collection('referentiels').doc('main').update({ [categorie]: nouvelleListe }).then(function () {
-      afficherToast('Renommé en « ' + nouvelleValeur + ' »');
+      if (categorie === 'fournisseurs') return propagerRenommageFournisseur(ancienneValeur, nouvelleValeur);
+    }).then(function (nbAchatsMisAJour) {
+      afficherToast('Renommé en « ' + nouvelleValeur + ' »' + (nbAchatsMisAJour ? ' (' + nbAchatsMisAJour + ' achat(s) mis à jour)' : ''));
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); rendreListeReferentiel(categorie, idConteneur); });
+  }
+
+  // Répercute le renommage d'un fournisseur sur tous les achats qui le référencent déjà
+  // (`achats.fournisseur`), même ceux hors des 200 achats les plus récents chargés en
+  // mémoire — requête Firestore directe, écriture par lots de 450 (limite Firestore par
+  // batch(), même principe que remettreAZeroPrixMarche()). Renvoie le nombre d'achats
+  // mis à jour (0 si aucun). N'affecte jamais les achats enregistrés via "Autre" (leur
+  // champ `fournisseur` porte le texte libre tapé, jamais le nom d'une valeur de
+  // référentiel comme "AUTRE" elle-même).
+  function propagerRenommageFournisseur(ancienneValeur, nouvelleValeur) {
+    return db.collection('achats').where('fournisseur', '==', ancienneValeur).get().then(function (snap) {
+      if (snap.empty) return 0;
+      const docs = snap.docs;
+      const lots = [];
+      for (let i = 0; i < docs.length; i += 450) lots.push(docs.slice(i, i + 450));
+      return lots.reduce(function (promesse, groupe) {
+        return promesse.then(function () {
+          const lot = db.batch();
+          groupe.forEach(function (doc) { lot.update(doc.ref, { fournisseur: nouvelleValeur }); });
+          return lot.commit();
+        });
+      }, Promise.resolve()).then(function () { return docs.length; });
+    });
   }
 
   // Bascule une ligne de référentiel (valeur à plat, famille, ou variété) en édition

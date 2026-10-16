@@ -140,12 +140,18 @@ service cloud.firestore {
     // Tout compte commerce peut CRÉER un achat (catalogue/historique partagés, lu par
     // tous). En revanche MODIFIER ou SUPPRIMER un achat existant n'est permis qu'à son
     // créateur (responsable == son propre email) ou à l'admin — un commercial ne peut
-    // pas toucher à l'achat saisi par un collègue.
+    // pas toucher à l'achat saisi par un collègue. Exception étroite : le renommage
+    // d'un fournisseur dans la liste de référence (Produits > Listes de référence)
+    // répercute ce nouveau nom sur tous les achats existants qui le référencent, y
+    // compris ceux créés par un autre commercial — `allow update` dédié, restreint au
+    // seul champ `fournisseur` (même principe que `saisieStock.importe` plus bas), pour
+    // ne pas élargir par ailleurs le droit de modifier un achat d'autrui.
     match /achats/{achatId} {
       allow read: if connecte();
       allow create: if estCommerce();
       allow update, delete: if estAdmin() ||
         (estCommerce() && resource.data.responsable == request.auth.token.email);
+      allow update: if estCommerce() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fournisseur']);
     }
 
     // ---- Préférences d'affichage produit par commercial (un document par commercial) ----
