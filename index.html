@@ -1864,51 +1864,6 @@
     });
   }
 
-  // Ensemble des produits ayant eu un achat (arrivée effective ce jour-là) ou une vente ce
-  // jour-là — utilisé par l'export PDF du Stock du soir pour ne jamais masquer un produit
-  // mouvementé même si son stock du soir compté retombe à 0 (ex. tout vendu). Réutilise les
-  // caches temps réel déjà tenus à jour (achatsDuJourParProduit/commerceDuJour) si la date
-  // demandée est aujourd'hui, sinon fait des requêtes ponctuelles (même principe que
-  // chargerSaisiePourDate()) — ces caches ne portent que sur AUJOURD_HUI.
-  function chargerMouvementsPourDate(date) {
-    if (date === AUJOURD_HUI) {
-      const produits = new Set();
-      Object.keys(achatsDuJourParProduit).forEach(function (nom) { if (achatsDuJourParProduit[nom] > 0) produits.add(nom); });
-      Object.keys(commerceDuJour).forEach(function (nom) { if ((commerceDuJour[nom].ventes || 0) > 0) produits.add(nom); });
-      return Promise.resolve(produits);
-    }
-    const pAchats = Promise.all([
-      db.collection('achats').where('date', '==', date).get(),
-      db.collection('achats').where('dateLivraisonPrevue', '==', date).get()
-    ]).then(function (snaps) {
-      const produits = new Set();
-      const vus = {};
-      snaps.forEach(function (qs) {
-        qs.forEach(function (doc) {
-          if (vus[doc.id]) return;
-          vus[doc.id] = true;
-          const d = doc.data();
-          const arrivee = d.dateLivraisonPrevue || d.date;
-          if (arrivee !== date) return;
-          (d.lignes || []).forEach(function (l) { if ((Number(l.quantite) || 0) > 0) produits.add(l.produit); });
-        });
-      });
-      return produits;
-    });
-    const pVentes = db.collection('commerce').where('date', '==', date).get().then(function (qs) {
-      const produits = new Set();
-      qs.forEach(function (doc) {
-        const d = doc.data();
-        if ((d.ventes || 0) > 0) produits.add(d.produit);
-      });
-      return produits;
-    });
-    return Promise.all([pAchats, pVentes]).then(function (res) {
-      res[1].forEach(function (nom) { res[0].add(nom); });
-      return res[0];
-    });
-  }
-
   // Valeurs déjà enregistrées pour un côté donné à la date de "source" (saisieDuJour par
   // défaut, c'est-à-dire aujourd'hui), au format attendu par saisieSessionEnCours
   // ({ [produit]: { haut: '...' } } ou { bas: '...' }) — factorisé pour être utilisé aussi
@@ -2563,28 +2518,29 @@
 
   // Même présentation que exporterStockSoirPDF() (demande explicite d'uniformiser les
   // deux exports, puis d'y ajouter de vraies couleurs) : même filtre de lignes (ne garde
-  // que les produits ayant une quantité en stock OU ayant eu un mouvement ce jour-là, via
-  // chargerMouvementsPourDate()), même ordre de colonnes Produit/Bas/Haut/Total, même
-  // en-tête de famille en ligne pleine largeur, et les MÊMES couleurs que le PDF (Bas
-  // orange, Haut bleu, Total cuivre en gras) — posées via **ExcelJS** (voir balise
-  // <script> en tête de fichier), pas SheetJS : l'édition gratuite de ce dernier n'écrit
-  // pas les styles de cellule dans le fichier produit, réservé à sa version payante.
-  // ExcelJS, lui, est open-source et gère nativement couleurs de fond/police/centrage ;
-  // exporterSauvegardeExcel() (sauvegarde technique, plus bas) l'utilise aussi désormais.
-  // Pas de `XLSX.writeFile()` équivalent ici : `workbook.xlsx.writeBuffer()` renvoie le
-  // fichier en mémoire, déclenché au téléchargement via un lien `<a download>` temporaire.
+  // que les produits ayant une quantité comptée au stock du soir — un simple mouvement
+  // d'achat/vente ce jour-là ne suffit plus à garder une ligne sans quantité, demande
+  // explicite : « les mouvements ne sont pas utiles ici »), même ordre de colonnes
+  // Produit/Bas/Haut/Total, même en-tête de famille en ligne pleine largeur, et les MÊMES
+  // couleurs que le PDF (Bas orange, Haut bleu, Total cuivre en gras) — posées via
+  // **ExcelJS** (voir balise <script> en tête de fichier), pas SheetJS : l'édition
+  // gratuite de ce dernier n'écrit pas les styles de cellule dans le fichier produit,
+  // réservé à sa version payante. ExcelJS, lui, est open-source et gère nativement
+  // couleurs de fond/police/centrage ; exporterSauvegardeExcel() (sauvegarde technique,
+  // plus bas) l'utilise aussi désormais. Pas de `XLSX.writeFile()` équivalent ici :
+  // `workbook.xlsx.writeBuffer()` renvoie le fichier en mémoire, déclenché au
+  // téléchargement via un lien `<a download>` temporaire.
   function exporterStockSoirExcel() {
     if (typeof ExcelJS === 'undefined') {
       afficherToast('Bibliothèque Excel indisponible, réessayez.');
       return;
     }
     const date = document.getElementById('dateExportStockSoir').value || AUJOURD_HUI;
-    Promise.all([chargerSaisiePourDate(date), chargerMouvementsPourDate(date)]).then(function (res) {
-      const source = res[0], produitsAvecMouvement = res[1];
+    chargerSaisiePourDate(date).then(function (source) {
       const lignes = produitsActifsTriesParFamille()
         .map(function (p) { return { p: p, saisie: source[p.nom] || {} }; })
         .filter(function (item) {
-          return (typeof item.saisie.stockSoir === 'number' && item.saisie.stockSoir > 0) || produitsAvecMouvement.has(item.p.nom);
+          return typeof item.saisie.stockSoir === 'number' && item.saisie.stockSoir > 0;
         });
 
       const teinte = function (hex) { return { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + hex } }; };
@@ -2636,7 +2592,7 @@
         ligne.getCell(4).fill = teinte('EAD7E6'); ligne.getCell(4).font = encre('963E88', true); ligne.getCell(4).alignment = centre;
       });
       if (!lignes.length) {
-        const ligneVide = feuille.addRow(['Aucune quantité en stock ni mouvement ce soir-là.']);
+        const ligneVide = feuille.addRow(['Aucune quantité en stock ce soir-là.']);
         feuille.mergeCells(ligneVide.number, 1, ligneVide.number, 4);
       }
 
@@ -2661,18 +2617,17 @@
   // prévaut sur la règle @page globale pour CE print précis, sans affecter les autres
   // exports qui partagent #zoneImpression. La famille est un en-tête de ligne (comme le
   // tableau à l'écran), pas une colonne. Ne garde que les produits ayant effectivement une
-  // quantité en stock ce soir OU ayant eu un mouvement (achat/vente) ce jour-là — un produit
-  // entièrement vendu (stock à 0 après un mouvement réel) ne doit pas disparaître de la
-  // feuille, voir chargerMouvementsPourDate() — et met Haut/Bas/Total en couleur pour une
+  // quantité comptée au stock du soir — un simple mouvement d'achat/vente ce jour-là, sans
+  // quantité comptée, ne suffit plus à garder une ligne (demande explicite : « les
+  // mouvements ne sont pas utiles ici ») — et met Haut/Bas/Total en couleur pour une
   // lecture plus rapide sur la feuille imprimée.
   function exporterStockSoirPDF() {
     const date = document.getElementById('dateExportStockSoir').value || AUJOURD_HUI;
-    Promise.all([chargerSaisiePourDate(date), chargerMouvementsPourDate(date)]).then(function (res) {
-      const source = res[0], produitsAvecMouvement = res[1];
+    chargerSaisiePourDate(date).then(function (source) {
       const lignes = produitsActifsTriesParFamille()
         .map(function (p) { return { p: p, saisie: source[p.nom] || {} }; })
         .filter(function (item) {
-          return (typeof item.saisie.stockSoir === 'number' && item.saisie.stockSoir > 0) || produitsAvecMouvement.has(item.p.nom);
+          return typeof item.saisie.stockSoir === 'number' && item.saisie.stockSoir > 0;
         });
 
       let html = '<style>@page { size: portrait; margin: 12mm; } #zoneImpression * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>';
@@ -2697,7 +2652,7 @@
           '<td style="text-align:center; background:var(--copper-soft); color:var(--copper); font-weight:700; font-size:14px;">' + vide(saisie.stockSoir) + '</td></tr>';
       });
       if (!lignes.length) {
-        html += '<tr><td colspan="4" style="text-align:center; color:#888;">Aucune quantité en stock ni mouvement ce soir-là.</td></tr>';
+        html += '<tr><td colspan="4" style="text-align:center; color:#888;">Aucune quantité en stock ce soir-là.</td></tr>';
       }
       html += '</tbody></table>';
       document.getElementById('zoneImpression').innerHTML = html;
