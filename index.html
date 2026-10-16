@@ -5522,7 +5522,11 @@
   // **Exception pour `fournisseurs`** (demande explicite de l'utilisateur, seule liste
   // concernée) : un nom de fournisseur désigne toujours la même entité réelle, donc un
   // achat resté sous l'ancien nom après un renommage serait une incohérence plutôt
-  // qu'un historique à préserver — voir propagerRenommageFournisseur() plus bas.
+  // qu'un historique à préserver — voir propagerRenommageFournisseur() plus bas. Cette
+  // propagation respecte strictement la règle habituelle des achats (un commercial ne
+  // modifie jamais l'achat d'un collègue — décision explicite de l'utilisateur, aucune
+  // règle Firestore n'a été ni ne sera élargie pour cette fonctionnalité) : un compte
+  // `commerce` non-admin ne propage le renommage qu'à ses propres achats.
   function renommerValeurReferentiel(categorie, idConteneur, ancienneValeur, nouvelleValeur) {
     if (!peutGererCommerce()) return;
     if ((referentiels[categorie] || []).indexOf(nouvelleValeur) !== -1) {
@@ -5533,31 +5537,46 @@
     const nouvelleListe = (referentiels[categorie] || []).map(function (v) { return v === ancienneValeur ? nouvelleValeur : v; });
     db.collection('referentiels').doc('main').update({ [categorie]: nouvelleListe }).then(function () {
       if (categorie === 'fournisseurs') return propagerRenommageFournisseur(ancienneValeur, nouvelleValeur);
-    }).then(function (nbAchatsMisAJour) {
-      afficherToast('Renommé en « ' + nouvelleValeur + ' »' + (nbAchatsMisAJour ? ' (' + nbAchatsMisAJour + ' achat(s) mis à jour)' : ''));
+    }).then(function (resultat) {
+      let message = 'Renommé en « ' + nouvelleValeur + ' »';
+      if (resultat && resultat.misAJour) message += ' (' + resultat.misAJour + ' achat(s) mis à jour)';
+      if (resultat && resultat.ignores) message += ' — ' + resultat.ignores + ' achat(s) d\'autres commerciaux non modifiés (hors de vos droits)';
+      afficherToast(message);
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); rendreListeReferentiel(categorie, idConteneur); });
   }
 
-  // Répercute le renommage d'un fournisseur sur tous les achats qui le référencent déjà
+  // Répercute le renommage d'un fournisseur sur les achats qui le référencent déjà
   // (`achats.fournisseur`), même ceux hors des 200 achats les plus récents chargés en
   // mémoire — requête Firestore directe, écriture par lots de 450 (limite Firestore par
-  // batch(), même principe que remettreAZeroPrixMarche()). Renvoie le nombre d'achats
-  // mis à jour (0 si aucun). N'affecte jamais les achats enregistrés via "Autre" (leur
-  // champ `fournisseur` porte le texte libre tapé, jamais le nom d'une valeur de
-  // référentiel comme "AUTRE" elle-même).
+  // batch(), même principe que remettreAZeroPrixMarche()). **Ne touche jamais un achat
+  // créé par un autre commercial** (même règle que partout ailleurs dans l'app pour les
+  // achats — `responsable == son propre email`, ou l'admin qui peut tout) : un `batch()`
+  // Firestore est tout-ou-rien, donc mélanger un seul achat hors droits dans le lot
+  // ferait échouer l'écriture en bloc, y compris pour les achats qu'on a le droit de
+  // corriger — les achats hors droits sont filtrés AVANT de construire les lots, jamais
+  // tentés. Renvoie `{ misAJour, ignores }` (comptes des achats mis à jour et de ceux
+  // laissés de côté faute de droits) pour que l'appelant informe l'utilisateur dans les
+  // deux cas. N'affecte jamais les achats enregistrés via "Autre" (leur champ
+  // `fournisseur` porte le texte libre tapé, jamais le nom d'une valeur de référentiel
+  // comme "AUTRE" elle-même).
   function propagerRenommageFournisseur(ancienneValeur, nouvelleValeur) {
     return db.collection('achats').where('fournisseur', '==', ancienneValeur).get().then(function (snap) {
-      if (snap.empty) return 0;
-      const docs = snap.docs;
+      if (snap.empty) return { misAJour: 0, ignores: 0 };
+      const peutTout = estAdmin();
+      const docsAutorises = peutTout ? snap.docs : snap.docs.filter(function (d) {
+        return d.data().responsable === utilisateurCourant.email;
+      });
+      const nbIgnores = snap.docs.length - docsAutorises.length;
+      if (!docsAutorises.length) return { misAJour: 0, ignores: nbIgnores };
       const lots = [];
-      for (let i = 0; i < docs.length; i += 450) lots.push(docs.slice(i, i + 450));
+      for (let i = 0; i < docsAutorises.length; i += 450) lots.push(docsAutorises.slice(i, i + 450));
       return lots.reduce(function (promesse, groupe) {
         return promesse.then(function () {
           const lot = db.batch();
           groupe.forEach(function (doc) { lot.update(doc.ref, { fournisseur: nouvelleValeur }); });
           return lot.commit();
         });
-      }, Promise.resolve()).then(function () { return docs.length; });
+      }, Promise.resolve()).then(function () { return { misAJour: docsAutorises.length, ignores: nbIgnores }; });
     });
   }
 
