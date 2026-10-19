@@ -3733,6 +3733,36 @@
         tdDetail.appendChild(btnValiderSansCloture);
       }
 
+      // Marque ce stock comme déjà pris en compte — SANS toucher à dernierStock/main —
+      // pour le cas où le Stock initial a déjà été corrigé autrement (ex. directement via
+      // « Modifier/corriger le stock initial », voir dernierStock/main plus haut), rendant
+      // « Valider sans clôturer » inopérant (garde-fou anti-régression : le Stock initial
+      // connu est déjà plus récent que cette session). Contrairement à « Suppr. », ceci
+      // CONSERVE le document saisieStock (donc l'historique reste consultable/exportable
+      // — « Consulter un stock antérieur », export .xlsx/.pdf du Stock du soir) ; il
+      // passe juste importe à true pour sortir de cette file d'attente où il ne peut de
+      // toute façon plus rien apporter au Commerce.
+      if (peutGererCommerce()) {
+        const btnDejaPrisEnCompte = document.createElement('button');
+        btnDejaPrisEnCompte.className = 'bouton-secondaire';
+        btnDejaPrisEnCompte.style.cssText = 'margin-left:6px;';
+        btnDejaPrisEnCompte.textContent = 'Marquer comme déjà pris en compte';
+        btnDejaPrisEnCompte.title = 'Retire ce stock de la file d\'attente sans toucher au Stock initial (déjà corrigé autrement) — l\'historique reste conservé';
+        btnDejaPrisEnCompte.onclick = function () {
+          if (!confirm('Marquer ce stock (' + libelleSessionValidation(groupe) + ', ' + groupe.length +
+            ' produit(s)) comme déjà pris en compte ?\n\n' +
+            'Le Stock initial (Commerce) ne sera PAS modifié — à n\'utiliser que si vous l\'avez déjà corrigé autrement. ' +
+            'L\'historique de ce stock du soir reste conservé et consultable/exportable.')) return;
+          const lot = db.batch();
+          groupe.forEach(function (s) { lot.update(db.collection('saisieStock').doc(s.id), { importe: true }); });
+          lot.commit().then(function () {
+            delete selectionIntegrationStock[cle];
+            afficherToast('Stock marqué comme déjà pris en compte (' + groupe.length + ' produit(s))');
+          }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+        };
+        tdDetail.appendChild(btnDejaPrisEnCompte);
+      }
+
       // Retire ce stock en attente sans l'intégrer — pour un enregistrement qui ne
       // correspond à rien de réel (ex. résidu d'une correction précédente, attribution
       // inconnue) et qu'on ne veut ni valider ni corriger. Réservé à l'admin, confirmation
