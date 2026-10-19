@@ -3825,9 +3825,18 @@
 
   function integrerStocksEtCloturerJourneeVeille() {
     if (!peutGererCommerce()) return;
+    // Bloque entièrement (pas une simple confirmation) quand « Stock du soir à valider »
+    // est totalement vide — pas juste décoché, voir le cas juste en dessous, mais
+    // littéralement aucune saisie en attente : demande explicite, pour qu'un clic sur ce
+    // bouton ne puisse jamais clôturer une journée sans qu'aucun stock du soir n'ait
+    // d'abord été enregistré par la production.
+    if (!saisieEnAttente.length) {
+      alert("Aucun stock à intégrer : enregistrez d'abord un stock du soir (onglet Stock du soir) avant de pouvoir clôturer la journée.");
+      return;
+    }
     const aIntegrer = saisieEnAttente.filter(function (s) { return selectionIntegrationStock[cleSessionValidation(s)] !== false; });
     const nbStocksCoches = new Set(aIntegrer.map(cleSessionValidation)).size;
-    if (saisieEnAttente.length && !aIntegrer.length) {
+    if (!aIntegrer.length) {
       if (!confirm("Aucun stock n'est coché dans « Stock du soir à valider » : aucun stock ne sera intégré. Clôturer quand même la journée de la veille ?")) return;
     }
     const coteManquant = datesAvecCoteManquant(aIntegrer);
