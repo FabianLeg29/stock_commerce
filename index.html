@@ -2949,36 +2949,50 @@
     rendreCommerce();
   }
 
-  // Lit les valeurs tapées dans correctionStockInitialValeurs, ne garde que celles qui
-  // diffèrent réellement de dernierStockParProduit, demande une confirmation unique
-  // listant tous les changements, puis écrit en un seul appel (merge) dans
-  // dernierStock/main et archive chaque correction dans l'Historique — un
-  // contournement volontaire du circuit normal (comptage → validation), réservé au
-  // rôle `commerce`/admin comme la validation elle-même (même règle Firestore :
-  // dernierStock n'est écrit que par estCommerce()). Chaque champ accepte une addition
-  // tapée directement (ex. "133+130"), comme les autres champs de quantité de l'app.
+  // Lit les valeurs Bas/Haut tapées dans correctionStockInitialValeurs ({ bas, haut }
+  // par produit), ne garde que les produits dont au moins un des deux côtés diffère
+  // réellement de dernierStockParProduit — y compris quand le TOTAL ne change pas mais
+  // que la répartition entre les deux côtés est corrigée (ex. un comptage mal réparti
+  // découvert après coup) — demande une confirmation unique listant tous les
+  // changements, puis écrit en un seul appel (merge) dans dernierStock/main (valeur =
+  // somme des deux côtés, stockBas/stockHaut désormais toujours à jour) et archive
+  // chaque correction dans l'Historique — un contournement volontaire du circuit normal
+  // (comptage → validation), réservé au rôle `commerce`/admin comme la validation
+  // elle-même (même règle Firestore : dernierStock n'est écrit que par estCommerce()).
+  // Chaque champ accepte une addition tapée directement (ex. "133+130"), comme les
+  // autres champs de quantité de l'app ; un champ laissé vide vaut 0.
   function validerCorrectionStockInitial() {
     const changements = [];
     const maj = {};
     Object.keys(correctionStockInitialValeurs).forEach(function (nomProduit) {
-      const texte = correctionStockInitialValeurs[nomProduit];
-      if (typeof texte === 'undefined') return;
-      const nouvelleValeur = sommerExpression(texte);
-      if (nouvelleValeur === null || nouvelleValeur < 0) return;
+      const brouillon = correctionStockInitialValeurs[nomProduit];
+      if (!brouillon) return;
+      const basNum = brouillon.bas === '' ? 0 : sommerExpression(brouillon.bas);
+      const hautNum = brouillon.haut === '' ? 0 : sommerExpression(brouillon.haut);
+      if (basNum === null || hautNum === null || basNum < 0 || hautNum < 0) return;
       const cache = dernierStockParProduit[nomProduit] || {};
-      const valeurActuelle = typeof cache.valeur === 'number' ? cache.valeur : 0;
-      if (nouvelleValeur === valeurActuelle) return;
-      changements.push({ nom: nomProduit, avant: valeurActuelle, apres: nouvelleValeur });
-      maj[nomProduit] = { valeur: nouvelleValeur, date: AUJOURD_HUI };
+      const basActuel = typeof cache.stockBas === 'number' ? cache.stockBas : 0;
+      const hautActuel = typeof cache.stockHaut === 'number' ? cache.stockHaut : 0;
+      const totalActuel = typeof cache.valeur === 'number' ? cache.valeur : 0;
+      if (basNum === basActuel && hautNum === hautActuel) return;
+      const totalNouveau = basNum + hautNum;
+      changements.push({
+        nom: nomProduit, basAvant: basActuel, basApres: basNum,
+        hautAvant: hautActuel, hautApres: hautNum, totalAvant: totalActuel, totalApres: totalNouveau
+      });
+      maj[nomProduit] = { valeur: totalNouveau, date: AUJOURD_HUI, stockBas: basNum, stockHaut: hautNum };
     });
     if (!changements.length) { afficherToast('Aucune modification à valider'); return; }
-    const recap = changements.map(function (c) { return '• ' + c.nom + ' : ' + c.avant + ' → ' + c.apres; }).join('\n');
+    const recap = changements.map(function (c) {
+      return '• ' + c.nom + ' : Bas ' + c.basAvant + ' → ' + c.basApres + ', Haut ' + c.hautAvant + ' → ' + c.hautApres +
+        ' (Total ' + c.totalAvant + ' → ' + c.totalApres + ')';
+    }).join('\n');
     if (!confirm(
       'Valider la correction du stock initial pour ' + changements.length + ' produit(s) ?\n\n' + recap + '\n\n' +
       "Cette correction est immédiate et visible par toute l'équipe, en dehors du circuit normal de comptage/validation."
     )) return;
     db.collection('dernierStock').doc('main').set(maj, { merge: true }).then(function () {
-      changements.forEach(function (c) { enregistrerTransaction('stock_initial_corrige', c.nom, c.apres); });
+      changements.forEach(function (c) { enregistrerTransaction('stock_initial_corrige', c.nom, c.totalApres); });
       afficherToast('Stock initial corrigé');
       basculerCorrectionStockInitial(false);
     }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
@@ -3140,28 +3154,65 @@
       // regroupement, l'avertissement formerait un 3ᵉ enfant et casserait l'alignement en
       // mode carte.
       if (correctionStockInitialActive && peutGererCommerce()) {
+        // Bas et Haut distincts (plutôt qu'un seul total) : permet de corriger la
+        // répartition entre les deux côtés même quand le total ne change pas (ex. un
+        // comptage mal réparti découvert après coup), et répercute enfin stockBas/
+        // stockHaut dans dernierStock/main — jusqu'ici seul le total y était écrit par
+        // cet outil, laissant la répartition Bas/Haut du cache désynchronisée de toute
+        // correction manuelle (utilisée par l'export « Stock théorique »). Brouillon
+        // conservé sous forme d'objet { bas, haut } (au lieu d'une simple chaîne) dans
+        // correctionStockInitialValeurs.
+        const brouillonExistant = correctionStockInitialValeurs[p.nom];
+        const basInitial = typeof cache.stockBas === 'number' ? String(cache.stockBas) : '';
+        const hautInitial = typeof cache.stockHaut === 'number' ? String(cache.stockHaut) : '';
         const conteneurEditionVeille = document.createElement('div');
-        const inputValeurVeille = document.createElement('input');
-        inputValeurVeille.type = 'tel';
-        inputValeurVeille.className = 'champ-valeur';
-        inputValeurVeille.dataset.produit = p.nom;
-        inputValeurVeille.dataset.champ = 'stockInitial';
-        inputValeurVeille.style.width = '70px';
-        inputValeurVeille.value = (typeof correctionStockInitialValeurs[p.nom] !== 'undefined')
-          ? correctionStockInitialValeurs[p.nom] : stockVeille;
+        conteneurEditionVeille.style.cssText = 'display:flex; flex-direction:column; align-items:flex-end; gap:4px;';
+        const ligneChamps = document.createElement('div');
+        ligneChamps.style.cssText = 'display:flex; gap:6px; align-items:center;';
+
+        const creerChampCote = function (cote, libelleCote, valeurInitiale) {
+          const enveloppe = document.createElement('span');
+          enveloppe.className = 'col-' + cote;
+          enveloppe.style.cssText = 'display:flex; align-items:center; gap:3px; padding:2px 4px; border-radius:4px;';
+          const etiquette = document.createElement('small');
+          etiquette.textContent = libelleCote;
+          etiquette.style.cssText = 'font-size:10px; font-weight:700;';
+          const input = document.createElement('input');
+          input.type = 'tel';
+          input.className = 'champ-valeur';
+          input.dataset.produit = p.nom;
+          input.dataset.champ = 'stockInitial' + libelleCote;
+          input.style.width = '48px';
+          input.value = (brouillonExistant && typeof brouillonExistant[cote] !== 'undefined') ? brouillonExistant[cote] : valeurInitiale;
+          enveloppe.appendChild(etiquette);
+          enveloppe.appendChild(input);
+          return { enveloppe: enveloppe, input: input };
+        };
+
+        const champBas = creerChampCote('bas', 'Bas', basInitial);
+        const champHaut = creerChampCote('haut', 'Haut', hautInitial);
+        ligneChamps.appendChild(champBas.enveloppe);
+        ligneChamps.appendChild(champHaut.enveloppe);
+
         const avertissementVeille = document.createElement('div');
-        avertissementVeille.style.cssText = 'display:none; color:var(--danger); font-size:11px; margin-top:4px; text-align:right; max-width:170px; font-weight:600;';
+        avertissementVeille.style.cssText = 'display:none; color:var(--danger); font-size:11px; text-align:right; max-width:170px; font-weight:600;';
         avertissementVeille.textContent = 'Attention, vous avez modifié la quantité pour l’article : ' + p.nom + ' !';
+        const basActuel = typeof cache.stockBas === 'number' ? cache.stockBas : 0;
+        const hautActuel = typeof cache.stockHaut === 'number' ? cache.stockHaut : 0;
         function majAvertissementVeille() {
-          const nouvelleValeur = sommerExpression(inputValeurVeille.value);
-          avertissementVeille.style.display = (nouvelleValeur !== null && nouvelleValeur !== stockVeille) ? 'block' : 'none';
+          const basNum = champBas.input.value === '' ? 0 : sommerExpression(champBas.input.value);
+          const hautNum = champHaut.input.value === '' ? 0 : sommerExpression(champHaut.input.value);
+          const modifie = basNum !== null && hautNum !== null && (basNum !== basActuel || hautNum !== hautActuel);
+          avertissementVeille.style.display = modifie ? 'block' : 'none';
         }
-        inputValeurVeille.addEventListener('input', function () {
-          correctionStockInitialValeurs[p.nom] = inputValeurVeille.value;
+        const surSaisie = function () {
+          correctionStockInitialValeurs[p.nom] = { bas: champBas.input.value, haut: champHaut.input.value };
           majAvertissementVeille();
-        });
+        };
+        champBas.input.addEventListener('input', surSaisie);
+        champHaut.input.addEventListener('input', surSaisie);
         majAvertissementVeille();
-        conteneurEditionVeille.appendChild(inputValeurVeille);
+        conteneurEditionVeille.appendChild(ligneChamps);
         conteneurEditionVeille.appendChild(avertissementVeille);
         tdVeille.appendChild(conteneurEditionVeille);
       } else {
