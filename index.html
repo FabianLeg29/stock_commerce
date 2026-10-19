@@ -2098,12 +2098,18 @@
       const saisieExistante = sourceExistant[nom] || {};
       // En mode "les2", un produit totalement vierge (ni Haut ni Bas retapés) est
       // considéré comme "rien constaté" sur les DEUX côtés (écrit à 0 s'il n'était pas
-      // déjà à 0) — c'est la seule façon de représenter "ce produit n'existe plus" pour
-      // un produit qui n'a même pas été regardé pendant le comptage. Un produit où un
-      // seul des deux côtés a été retapé ne touche que ce côté-là ; l'autre garde sa
-      // valeur existante, pour ne jamais écraser par erreur un comptage déjà fait par
-      // quelqu'un d'autre plus tôt dans la journée (décision antérieure inchangée).
-      const toutVide = cote === 'les2' && v.haut === '' && v.bas === '';
+      // déjà à 0) — MAIS UNIQUEMENT pour une session du JOUR MÊME (dateSession ===
+      // AUJOURD_HUI), c'est-à-dire un vrai comptage physique complet en cours. Incident
+      // réel : appliqué sans cette restriction à une session "Modifier"/rattrapage sur
+      // une date PASSÉE (ex. ajouter un seul produit oublié au stock du 17/10 déjà
+      // enregistré), ça a réécrit à 0 des dizaines de produits non retapés mais déjà
+      // correctement comptés ce jour-là — une correction ponctuelle sur un jour déjà
+      // passé n'est jamais un inventaire complet, donc un produit non retapé doit
+      // toujours garder sa valeur existante dans ce cas, comme avant l'introduction de
+      // cette règle. Un produit où un seul des deux côtés a été retapé ne touche (comme
+      // avant) que ce côté-là ; l'autre garde sa valeur existante, pour ne jamais
+      // écraser par erreur un comptage déjà fait par quelqu'un d'autre plus tôt.
+      const toutVide = cote === 'les2' && dateSession === AUJOURD_HUI && v.haut === '' && v.bas === '';
       const ecrireHaut = cote === 'les2' ? (toutVide || v.haut !== '') : toucheHaut;
       const ecrireBas = cote === 'les2' ? (toutVide || v.bas !== '') : toucheBas;
       const existantHaut = typeof saisieExistante.stockHaut === 'number' ? saisieExistante.stockHaut : null;
@@ -3658,6 +3664,24 @@
       btnDetail.textContent = '▸ Détail';
       tdDetail.appendChild(btnDetail);
 
+      // Valide ce stock dans le Stock initial (Commerce) SANS poser de clôture — pour
+      // une correction/rattrapage sur une date PASSÉE (ex. ajouter un produit oublié au
+      // stock d'un jour déjà clos) : le bouton général « Intégrer les stocks et clôturer
+      // la journée de la veille » clôturerait AUJOURD'HUI, décalant à tort le seuil de
+      // calcul achats/ventes du jour en cours pour une correction qui ne le concerne pas.
+      // N'apparaît que pour une session dont la date n'est pas aujourd'hui — une session
+      // du jour même reste exclusivement intégrée via le bouton général, qui représente
+      // le vrai flux quotidien de clôture. Voir validerCorrectionSansCloture().
+      if (groupe[0].date !== AUJOURD_HUI) {
+        const btnValiderSansCloture = document.createElement('button');
+        btnValiderSansCloture.className = 'bouton-secondaire';
+        btnValiderSansCloture.style.cssText = 'margin-left:6px;';
+        btnValiderSansCloture.textContent = 'Valider sans clôturer';
+        btnValiderSansCloture.title = 'Met à jour le Stock initial (Commerce) pour ce stock, sans poser de clôture ni toucher aux achats/ventes du jour';
+        btnValiderSansCloture.onclick = function () { validerCorrectionSansCloture(groupe, cle); };
+        tdDetail.appendChild(btnValiderSansCloture);
+      }
+
       // Retire ce stock en attente sans l'intégrer — pour un enregistrement qui ne
       // correspond à rien de réel (ex. résidu d'une correction précédente, attribution
       // inconnue) et qu'on ne veut ni valider ni corriger. Réservé à l'admin, confirmation
@@ -3726,6 +3750,68 @@
       };
     });
   }
+
+  // Met à jour le Stock initial (dernierStock/main) pour un groupe de « Stock du soir à
+  // valider » daté d'un jour PASSÉ, sans jamais poser de clôture ni toucher à achats/
+  // commerce — contrairement à validerStock()+integrerStocksEtCloturerJourneeVeille(),
+  // pensés pour le flux quotidien normal (clôturer systématiquement la journée de la
+  // veille). Pour une correction ponctuelle sur une date plus ancienne (ex. produit
+  // oublié ajouté a posteriori), poser une clôture aujourd'hui décalerait à tort le seuil
+  // de calcul des achats/ventes du jour en cours — incident réel qui a motivé cet ajout.
+  // Garde-fou anti-régression : si le Stock initial déjà connu pour un produit est plus
+  // RÉCENT que la date de ce groupe (un vrai comptage a eu lieu depuis), ce produit est
+  // ignoré et signalé plutôt que régressé vers une valeur plus ancienne.
+  function validerCorrectionSansCloture(groupe, cle) {
+    if (!peutGererCommerce()) return;
+    const dateSession = groupe[0].date;
+    const dernierParProduit = {};
+    groupe.forEach(function (s) {
+      const actuel = dernierParProduit[s.produit];
+      if (!actuel || s.date > actuel.date) dernierParProduit[s.produit] = s;
+    });
+    const ignores = [];
+    const aValider = {};
+    Object.keys(dernierParProduit).forEach(function (produit) {
+      const s = dernierParProduit[produit];
+      const connu = dernierStockParProduit[produit];
+      if (connu && connu.date && connu.date > s.date) {
+        ignores.push(produit + ' (Stock initial déjà plus récent : ' + formaterDateFr(connu.date) + ')');
+        return;
+      }
+      aValider[produit] = s;
+    });
+    if (!Object.keys(aValider).length) {
+      afficherToast('Rien à valider' + (ignores.length ? ' — Stock initial déjà plus récent pour tous ces produits' : ''));
+      return;
+    }
+    let message = 'Mettre à jour le Stock initial (Commerce) pour ' + Object.keys(aValider).length +
+      ' produit(s) à partir de ce stock du ' + formaterDateFr(dateSession) + ' ?\n\n' +
+      'Aucune clôture n\'est posée — les achats et ventes du jour en cours ne sont pas affectés.';
+    if (ignores.length) message += '\n\nIgnorés (Stock initial déjà plus récent, non régressé) : ' + ignores.join(', ');
+    if (!confirm(message)) return;
+
+    const majCache = {};
+    Object.keys(aValider).forEach(function (produit) {
+      const s = aValider[produit];
+      majCache[produit] = {
+        valeur: s.stockSoir, date: s.date,
+        stockBas: typeof s.stockBas === 'number' ? s.stockBas : null,
+        stockHaut: typeof s.stockHaut === 'number' ? s.stockHaut : null
+      };
+    });
+    const lot = db.batch();
+    lot.set(db.collection('dernierStock').doc('main'), majCache, { merge: true });
+    groupe.forEach(function (s) { if (aValider[s.produit]) lot.update(db.collection('saisieStock').doc(s.id), { importe: true }); });
+    lot.commit().then(function () {
+      Object.keys(aValider).forEach(function (produit) {
+        const s = aValider[produit];
+        enregistrerTransaction('stock_initial_corrige', produit, s.stockSoir);
+      });
+      delete selectionIntegrationStock[cle];
+      afficherToast(Object.keys(aValider).length + ' produit(s) mis à jour dans le Stock initial (sans clôture)');
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+  window.validerCorrectionSansCloture = validerCorrectionSansCloture;
 
   function validerStock(entrees, silencieux) {
     if (!entrees.length) { if (!silencieux) afficherToast('Rien à valider'); return Promise.resolve(); }
