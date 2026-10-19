@@ -2075,12 +2075,13 @@
     const brouillonId = idBrouillonActuel;
     const totauxParProduit = {};
 
-    // "Haut seul" / "Bas seul" considèrent tous les produits actifs (inventaire complet,
-    // 0 si non saisi — comportement demandé explicitement pour ces deux cas). "Haut +
-    // Bas" ne considère que les produits où au moins un des deux côtés a été saisi.
-    const produitsCandidats = cote === 'les2'
-      ? produitsActifs.filter(function (p) { return entrees.indexOf(p.nom) !== -1; })
-      : produitsActifs;
+    // Le stock du soir doit représenter l'intégralité de ce qui est physiquement
+    // présent : une ligne sans AUCUNE valeur saisie signifie qu'il n'y a plus rien à
+    // compter pour ce produit (0), pas "pas concerné par cette session" — demande
+    // explicite de l'utilisateur, suite à un produit resté bloqué sur un ancien stock
+    // non nul faute d'avoir jamais été retapé. Les trois modes considèrent donc
+    // désormais tous les produits actifs (inventaire complet, 0 si non saisi).
+    const produitsCandidats = produitsActifs;
 
     // Parmi les candidats, ne retient QUE ceux dont la valeur change RÉELLEMENT par
     // rapport à ce qui est déjà enregistré — un champ non vide ne suffit pas : « Modifier
@@ -2095,8 +2096,16 @@
       const nom = p.nom;
       const v = valeursSessionProduit(nom);
       const saisieExistante = sourceExistant[nom] || {};
-      const ecrireHaut = cote === 'les2' ? v.haut !== '' : toucheHaut;
-      const ecrireBas = cote === 'les2' ? v.bas !== '' : toucheBas;
+      // En mode "les2", un produit totalement vierge (ni Haut ni Bas retapés) est
+      // considéré comme "rien constaté" sur les DEUX côtés (écrit à 0 s'il n'était pas
+      // déjà à 0) — c'est la seule façon de représenter "ce produit n'existe plus" pour
+      // un produit qui n'a même pas été regardé pendant le comptage. Un produit où un
+      // seul des deux côtés a été retapé ne touche que ce côté-là ; l'autre garde sa
+      // valeur existante, pour ne jamais écraser par erreur un comptage déjà fait par
+      // quelqu'un d'autre plus tôt dans la journée (décision antérieure inchangée).
+      const toutVide = cote === 'les2' && v.haut === '' && v.bas === '';
+      const ecrireHaut = cote === 'les2' ? (toutVide || v.haut !== '') : toucheHaut;
+      const ecrireBas = cote === 'les2' ? (toutVide || v.bas !== '') : toucheBas;
       const existantHaut = typeof saisieExistante.stockHaut === 'number' ? saisieExistante.stockHaut : null;
       const existantBas = typeof saisieExistante.stockBas === 'number' ? saisieExistante.stockBas : null;
       const valeurHaut = ecrireHaut ? (v.haut === '' ? 0 : sommerExpression(v.haut)) : (existantHaut !== null ? existantHaut : 0);
