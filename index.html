@@ -2714,10 +2714,20 @@
         const achats = achatsDuJourParProduit[p.nom] || 0;
         const ventes = (commerceDuJour[p.nom] && commerceDuJour[p.nom].ventes) || 0;
         const saisieValidee = (cache.date && saisieParDate[cache.date] && saisieParDate[cache.date][p.nom]) || {};
+        // Repli sur la répartition déjà connue dans dernierStock/main (cache.stockBas/
+        // stockHaut) si aucun document saisieStock réel ne correspond à cache.date —
+        // cas d'une correction manuelle du Stock initial (« Modifier/corriger le stock
+        // initial », voir dernierStock/main plus haut), qui écrit directement stockBas/
+        // stockHaut dans le cache avec date = AUJOURD_HUI SANS créer de vrai comptage
+        // du soir pour cette date : sans ce repli, la recherche datée ne trouvait rien
+        // et affichait "—" alors que la répartition correcte était déjà connue.
+        const stockBas = typeof saisieValidee.stockBas === 'number' ? saisieValidee.stockBas
+          : (typeof cache.stockBas === 'number' ? cache.stockBas : null);
+        const stockHaut = typeof saisieValidee.stockHaut === 'number' ? saisieValidee.stockHaut
+          : (typeof cache.stockHaut === 'number' ? cache.stockHaut : null);
         return {
           p: p, stockInitial: stockInitial, achats: achats, ventes: ventes,
-          stockBas: typeof saisieValidee.stockBas === 'number' ? saisieValidee.stockBas : null,
-          stockHaut: typeof saisieValidee.stockHaut === 'number' ? saisieValidee.stockHaut : null,
+          stockBas: stockBas, stockHaut: stockHaut,
           stockTheorique: stockInitial + achats - ventes
         };
       });
