@@ -5396,6 +5396,40 @@
   }
   window.rendreParametres = rendreParametres;
 
+  // Un champ n'est considéré "en cours de saisie" que s'il a reçu une VRAIE frappe
+  // (évènement 'input', jamais déclenché par une simple affectation .value en JS)
+  // depuis le dernier rendu — pas seulement le focus. Bug réel corrigé : tabuler
+  // depuis "Mes ventes" vers "Mes réservations" donne le focus à ce second champ
+  // sans y avoir rien tapé ; si une mise à jour légitime arrive pile à ce moment
+  // (ex. la réservation automatiquement réduite par la vente qui vient d'être
+  // enregistrée, voir plus haut), capturerSaisieEnCours() la traitait comme une
+  // saisie à préserver et restaurerSaisieEnCours() réinjectait l'ANCIENNE valeur
+  // par-dessus la nouvelle, pourtant correcte côté Firestore — un défaut d'affichage
+  // uniquement (la base restait juste), mais trompeur. Un champ recréé par le rendu
+  // suivant est un nouveau nœud DOM, donc jamais déjà présent dans ce WeakSet.
+  const champsReellementModifies = new WeakSet();
+  document.addEventListener('input', function (e) {
+    const cible = e.target;
+    if (cible && cible.dataset && cible.dataset.produit) champsReellementModifies.add(cible);
+  });
+
+  // Aucun champ de quantité n'est dans un <form> (seul l'écran de connexion en a
+  // un) : appuyer sur Entrée ne déclenche donc rien par défaut, contrairement à
+  // Tab ou un clic ailleurs (qui provoquent un `blur`, lui-même à l'origine de
+  // l'évènement 'change' qui enregistre la valeur). Un commercial qui tape une
+  // quantité puis appuie sur Entrée en pensant valider ne voyait donc rien
+  // s'enregistrer, sans aucun message d'erreur. Corrigé en déclenchant nous-mêmes
+  // le `blur` (donc le `change`/l'enregistrement habituel) sur Entrée, pour tout
+  // champ de quantité, uniformément sur tous les onglets.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    const cible = e.target;
+    if (cible && cible.classList && cible.classList.contains('champ-valeur')) {
+      e.preventDefault();
+      cible.blur();
+    }
+  });
+
   // Préserve un champ (input ou select, identifié par data-produit/data-champ) en
   // cours de saisie lors de la reconstruction d'un tableau — ces tableaux sont
   // redéclenchés par les listeners Firestore, y compris pendant qu'un commercial ou
@@ -5404,6 +5438,7 @@
   function capturerSaisieEnCours(conteneur) {
     const el = document.activeElement;
     if (!el || !conteneur.contains(el) || !el.dataset || !el.dataset.produit) return null;
+    if (!champsReellementModifies.has(el)) return null;
     return {
       produit: el.dataset.produit, champ: el.dataset.champ, valeur: el.value,
       debut: (typeof el.selectionStart === 'number') ? el.selectionStart : null,
