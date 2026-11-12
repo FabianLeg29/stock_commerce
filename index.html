@@ -1355,20 +1355,11 @@
         d.horodatageMillis <= seuilCloture.heure.toMillis()) return;
       const ventes = d.ventes || 0;
       const reservations = d.reservations || 0;
-      // reservationInitiale : ce qui a été promis à l'origine, avant toute
-      // consommation par une vente (voir champCommerce()) — sommé séparément pour
-      // pouvoir l'afficher en annotation à côté de la réservation restante, sans
-      // jamais entrer dans le calcul du stock disponible lui-même.
-      const reservationInitiale = typeof d.reservationInitiale === 'number' ? d.reservationInitiale : reservations;
-      if (!sommes[d.produit]) sommes[d.produit] = { ventes: 0, reservations: 0, reservationInitiale: 0 };
+      if (!sommes[d.produit]) sommes[d.produit] = { ventes: 0, reservations: 0 };
       sommes[d.produit].ventes += ventes;
       sommes[d.produit].reservations += reservations;
-      sommes[d.produit].reservationInitiale += reservationInitiale;
       if (!details[d.produit]) details[d.produit] = [];
-      details[d.produit].push({
-        id: d.id, commercial: d.commercial, ventes: d.ventes, reservations: d.reservations,
-        reservationInitiale: reservationInitiale
-      });
+      details[d.produit].push({ id: d.id, commercial: d.commercial, ventes: d.ventes, reservations: d.reservations });
     });
     commerceDuJour = sommes;
     commerceDuJourDetailParProduit = details;
@@ -1604,7 +1595,7 @@
             const d = doc.data();
             commerceDocsAujourdhui.push({
               id: doc.id, date: d.date, produit: d.produit, commercial: d.commercial,
-              ventes: d.ventes, reservations: d.reservations, reservationInitiale: d.reservationInitiale,
+              ventes: d.ventes, reservations: d.reservations,
               horodatageMillis: (d.horodatage && d.horodatage.toMillis) ? d.horodatage.toMillis() : null
             });
           });
@@ -3119,7 +3110,6 @@
 
       let venteAffichee = sommeGlobale.ventes;
       let reservationAffichee = sommeGlobale.reservations;
-      let reservationInitialeAffichee = sommeGlobale.reservationInitiale;
       let peutEditerIci = false;
       let idDocPersonnel = null;
 
@@ -3127,7 +3117,6 @@
         const entreePerso = detailCommerciaux.find(function (d) { return d.commercial === commerceSousOnglet; });
         venteAffichee = entreePerso ? entreePerso.ventes : undefined;
         reservationAffichee = entreePerso ? entreePerso.reservations : undefined;
-        reservationInitialeAffichee = entreePerso ? entreePerso.reservationInitiale : undefined;
         idDocPersonnel = idJourProduit(AUJOURD_HUI, p.nom) + '__' + slugify(commerceSousOnglet);
         peutEditerIci = peutGererCommerce() && !!utilisateurCourant && (estAdmin() || utilisateurCourant.email === commerceSousOnglet);
       }
@@ -3291,25 +3280,10 @@
       tdDisponibleJPlus.textContent = achatsAVenir ? stockDisponibleJPlus : '—';
       if (achatsAVenir) tdDisponibleJPlus.title = '+' + achatsAVenir + ' à venir (livraison future déjà commandée)';
 
-      function champCommerce(valeur, nomChamp, libelle, annotation) {
+      function champCommerce(valeur, nomChamp, libelle) {
         const td = document.createElement('td');
         td.className = 'centre';
-        // Avec annotation (réservation initiale) : même schéma que "Stock initial"/
-        // "Achats" plus haut (libelle-carte + badge en carte mobile, span dédié en
-        // desktop) pour afficher une info secondaire sans casser l'alignement des
-        // valeurs en mode carte (voir la règle d'alignement plus bas dans l'app).
-        if (annotation) {
-          const libelleSpan = document.createElement('span');
-          libelleSpan.className = 'libelle-carte';
-          libelleSpan.textContent = libelle;
-          const badge = document.createElement('span');
-          badge.className = 'badge-date-carte';
-          badge.textContent = annotation;
-          libelleSpan.appendChild(badge);
-          td.appendChild(libelleSpan);
-        } else {
-          td.dataset.label = libelle;
-        }
+        td.dataset.label = libelle;
         const input = document.createElement('input');
         input.type = 'number';
         input.step = 'any';
@@ -3324,57 +3298,11 @@
           input.addEventListener('change', function () {
             input.classList.remove('enregistre');
             const v = input.value === '' ? 0 : Number(input.value);
-
-            if (nomChamp === 'ventes') {
-              // Une vente honore une réservation de ce même commercial pour ce
-              // produit : la réservation RESTANTE (reservations) diminue d'autant
-              // (jamais sous 0), pour qu'elle ne continue pas à se déduire en plus de
-              // la vente dans le calcul du stock disponible (stock réel -
-              // réservations). La réservation INITIALE (reservationInitiale, ce qui a
-              // été promis à l'origine) n'est elle JAMAIS touchée ici : elle reste
-              // affichée en annotation (badge mobile/span desktop ci-dessus, et dans
-              // le panneau ▸ Détail) pour toujours savoir combien avait été réservé au
-              // départ, même une fois en grande partie consommé. Lu/écrit dans une
-              // transaction (jamais la valeur déjà affichée à l'écran, potentiellement
-              // périmée si un re-rendu en tâche de fond a eu lieu entre-temps) pour
-              // partir toujours de l'état réel du document. Seule une AUGMENTATION des
-              // ventes réduit la réservation restante — une correction à la baisse (ex.
-              // erreur de saisie) ne la restitue pas automatiquement, trop ambigu pour
-              // être fiable.
-              const ref = db.collection('commerce').doc(idDocPersonnel);
-              db.runTransaction(function (transaction) {
-                return transaction.get(ref).then(function (snap) {
-                  const actuel = snap.exists ? snap.data() : {};
-                  const ancienneVente = typeof actuel.ventes === 'number' ? actuel.ventes : 0;
-                  const ancienneReservation = typeof actuel.reservations === 'number' ? actuel.reservations : 0;
-                  const delta = v - ancienneVente;
-                  const nouvelleReservation = delta > 0 ? Math.max(0, ancienneReservation - delta) : ancienneReservation;
-                  const donnees = {
-                    date: AUJOURD_HUI, produit: p.nom, commercial: commerceSousOnglet,
-                    horodatage: firebase.firestore.FieldValue.serverTimestamp(), responsable: utilisateurCourant.email,
-                    ventes: v, reservations: nouvelleReservation
-                  };
-                  transaction.set(ref, donnees, { merge: true });
-                  return { nouvelleReservation: nouvelleReservation, reservationReduite: nouvelleReservation !== ancienneReservation };
-                });
-              }).then(function (resultat) {
-                input.classList.add('enregistre');
-                enregistrerTransaction('ventes', p.nom, v);
-                if (resultat.reservationReduite) enregistrerTransaction('reservations_consommee', p.nom, resultat.nouvelleReservation);
-                afficherToast(p.nom + ' mis à jour');
-              }).catch(function (err) { afficherToast('Erreur : ' + err.message); });
-              return;
-            }
-
             const donnees = {
               date: AUJOURD_HUI, produit: p.nom, commercial: commerceSousOnglet,
               horodatage: firebase.firestore.FieldValue.serverTimestamp(), responsable: utilisateurCourant.email
             };
             donnees[nomChamp] = v;
-            // Ressaisir directement la réservation redéfinit aussi sa référence
-            // "initiale" (annotation ci-dessus) : une nouvelle saisie manuelle EST la
-            // nouvelle réservation de départ, pas une consommation à comptabiliser.
-            if (nomChamp === 'reservations') donnees.reservationInitiale = v;
             db.collection('commerce').doc(idDocPersonnel).set(donnees, { merge: true }).then(function () {
               input.classList.add('enregistre');
               enregistrerTransaction(nomChamp, p.nom, v);
@@ -3383,13 +3311,6 @@
           });
         }
         td.appendChild(input);
-        if (annotation) {
-          const spanDesktop = document.createElement('span');
-          spanDesktop.className = 'date-desktop-seule';
-          spanDesktop.style.cssText = 'display:block; font-size:11px; color:#a49a89; margin-top:2px;';
-          spanDesktop.textContent = annotation;
-          td.appendChild(spanDesktop);
-        }
         return td;
       }
 
@@ -3408,21 +3329,10 @@
       // stock initial. Limite assumée : si le commercial finit par saisir lui-même la
       // vente oubliée, l'ajustement ne se retire pas tout seul et doit être corrigé à la
       // main (remettre le total à sa vraie valeur) pour ne pas compter deux fois.
-      function champCommerceGlobal(valeurTotal, nomChamp, libelle, annotation) {
+      function champCommerceGlobal(valeurTotal, nomChamp, libelle) {
         const td = document.createElement('td');
         td.className = 'centre';
-        if (annotation) {
-          const libelleSpan = document.createElement('span');
-          libelleSpan.className = 'libelle-carte';
-          libelleSpan.textContent = libelle;
-          const badge = document.createElement('span');
-          badge.className = 'badge-date-carte';
-          badge.textContent = annotation;
-          libelleSpan.appendChild(badge);
-          td.appendChild(libelleSpan);
-        } else {
-          td.dataset.label = libelle;
-        }
+        td.dataset.label = libelle;
         const input = document.createElement('input');
         input.type = 'number';
         input.step = 'any';
@@ -3459,27 +3369,15 @@
           });
         }
         td.appendChild(input);
-        if (annotation) {
-          const spanDesktop = document.createElement('span');
-          spanDesktop.className = 'date-desktop-seule';
-          spanDesktop.style.cssText = 'display:block; font-size:11px; color:#a49a89; margin-top:2px;';
-          spanDesktop.textContent = annotation;
-          td.appendChild(spanDesktop);
-        }
         return td;
       }
 
       const libelleVentes = estGlobal ? 'Ventes (total)' : 'Mes ventes';
       const libelleReservations = estGlobal ? 'Réservations (total)' : 'Mes réservations';
-      // N'affiche l'annotation "réservation initiale" que si elle diffère de la
-      // réservation restante — c'est-à-dire qu'une vente en a réellement consommé une
-      // partie ; sinon rien à montrer en plus de la valeur déjà affichée.
-      const annotationReservation = (typeof reservationInitialeAffichee === 'number' && typeof reservationAffichee === 'number' && reservationInitialeAffichee > reservationAffichee)
-        ? ('Réservation initiale : ' + reservationInitialeAffichee) : null;
       const tdVentes = estGlobal ? champCommerceGlobal(venteAffichee, 'ventes', libelleVentes) : champCommerce(venteAffichee, 'ventes', libelleVentes);
       const tdReservations = estGlobal
-        ? champCommerceGlobal(reservationAffichee, 'reservations', libelleReservations, annotationReservation)
-        : champCommerce(reservationAffichee, 'reservations', libelleReservations, annotationReservation);
+        ? champCommerceGlobal(reservationAffichee, 'reservations', libelleReservations)
+        : champCommerce(reservationAffichee, 'reservations', libelleReservations);
 
       const tdDetail = document.createElement('td');
       tdDetail.className = 'centre';
@@ -3675,23 +3573,12 @@
         titreVentes.textContent = 'Ventes / réservations par commercial';
         tdDetailContenu.appendChild(titreVentes);
 
-        const commerciauxActifs = detailCommerciaux.filter(function (d) { return d.ventes || d.reservations || d.reservationInitiale; });
+        const commerciauxActifs = detailCommerciaux.filter(function (d) { return d.ventes || d.reservations; });
         if (commerciauxActifs.length) {
           const tableVentes = document.createElement('table');
           tableVentes.className = 'tableau-cartes tableau-detail';
           tableVentes.innerHTML = '<thead><tr><th>Commercial</th><th class="centre">Ventes</th><th class="centre">Réservations</th></tr></thead>';
           const corpsVentes = document.createElement('tbody');
-          // Ajoute, sous la valeur de réservation restante, un petit rappel de la
-          // réservation initiale quand elle diffère (consommée en partie par une
-          // vente, voir champCommerce()) — même info qu'en annotation sur la ligne
-          // principale, utile ici pour la voir détaillée par commercial.
-          function ajouterNoteReservationInitiale(td, restante, initiale) {
-            if (typeof initiale !== 'number' || initiale <= restante) return;
-            const note = document.createElement('span');
-            note.style.cssText = 'display:block; font-size:10.5px; color:#a49a89; font-weight:400;';
-            note.textContent = 'initial : ' + initiale;
-            td.appendChild(note);
-          }
 
           commerciauxActifs.forEach(function (d) {
             const trLigne = document.createElement('tr');
@@ -3701,7 +3588,6 @@
             tdV.className = 'centre mono'; tdV.dataset.label = 'Ventes'; tdV.textContent = d.ventes || 0;
             const tdR = document.createElement('td');
             tdR.className = 'centre mono'; tdR.dataset.label = 'Réservations'; tdR.textContent = d.reservations || 0;
-            ajouterNoteReservationInitiale(tdR, d.reservations || 0, d.reservationInitiale);
             trLigne.appendChild(tdCommercial); trLigne.appendChild(tdV); trLigne.appendChild(tdR);
             corpsVentes.appendChild(trLigne);
           });
@@ -3713,7 +3599,6 @@
           tdTotalV.className = 'centre mono'; tdTotalV.dataset.label = 'Ventes'; tdTotalV.textContent = sommeGlobale.ventes;
           const tdTotalR = document.createElement('td');
           tdTotalR.className = 'centre mono'; tdTotalR.dataset.label = 'Réservations'; tdTotalR.textContent = sommeGlobale.reservations;
-          ajouterNoteReservationInitiale(tdTotalR, sommeGlobale.reservations, sommeGlobale.reservationInitiale);
           trTotal.appendChild(tdTotalLabel); trTotal.appendChild(tdTotalV); trTotal.appendChild(tdTotalR);
           corpsVentes.appendChild(trTotal);
           tableVentes.appendChild(corpsVentes);
@@ -5043,8 +4928,7 @@
     return {
       stock_soir: 'Stock du soir', stock_importe: 'Stock importé', achats: 'Achats', ventes: 'Ventes', prixAchat: 'Prix Logé',
       reservations: 'Réservations', produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé',
-      cloture_journee: 'Clôture de journée', ventes_ajustement: 'Ventes (total corrigé)', reservations_ajustement: 'Réservations (total corrigé)',
-      reservations_consommee: 'Réservations (réduite par une vente)'
+      cloture_journee: 'Clôture de journée', ventes_ajustement: 'Ventes (total corrigé)', reservations_ajustement: 'Réservations (total corrigé)'
     }[t] || t;
   }
 
