@@ -5176,29 +5176,20 @@
       trTitreFamille.className = 'entete-groupe' + (accordeonActifProduits ? ' entete-groupe-cliquable' : '');
       const tdTitreFamille = document.createElement('td');
       tdTitreFamille.colSpan = 8;
-      tdTitreFamille.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;';
-      const spanLabelFamille = document.createElement('span');
-      spanLabelFamille.textContent = accordeonActifProduits ? ((ouverte ? '▾ ' : '▸ ') + famille) : famille;
-      tdTitreFamille.appendChild(spanLabelFamille);
-      // Activer/désactiver toute la famille en un clic (demande explicite) : agit sur
-      // tous les produits de ce groupe (y compris ceux déjà dans l'état visé, ignorés
-      // silencieusement), en plus de la bascule individuelle "Actif/Inactif" par ligne.
+      tdTitreFamille.textContent = accordeonActifProduits ? ((ouverte ? '▾ ' : '▸ ') + famille) : famille;
+      // Activer/désactiver toute la famille en un clic (demande explicite), même pastille
+      // "Actif/Inactif" que la bascule individuelle par ligne : "Actif" si tous les produits
+      // de la famille le sont déjà (un clic désactive tout le groupe), "Inactif" sinon, y
+      // compris si seulement une partie l'est (un clic active alors tout le groupe).
       if (peutGerer) {
-        const blocBoutonsFamille = document.createElement('span');
-        blocBoutonsFamille.style.cssText = 'display:flex; gap:6px; text-transform:none;';
-        const btnFamilleActive = document.createElement('button');
-        btnFamilleActive.className = 'bouton-mini';
-        btnFamilleActive.style.marginLeft = '0';
-        btnFamilleActive.textContent = 'Tout activer';
-        btnFamilleActive.onclick = function (e) { e.stopPropagation(); basculerActifFamille(famille, true); };
-        const btnFamilleInactive = document.createElement('button');
-        btnFamilleInactive.className = 'bouton-mini';
-        btnFamilleInactive.style.marginLeft = '0';
-        btnFamilleInactive.textContent = 'Tout désactiver';
-        btnFamilleInactive.onclick = function (e) { e.stopPropagation(); basculerActifFamille(famille, false); };
-        blocBoutonsFamille.appendChild(btnFamilleActive);
-        blocBoutonsFamille.appendChild(btnFamilleInactive);
-        tdTitreFamille.appendChild(blocBoutonsFamille);
+        const produitsFamille = groupesProduits[famille];
+        const tousActifs = produitsFamille.every(function (p) { return !!p.actif; });
+        const spanToggleFamille = document.createElement('span');
+        spanToggleFamille.className = 'toggle ' + (tousActifs ? 'oui' : 'non');
+        spanToggleFamille.style.marginLeft = '10px';
+        spanToggleFamille.textContent = tousActifs ? 'Actif' : 'Inactif';
+        spanToggleFamille.onclick = function (e) { e.stopPropagation(); basculerActifFamille(famille, !tousActifs); };
+        tdTitreFamille.appendChild(spanToggleFamille);
       }
       trTitreFamille.appendChild(tdTitreFamille);
       if (accordeonActifProduits) {
