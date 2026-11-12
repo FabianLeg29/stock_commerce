@@ -3412,7 +3412,52 @@
         // pouvoir porter la classe "tableau-cartes" : sur petit smartphone, ils
         // basculent donc automatiquement en cartes empilées comme le tableau
         // principal, au lieu d'un mini-tableau à 5-6 colonnes illisible.
+
+        // Ventes/réservations en premier (demande explicite) : c'est l'information la
+        // plus consultée en ouvrant ce panneau, avant le détail des achats.
+        const titreVentes = document.createElement('strong');
+        titreVentes.textContent = 'Ventes / réservations par commercial';
+        tdDetailContenu.appendChild(titreVentes);
+
+        const commerciauxActifs = detailCommerciaux.filter(function (d) { return d.ventes || d.reservations; });
+        if (commerciauxActifs.length) {
+          const tableVentes = document.createElement('table');
+          tableVentes.className = 'tableau-cartes tableau-detail';
+          tableVentes.innerHTML = '<thead><tr><th>Commercial</th><th class="centre">Ventes</th><th class="centre">Réservations</th></tr></thead>';
+          const corpsVentes = document.createElement('tbody');
+
+          commerciauxActifs.forEach(function (d) {
+            const trLigne = document.createElement('tr');
+            const tdCommercial = document.createElement('td');
+            tdCommercial.className = 'produit'; tdCommercial.textContent = libelleCommercial(d.commercial);
+            const tdV = document.createElement('td');
+            tdV.className = 'centre mono'; tdV.dataset.label = 'Ventes'; tdV.textContent = d.ventes || 0;
+            const tdR = document.createElement('td');
+            tdR.className = 'centre mono'; tdR.dataset.label = 'Réservations'; tdR.textContent = d.reservations || 0;
+            trLigne.appendChild(tdCommercial); trLigne.appendChild(tdV); trLigne.appendChild(tdR);
+            corpsVentes.appendChild(trLigne);
+          });
+          const trTotal = document.createElement('tr');
+          trTotal.style.fontWeight = '700';
+          const tdTotalLabel = document.createElement('td');
+          tdTotalLabel.className = 'produit'; tdTotalLabel.textContent = 'Total';
+          const tdTotalV = document.createElement('td');
+          tdTotalV.className = 'centre mono'; tdTotalV.dataset.label = 'Ventes'; tdTotalV.textContent = sommeGlobale.ventes;
+          const tdTotalR = document.createElement('td');
+          tdTotalR.className = 'centre mono'; tdTotalR.dataset.label = 'Réservations'; tdTotalR.textContent = sommeGlobale.reservations;
+          trTotal.appendChild(tdTotalLabel); trTotal.appendChild(tdTotalV); trTotal.appendChild(tdTotalR);
+          corpsVentes.appendChild(trTotal);
+          tableVentes.appendChild(corpsVentes);
+          tdDetailContenu.appendChild(tableVentes);
+        } else {
+          const videVentes = document.createElement('div');
+          videVentes.style.cssText = 'margin:6px 0 14px 0; color:#a49a89;';
+          videVentes.textContent = 'Aucune vente ni réservation aujourd\'hui.';
+          tdDetailContenu.appendChild(videVentes);
+        }
+
         const titreAchats = document.createElement('strong');
+        titreAchats.style.cssText = 'display:block; margin-top:14px;';
         titreAchats.textContent = "Achats aujourd'hui (" + achatsAujourdhui + ')';
         tdDetailContenu.appendChild(titreAchats);
 
@@ -3573,47 +3618,6 @@
           tdDetailContenu.appendChild(videAVenir);
         }
 
-        const titreVentes = document.createElement('strong');
-        titreVentes.style.cssText = 'display:block; margin-top:14px;';
-        titreVentes.textContent = 'Ventes / réservations par commercial';
-        tdDetailContenu.appendChild(titreVentes);
-
-        const commerciauxActifs = detailCommerciaux.filter(function (d) { return d.ventes || d.reservations; });
-        if (commerciauxActifs.length) {
-          const tableVentes = document.createElement('table');
-          tableVentes.className = 'tableau-cartes tableau-detail';
-          tableVentes.innerHTML = '<thead><tr><th>Commercial</th><th class="centre">Ventes</th><th class="centre">Réservations</th></tr></thead>';
-          const corpsVentes = document.createElement('tbody');
-
-          commerciauxActifs.forEach(function (d) {
-            const trLigne = document.createElement('tr');
-            const tdCommercial = document.createElement('td');
-            tdCommercial.className = 'produit'; tdCommercial.textContent = libelleCommercial(d.commercial);
-            const tdV = document.createElement('td');
-            tdV.className = 'centre mono'; tdV.dataset.label = 'Ventes'; tdV.textContent = d.ventes || 0;
-            const tdR = document.createElement('td');
-            tdR.className = 'centre mono'; tdR.dataset.label = 'Réservations'; tdR.textContent = d.reservations || 0;
-            trLigne.appendChild(tdCommercial); trLigne.appendChild(tdV); trLigne.appendChild(tdR);
-            corpsVentes.appendChild(trLigne);
-          });
-          const trTotal = document.createElement('tr');
-          trTotal.style.fontWeight = '700';
-          const tdTotalLabel = document.createElement('td');
-          tdTotalLabel.className = 'produit'; tdTotalLabel.textContent = 'Total';
-          const tdTotalV = document.createElement('td');
-          tdTotalV.className = 'centre mono'; tdTotalV.dataset.label = 'Ventes'; tdTotalV.textContent = sommeGlobale.ventes;
-          const tdTotalR = document.createElement('td');
-          tdTotalR.className = 'centre mono'; tdTotalR.dataset.label = 'Réservations'; tdTotalR.textContent = sommeGlobale.reservations;
-          trTotal.appendChild(tdTotalLabel); trTotal.appendChild(tdTotalV); trTotal.appendChild(tdTotalR);
-          corpsVentes.appendChild(trTotal);
-          tableVentes.appendChild(corpsVentes);
-          tdDetailContenu.appendChild(tableVentes);
-        } else {
-          const videVentes = document.createElement('div');
-          videVentes.style.cssText = 'margin:6px 0 0 0; color:#a49a89;';
-          videVentes.textContent = 'Aucune vente ni réservation aujourd\'hui.';
-          tdDetailContenu.appendChild(videVentes);
-        }
       };
 
       tr.appendChild(tdNom);
