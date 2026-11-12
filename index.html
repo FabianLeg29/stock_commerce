@@ -5106,6 +5106,28 @@
     });
   }
 
+  // Active/désactive en un lot tous les produits d'une famille (bouton "Tout activer"/
+  // "Tout désactiver" de l'en-tête de groupe, voir rendreProduits()) — ne touche que les
+  // produits dont l'état actuel diffère de l'état visé, pour ne pas générer de ligne
+  // d'Historique superflue sur un produit déjà dans le bon état.
+  function basculerActifFamille(famille, nouvelEtat) {
+    const produitsFamille = produits.filter(function (p) { return (p.famille || 'Sans famille') === famille; });
+    const aChanger = produitsFamille.filter(function (p) { return !!p.actif !== nouvelEtat; });
+    if (!aChanger.length) {
+      afficherToast('Tous les produits de « ' + famille + ' » sont déjà ' + (nouvelEtat ? 'actifs' : 'inactifs'));
+      return;
+    }
+    if (!confirm(
+      (nouvelEtat ? 'Activer' : 'Désactiver') + ' les ' + aChanger.length + ' produit(s) de la famille « ' + famille + ' » ?'
+    )) return;
+    const batch = db.batch();
+    aChanger.forEach(function (p) { batch.update(db.collection('produits').doc(p.id), { actif: nouvelEtat }); });
+    batch.commit().then(function () {
+      aChanger.forEach(function (p) { enregistrerTransaction('produit_actif', p.nom, nouvelEtat ? 'Oui' : 'Non'); });
+      afficherToast(aChanger.length + ' produit(s) de « ' + famille + ' » ' + (nouvelEtat ? 'activés' : 'désactivés'));
+    }).catch(function (e) { afficherToast('Erreur : ' + e.message); });
+  }
+
   function rendreProduits() {
     rendreSelectsProduits();
     const peutGerer = peutGererCommerce();
@@ -5154,7 +5176,30 @@
       trTitreFamille.className = 'entete-groupe' + (accordeonActifProduits ? ' entete-groupe-cliquable' : '');
       const tdTitreFamille = document.createElement('td');
       tdTitreFamille.colSpan = 8;
-      tdTitreFamille.textContent = accordeonActifProduits ? ((ouverte ? '▾ ' : '▸ ') + famille) : famille;
+      tdTitreFamille.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;';
+      const spanLabelFamille = document.createElement('span');
+      spanLabelFamille.textContent = accordeonActifProduits ? ((ouverte ? '▾ ' : '▸ ') + famille) : famille;
+      tdTitreFamille.appendChild(spanLabelFamille);
+      // Activer/désactiver toute la famille en un clic (demande explicite) : agit sur
+      // tous les produits de ce groupe (y compris ceux déjà dans l'état visé, ignorés
+      // silencieusement), en plus de la bascule individuelle "Actif/Inactif" par ligne.
+      if (peutGerer) {
+        const blocBoutonsFamille = document.createElement('span');
+        blocBoutonsFamille.style.cssText = 'display:flex; gap:6px; text-transform:none;';
+        const btnFamilleActive = document.createElement('button');
+        btnFamilleActive.className = 'bouton-mini';
+        btnFamilleActive.style.marginLeft = '0';
+        btnFamilleActive.textContent = 'Tout activer';
+        btnFamilleActive.onclick = function (e) { e.stopPropagation(); basculerActifFamille(famille, true); };
+        const btnFamilleInactive = document.createElement('button');
+        btnFamilleInactive.className = 'bouton-mini';
+        btnFamilleInactive.style.marginLeft = '0';
+        btnFamilleInactive.textContent = 'Tout désactiver';
+        btnFamilleInactive.onclick = function (e) { e.stopPropagation(); basculerActifFamille(famille, false); };
+        blocBoutonsFamille.appendChild(btnFamilleActive);
+        blocBoutonsFamille.appendChild(btnFamilleInactive);
+        tdTitreFamille.appendChild(blocBoutonsFamille);
+      }
       trTitreFamille.appendChild(tdTitreFamille);
       if (accordeonActifProduits) {
         trTitreFamille.addEventListener('click', function () {
