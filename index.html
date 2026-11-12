@@ -3298,6 +3298,43 @@
           input.addEventListener('change', function () {
             input.classList.remove('enregistre');
             const v = input.value === '' ? 0 : Number(input.value);
+
+            if (nomChamp === 'ventes') {
+              // Une vente honore une réservation de ce même commercial pour ce
+              // produit : la réservation diminue d'autant (jamais sous 0), pour
+              // qu'elle ne continue pas à se déduire en plus de la vente dans le
+              // calcul du stock disponible (stock réel - réservations). Lu/écrit
+              // dans une transaction (pas la valeur déjà affichée à l'écran,
+              // potentiellement périmée si un re-rendu en tâche de fond a eu lieu
+              // entre-temps) pour éviter de réduire une réservation déjà modifiée
+              // par ailleurs. Seule une AUGMENTATION des ventes réduit la
+              // réservation — une correction à la baisse (ex. erreur de saisie)
+              // ne la restitue pas automatiquement, trop ambigu pour être fiable.
+              const ref = db.collection('commerce').doc(idDocPersonnel);
+              db.runTransaction(function (transaction) {
+                return transaction.get(ref).then(function (snap) {
+                  const actuel = snap.exists ? snap.data() : {};
+                  const ancienneVente = typeof actuel.ventes === 'number' ? actuel.ventes : 0;
+                  const ancienneReservation = typeof actuel.reservations === 'number' ? actuel.reservations : 0;
+                  const delta = v - ancienneVente;
+                  const nouvelleReservation = delta > 0 ? Math.max(0, ancienneReservation - delta) : ancienneReservation;
+                  const donnees = {
+                    date: AUJOURD_HUI, produit: p.nom, commercial: commerceSousOnglet,
+                    horodatage: firebase.firestore.FieldValue.serverTimestamp(), responsable: utilisateurCourant.email,
+                    ventes: v, reservations: nouvelleReservation
+                  };
+                  transaction.set(ref, donnees, { merge: true });
+                  return { nouvelleReservation: nouvelleReservation, reservationReduite: nouvelleReservation !== ancienneReservation };
+                });
+              }).then(function (resultat) {
+                input.classList.add('enregistre');
+                enregistrerTransaction('ventes', p.nom, v);
+                if (resultat.reservationReduite) enregistrerTransaction('reservations_consommee', p.nom, resultat.nouvelleReservation);
+                afficherToast(p.nom + ' mis à jour');
+              }).catch(function (err) { afficherToast('Erreur : ' + err.message); });
+              return;
+            }
+
             const donnees = {
               date: AUJOURD_HUI, produit: p.nom, commercial: commerceSousOnglet,
               horodatage: firebase.firestore.FieldValue.serverTimestamp(), responsable: utilisateurCourant.email
@@ -4925,7 +4962,8 @@
     return {
       stock_soir: 'Stock du soir', stock_importe: 'Stock importé', achats: 'Achats', ventes: 'Ventes', prixAchat: 'Prix Logé',
       reservations: 'Réservations', produit_actif: 'Produit activé/désactivé', produit_ajoute: 'Produit ajouté', produit_supprime: 'Produit supprimé',
-      cloture_journee: 'Clôture de journée', ventes_ajustement: 'Ventes (total corrigé)', reservations_ajustement: 'Réservations (total corrigé)'
+      cloture_journee: 'Clôture de journée', ventes_ajustement: 'Ventes (total corrigé)', reservations_ajustement: 'Réservations (total corrigé)',
+      reservations_consommee: 'Réservations (réduite par une vente)'
     }[t] || t;
   }
 
